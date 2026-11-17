@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+body {
+  background: #fafafa;
+  @apply text-neutral-900 antialiased;
+}
+
+/* Visible keyboard focus everywhere, mouse clicks stay clean. */
+:focus-visible {
+  outline: 2px solid #171717;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+
+/* Lesson / card Markdown. */
+.md > * + * { margin-top: 0.85rem; }
+.md h1 { @apply text-2xl font-bold; }
+.md h2 { @apply text-xl font-semibold mt-8; }
+.md h3 { @apply text-lg font-semibold mt-6; }
+.md p, .md li { @apply leading-relaxed text-neutral-700; }
+.md strong { @apply text-neutral-900 font-semibold; }
+.md ul { @apply list-disc pl-6 space-y-1; }
+.md ol { @apply list-decimal pl-6 space-y-1; }
+.md a { @apply underline underline-offset-2; }
+.md code { @apply rounded bg-neutral-100 px-1 py-0.5 text-[0.9em]; }
+.md blockquote { @apply rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3; }
+.md blockquote p { @apply text-neutral-700; }
+.md table { @apply w-full border-collapse text-sm; }
+.md th, .md td { @apply border border-neutral-200 px-3 py-1.5 text-left; }
+.md th { @apply bg-neutral-50 font-semibold; }

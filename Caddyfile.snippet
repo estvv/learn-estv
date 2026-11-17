@@ -1,0 +1,9 @@
+# À coller dans /etc/caddy/Caddyfile sur le VPS, puis :
+#   docker exec caddy-router caddy reload --config /etc/caddy/Caddyfile
+#
+# Le frontend nginx proxifie déjà /api et /health vers le backend.
+
+learn.estv.fr {
+    encode gzip zstd
+    reverse_proxy learn-frontend-estv:80
+}
