@@ -11,16 +11,19 @@ import type { DB } from '../db/index.js';
 
 const folderId = z.number().int().positive().nullable();
 const difficulty = z.enum(pieceDifficulties).nullable();
+const description = z.string().trim().max(200).nullable();
 
 const createBody = z.object({
   subject: z.string().min(1).max(64),
   piece: pieceSchema,
   folder_id: folderId.optional(),
   difficulty: difficulty.optional(),
+  description: description.optional(),
 });
 const updateBody = z.object({
   title: z.string().trim().min(1).max(120).optional(),
   artist: z.string().trim().max(120).nullable().optional(),
+  description: description.optional(),
   folder_id: folderId.optional(),
   difficulty: difficulty.optional(),
   // Which tracks are on, one flag per track of the piece.
@@ -37,6 +40,7 @@ const folderOrder = z.object({ ids: z.array(z.number().int().positive()).max(500
 
 // Empty artist: none.
 const artistOrNull = (a: string | null | undefined) => a?.trim() || null;
+const textOrNull = artistOrNull;
 
 // Pieces imported before covers existed get one when the list is next opened,
 // a few at a time, in the background.
@@ -157,7 +161,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
   router.get('/', (req, res) => {
     const subject = typeof req.query.subject === 'string' ? req.query.subject : null;
     const rows = db.prepare(`
-      SELECT id, subject_id AS subject, title, artist, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, note_count, duration, created_at
+      SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, note_count, duration, created_at
       FROM pieces WHERE user_id = ? AND (? IS NULL OR subject_id = ?) ORDER BY created_at DESC
     `).all(req.user!.id, subject, subject);
     res.json({ success: true, data: rows });
@@ -165,7 +169,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
   });
 
   router.get('/:id', (req, res) => {
-    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, data FROM pieces WHERE id = ? AND user_id = ?`)
+    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, data FROM pieces WHERE id = ? AND user_id = ?`)
       .get(Number(req.params.id), req.user!.id) as { data: string } & Record<string, unknown> | undefined;
     if (!row) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
     const { data, tracks, ...meta } = row;
@@ -183,10 +187,10 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     const artist = artistOrNull(piece.artist);
     const cover = (await findCover(piece.title, artist)) ?? '';
     const r = db.prepare(`
-      INSERT INTO pieces (user_id, subject_id, title, artist, cover, folder_id, difficulty, source, bpm, tracks, data, note_count, duration, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO pieces (user_id, subject_id, title, artist, description, cover, folder_id, difficulty, source, bpm, tracks, data, note_count, duration, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      req.user!.id, subject, piece.title, artist, cover, parsed.data.folder_id ?? null, parsed.data.difficulty ?? null,
+      req.user!.id, subject, piece.title, artist, textOrNull(parsed.data.description), cover, parsed.data.folder_id ?? null, parsed.data.difficulty ?? null,
       piece.source, piece.bpm, piece.tracks?.length ? JSON.stringify(piece.tracks) : null, JSON.stringify(notes), notes.length, pieceDuration(notes), now,
     );
     res.status(201).json({ success: true, data: { id: Number(r.lastInsertRowid) } });
@@ -208,6 +212,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     if (b.artist !== undefined) { sets.push('artist = ?'); values.push(artistOrNull(b.artist)); }
     if (b.folder_id !== undefined) { sets.push('folder_id = ?'); values.push(b.folder_id); }
     if (b.difficulty !== undefined) { sets.push('difficulty = ?'); values.push(b.difficulty); }
+    if (b.description !== undefined) { sets.push('description = ?'); values.push(textOrNull(b.description)); }
     if (b.tracks_enabled !== undefined) {
       const tracks = old.tracks ? (JSON.parse(old.tracks) as { enabled: boolean }[]) : [];
       if (b.tracks_enabled.length !== tracks.length) return void res.status(400).json({ success: false, error: 'Pistes invalides' });

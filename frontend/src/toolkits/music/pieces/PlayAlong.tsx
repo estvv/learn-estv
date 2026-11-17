@@ -182,11 +182,16 @@ export function PlayAlong({ piece, labels, keyboardHeight, onNotesSaved }: {
     <div className="flex h-full flex-col">
       {/* Right padding: room for the page's "Morceaux" button, drawn over this bar. */}
       <div className="flex items-center gap-4 py-3 pl-16 pr-44 text-sm text-neutral-600">
-        <div className="flex w-56 min-w-0 shrink-0 items-center gap-2.5" title={piece.artist ? `${piece.title} — ${piece.artist}` : piece.title}>
+        <div className="flex w-56 min-w-0 shrink-0 items-center gap-2.5" title={[piece.title, piece.artist, piece.description].filter(Boolean).join(' — ')}>
           <Cover key={piece.cover} src={piece.cover} size="sm" />
           <div className="min-w-0 leading-tight">
             <div className="truncate font-semibold text-neutral-900">{piece.title}</div>
-            {piece.artist && <div className="truncate text-xs text-neutral-500">{piece.artist}</div>}
+            {(piece.artist || piece.description) && (
+              <div className="truncate text-xs text-neutral-500">
+                {piece.artist}
+                {piece.description && <span className="text-neutral-400">{piece.artist ? ' · ' : ''}{piece.description}</span>}
+              </div>
+            )}
           </div>
         </div>
 

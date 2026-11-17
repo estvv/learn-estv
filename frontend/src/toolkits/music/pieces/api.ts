@@ -5,7 +5,7 @@ import type { PieceFolder, PieceMeta, PieceSummary, StoredPiece } from './types'
 export const piecesApi = {
   list: (subject: string) => api<PieceSummary[]>(`/pieces?subject=${encodeURIComponent(subject)}`),
   get: (id: number) => api<StoredPiece>(`/pieces/${id}`),
-  create: (subject: string, piece: Piece, extra: Partial<Pick<PieceMeta, 'folder_id' | 'difficulty'>> = {}) =>
+  create: (subject: string, piece: Piece, extra: Partial<Pick<PieceMeta, 'folder_id' | 'difficulty' | 'description'>> = {}) =>
     api<{ id: number }>('/pieces', { method: 'POST', json: { subject, piece, ...extra } }),
   // Answers the cover, searched again when the title or artist changed.
   // cover: picked by hand (from a link); left out, it follows the title and artist.

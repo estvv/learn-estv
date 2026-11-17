@@ -76,7 +76,7 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   const countIn = (id: number) => visible.filter((p) => { const f = folderOf(p); return f !== null && within(f, id); }).length;
 
   const patchPiece = (p: PieceSummary, change: Partial<PieceMeta> & { cover?: string | null }) => {
-    const meta = { title: p.title, artist: p.artist, folder_id: p.folder_id, difficulty: p.difficulty, cover: p.cover, ...change };
+    const meta = { title: p.title, artist: p.artist, description: p.description, folder_id: p.folder_id, difficulty: p.difficulty, cover: p.cover, ...change };
     setPieces((list) => list?.map((x) => (x.id === p.id ? { ...x, ...meta } : x)) ?? list);
     onUpdated(p.id, meta);
   };
@@ -357,7 +357,10 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold text-neutral-900">{p.title}</span>
             <span className="flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">
-              <span className="truncate">{p.artist ?? <span className="text-neutral-400">Artiste inconnu</span>}</span>
+              <span className="truncate">
+                {p.artist ?? <span className="text-neutral-400">Artiste inconnu</span>}
+                {p.description && <span className="text-neutral-400"> · {p.description}</span>}
+              </span>
               {p.difficulty && <DifficultyBadge value={p.difficulty} />}
             </span>
           </span>
@@ -403,6 +406,7 @@ const TrashIcon = () => (
 function EditModal({ piece, folders, onClose, onSaved }: { piece: PieceSummary; folders: PieceFolder[]; onClose(): void; onSaved(meta: PieceMeta & { cover: string | null }): void }) {
   const [title, setTitle] = useState(piece.title);
   const [artist, setArtist] = useState(piece.artist ?? '');
+  const [description, setDescription] = useState(piece.description ?? '');
   const [folder, setFolder] = useState(piece.folder_id);
   const [difficulty, setDifficulty] = useState(piece.difficulty);
   const [error, setError] = useState('');
@@ -437,7 +441,7 @@ function EditModal({ piece, folders, onClose, onSaved }: { piece: PieceSummary; 
   const linkCover = link.trim() && !preview.searching ? preview.cover : null;
 
   const save = async () => {
-    const meta: PieceMeta = { title: title.trim(), artist: artist.trim() || null, folder_id: folder, difficulty };
+    const meta: PieceMeta = { title: title.trim(), artist: artist.trim() || null, description: description.trim() || null, folder_id: folder, difficulty };
     if (!meta.title) return setError('Le titre ne peut pas être vide.');
     if (link.trim() && !linkCover) return setError('Ce lien ne donne pas de pochette : colle le lien d’un morceau, d’un album ou d’un artiste Deezer ou Apple Music.');
     setSaving(true);
@@ -511,6 +515,9 @@ function EditModal({ piece, folders, onClose, onSaved }: { piece: PieceSummary; 
             className={inputClass}
           />
         )}
+        <Field label="Description">
+          <input value={description} maxLength={200} placeholder="Facultatif : « en entier », « boucle du refrain »…" onChange={(e) => setDescription(e.target.value)} className={inputClass} />
+        </Field>
         <Field label="Dossier">
           <FolderSelect folders={folders} value={folder} onChange={setFolder} />
         </Field>

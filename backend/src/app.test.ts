@@ -146,6 +146,15 @@ describe('auth and progress', () => {
     expect((await other.get('/api/pieces').expect(200)).body.data).toHaveLength(0);
     await request(app).get('/api/pieces').expect(401);
     expect(list[0].artist).toBeNull();
+    expect(list[0].description).toBeNull();
+    await me.patch(`/api/pieces/${id}`).send({ description: '  boucle du refrain ' }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.description).toBe('boucle du refrain');
+    await me.patch(`/api/pieces/${id}`).send({ description: 'x'.repeat(201) }).expect(400);
+    await me.patch(`/api/pieces/${id}`).send({ description: '' }).expect(200);
+    expect((await me.get('/api/pieces').expect(200)).body.data[0].description).toBeNull();
+    const withDesc = (await me.post('/api/pieces').send({ subject: 'piano', piece, description: 'en entier' }).expect(201)).body.data.id;
+    expect((await me.get(`/api/pieces/${withDesc}`).expect(200)).body.data.description).toBe('en entier');
+    await me.delete(`/api/pieces/${withDesc}`).expect(200);
     expect(list[0].cover).toBe('https://img.test/-/Gamme');
 
     // Several instruments: every track kept, switched on and off.

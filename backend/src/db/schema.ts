@@ -132,6 +132,8 @@ CREATE TABLE IF NOT EXISTS pieces (
   subject_id TEXT NOT NULL,
   title TEXT NOT NULL,
   artist TEXT,
+  -- Free note to tell versions apart ("en entier", "boucle du refrain").
+  description TEXT,
   folder_id INTEGER REFERENCES piece_folders(id) ON DELETE SET NULL,
   difficulty TEXT,
   -- Cover image URL; '' when searched without result, NULL when not searched yet.

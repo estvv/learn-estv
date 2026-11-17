@@ -10,6 +10,8 @@ export interface PieceSummary {
   subject: string;
   title: string;
   artist: string | null;
+  // Optional note telling versions apart ("en entier", "boucle du refrain").
+  description: string | null;
   // Album cover or artist photo found on Deezer.
   cover: string | null;
   folder_id: number | null;
@@ -26,6 +28,7 @@ export interface StoredPiece extends Piece {
   subject: string;
   difficulty?: PieceDifficulty | null;
   cover?: string | null;
+  description?: string | null;
 }
 
 export interface PieceFolder {
@@ -40,6 +43,7 @@ export interface PieceFolder {
 export interface PieceMeta {
   title: string;
   artist: string | null;
+  description: string | null;
   folder_id: number | null;
   difficulty: PieceDifficulty | null;
 }

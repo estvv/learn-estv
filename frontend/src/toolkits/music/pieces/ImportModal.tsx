@@ -23,6 +23,7 @@ export function ImportModal({ subject, folders, onClose, onSaved }: { subject: s
   const [result, setResult] = useState<ImportResult | null>(null);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
+  const [description, setDescription] = useState('');
   const [folder, setFolder] = useState<number | null>(null);
   const [difficulty, setDifficulty] = useState<PieceDifficulty | null>(null);
   const [error, setError] = useState('');
@@ -60,7 +61,7 @@ export function ImportModal({ subject, folders, onClose, onSaved }: { subject: s
     setError('');
     try {
       const { warnings: _, ...piece } = result;
-      const { id } = await piecesApi.create(subject, { ...piece, title: title.trim() || result.title, artist: artist.trim() || null }, { folder_id: folder, difficulty });
+      const { id } = await piecesApi.create(subject, { ...piece, title: title.trim() || result.title, artist: artist.trim() || null }, { folder_id: folder, difficulty, description: description.trim() || null });
       onSaved(id);
     } catch (e) {
       setError((e as Error).message);
@@ -135,6 +136,9 @@ export function ImportModal({ subject, folders, onClose, onSaved }: { subject: s
                 <input value={artist} maxLength={120} placeholder="Facultatif" onChange={(e) => setArtist(e.target.value)} className={inputClass} />
               </Field>
             </div>
+            <Field label="Description">
+              <input value={description} maxLength={200} placeholder="Facultatif : « en entier », « boucle du refrain »…" onChange={(e) => setDescription(e.target.value)} className={inputClass} />
+            </Field>
             {folders.length > 0 && (
               <Field label="Dossier">
                 <FolderSelect folders={folders} value={folder} onChange={setFolder} />
