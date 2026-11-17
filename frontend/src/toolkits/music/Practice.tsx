@@ -66,6 +66,7 @@ export function MusicPractice({ subject }: { subject: string }) {
             setPanel(false);
             setParams(id ? { morceau: String(id) } : {});
           }}
+          onUpdated={(id, meta) => setPiece((p) => (p && p.id === id ? { ...p, ...meta } : p))}
           onClose={() => setPanel(false)}
         />
       )}

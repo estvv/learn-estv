@@ -18,8 +18,14 @@ export const pieceNoteSchema = z.object({
 
 export const pieceSources = ['midi', 'musicxml', 'audio'] as const;
 
+// How hard a piece feels to its owner, easiest first.
+export const pieceDifficulties = ['easy', 'medium', 'hard', 'impossible'] as const;
+export type PieceDifficulty = (typeof pieceDifficulties)[number];
+
 export const pieceSchema = z.object({
   title: z.string().trim().min(1).max(120),
+  // Performer or composer, when known.
+  artist: z.string().trim().max(120).nullish(),
   source: z.enum(pieceSources),
   // Beats per minute of the original, when known (MIDI, MusicXML).
   bpm: z.number().positive().nullable(),

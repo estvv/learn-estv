@@ -15,6 +15,10 @@ const addedColumns: [table: string, column: string, definition: string][] = [
   ['users', 'avatar_updated_at', 'INTEGER'],
   ['subjects', 'accent', "TEXT NOT NULL DEFAULT 'neutral'"],
   ['subjects', 'practice', 'TEXT'],
+  ['pieces', 'artist', 'TEXT'],
+  ['pieces', 'folder_id', 'INTEGER REFERENCES piece_folders(id) ON DELETE SET NULL'],
+  ['pieces', 'difficulty', 'TEXT'],
+  ['pieces', 'cover', 'TEXT'],
 ];
 
 function migrate(db: DB) {

@@ -1,4 +1,4 @@
-import type { Piece } from '@learn/shared';
+import type { Piece, PieceDifficulty } from '@learn/shared';
 
 export interface ImportResult extends Piece {
   // Things the user should know about the conversion.
@@ -9,6 +9,11 @@ export interface PieceSummary {
   id: number;
   subject: string;
   title: string;
+  artist: string | null;
+  // Album cover or artist photo found on Deezer.
+  cover: string | null;
+  folder_id: number | null;
+  difficulty: PieceDifficulty | null;
   source: Piece['source'];
   bpm: number | null;
   note_count: number;
@@ -19,7 +24,39 @@ export interface PieceSummary {
 export interface StoredPiece extends Piece {
   id: number;
   subject: string;
+  difficulty?: PieceDifficulty | null;
+  cover?: string | null;
 }
+
+export interface PieceFolder {
+  id: number;
+  subject: string;
+  name: string;
+  position: number;
+}
+
+// What the owner can change on a piece.
+export interface PieceMeta {
+  title: string;
+  artist: string | null;
+  folder_id: number | null;
+  difficulty: PieceDifficulty | null;
+}
+
+export const difficultyLabels: Record<PieceDifficulty, string> = {
+  easy: 'Facile',
+  medium: 'Moyen',
+  hard: 'Difficile',
+  impossible: 'Impossible',
+};
+
+// Tag colours: full class names so Tailwind keeps them.
+export const difficultyStyles: Record<PieceDifficulty, { badge: string; dot: string }> = {
+  easy: { badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' },
+  medium: { badge: 'bg-amber-50 text-amber-700 ring-amber-200', dot: 'bg-amber-500' },
+  hard: { badge: 'bg-rose-50 text-rose-700 ring-rose-200', dot: 'bg-rose-500' },
+  impossible: { badge: 'bg-neutral-900 text-white ring-neutral-900', dot: 'bg-neutral-900' },
+};
 
 export const sourceLabels: Record<Piece['source'], string> = {
   midi: 'MIDI',

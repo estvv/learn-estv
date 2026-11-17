@@ -1,5 +1,6 @@
 import type { PieceNote } from '@learn/shared';
 import type { ImportResult } from './types';
+import { guessNames } from './names';
 
 // Audio (mp3, wav, ogg…) or video (mp4, webm: its sound track) transcribed
 // to notes in the browser by Spotify's basic-pitch model. Nothing is sent to
@@ -73,7 +74,7 @@ export async function importAudio(file: File, { sensitivity, onProgress }: Trans
   if (notes.length === 0) throw new Error('Aucune note reconnue : essaie une sensibilité plus haute ou un enregistrement plus net');
 
   return {
-    title: file.name.replace(/\.[a-z0-9]+$/i, ''),
+    ...guessNames(file.name),
     source: 'audio',
     bpm: null,
     notes,

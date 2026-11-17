@@ -111,12 +111,28 @@ CREATE TABLE IF NOT EXISTS srs_state (
   PRIMARY KEY (user_id, element_id, facet)
 );
 
+-- Folders of imported pieces, in the owner's order of priority.
+CREATE TABLE IF NOT EXISTS piece_folders (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_piece_folders_user ON piece_folders (user_id, subject_id);
+
 -- Imported pieces (MIDI, MusicXML, audio transcription), private to their owner.
 CREATE TABLE IF NOT EXISTS pieces (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   subject_id TEXT NOT NULL,
   title TEXT NOT NULL,
+  artist TEXT,
+  folder_id INTEGER REFERENCES piece_folders(id) ON DELETE SET NULL,
+  difficulty TEXT,
+  -- Cover image URL; '' when searched without result, NULL when not searched yet.
+  cover TEXT,
   source TEXT NOT NULL,
   bpm REAL,
   data TEXT NOT NULL,

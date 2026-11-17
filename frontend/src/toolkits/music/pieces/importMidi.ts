@@ -1,5 +1,6 @@
 import type { Hand, PieceNote } from '@learn/shared';
 import { Midi } from '@tonejs/midi';
+import { guessNames } from './names';
 import type { ImportResult } from './types';
 
 // Standard MIDI file. @tonejs/midi already converts ticks to seconds with
@@ -21,7 +22,9 @@ export async function importMidi(file: File): Promise<ImportResult> {
   }));
 
   return {
-    title: midi.name?.trim() || file.name.replace(/\.(mid|midi)$/i, ''),
+    // The file name, not the MIDI's internal name: that one is most often the
+    // instrument of the first track ("Elec. Piano (Classic)").
+    ...guessNames(file.name),
     source: 'midi',
     bpm: midi.header.tempos[0]?.bpm ? Math.round(midi.header.tempos[0].bpm) : null,
     notes,

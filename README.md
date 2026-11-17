@@ -47,6 +47,17 @@ Tests et typage : `npm test` et `npm run typecheck`.
 
 Ce qui est propre à une famille de sujets vit dans `frontend/src/toolkits/<id>/` : entrées, son, blocs Markdown interactifs, panneau de réglages. Aujourd'hui `music` (piano échantillonné, clavier à l'écran/ordinateur/MIDI/micro, blocs ```` ```keyboard ```` et ```` ```play ````). Un nouveau toolkit (ex. `speech` pour les langues) s'ajoute dans `frontend/src/toolkits/index.ts` ; ses réglages apparaissent automatiquement dans **Réglages**.
 
+## Partition → MIDI
+
+`tools/sheet2midi.py` lit une partition (PDF, photo/scan, ou MusicXML) et produit un `.mid` à importer dans **Morceaux**, plus le `.musicxml` reconnu (importable aussi, garde mieux les deux mains). Il faut [uv](https://docs.astral.sh/uv/) ; les dépendances s'installent toutes seules.
+
+```sh
+uv run tools/sheet2midi.py partition.pdf               # -> partition.mid + partition.musicxml
+uv run tools/sheet2midi.py p1.jpg p2.jpg -o morceau.mid --bpm 90
+```
+
+Moteur : [Audiveris](https://github.com/Audiveris/audiveris/releases) s'il est installé (le plus fiable), sinon oemer (premier lancement : ~150 Mo de modèles). Plus la partition est nette (PDF exporté de MuseScore, scan 300 dpi), meilleur est le résultat ; corriger le `.musicxml` dans MuseScore si besoin.
+
 ## Crédits
 
 Samples de piano : [Salamander Grand Piano](https://archive.org/details/SalamanderGrandPianoV3) par Alexander Holm, licence CC-BY 3.0 (version allégée de Tone.js).

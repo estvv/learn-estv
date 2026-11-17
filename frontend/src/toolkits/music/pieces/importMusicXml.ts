@@ -1,6 +1,7 @@
 import type { Hand, PieceNote } from '@learn/shared';
 import { strFromU8, unzipSync } from 'fflate';
 import type { ImportResult } from './types';
+import { guessNames } from './names';
 
 // MusicXML (.musicxml / .xml) and compressed MusicXML (.mxl, a zip), as
 // exported by MuseScore and most notation software. Covered: parts, voices
@@ -140,12 +141,13 @@ export async function importMusicXml(file: File): Promise<ImportResult> {
     const time = seconds(n.start);
     return { midi: n.midi, time, duration: Math.max(0.05, seconds(n.start + n.length) - time), velocity: n.velocity, hand: n.hand };
   });
-  const title = root.querySelector('work > work-title')?.textContent?.trim()
-    || root.querySelector('movement-title')?.textContent?.trim()
-    || file.name.replace(/\.(musicxml|xml|mxl)$/i, '');
+  const scoreTitle = root.querySelector('work > work-title')?.textContent?.trim() || root.querySelector('movement-title')?.textContent?.trim();
+  const composer = root.querySelector('identification > creator[type="composer"]')?.textContent?.trim();
+  const names = scoreTitle ? { title: scoreTitle, artist: composer || null } : guessNames(file.name);
 
   return {
-    title,
+    ...names,
+    artist: names.artist || composer || null,
     source: 'musicxml',
     bpm: Math.round(tempos[0].bpm),
     notes,

@@ -6,20 +6,25 @@ import { ACCEPT, fileKind, piecesApi } from './api';
 import { importAudio } from './importAudio';
 import { importMidi } from './importMidi';
 import { importMusicXml } from './importMusicXml';
-import { sourceLabels, type ImportResult } from './types';
+import { DifficultyPicker, FolderSelect } from './pieceFields';
+import { sourceLabels, type ImportResult, type PieceFolder } from './types';
+import type { PieceDifficulty } from '@learn/shared';
 
 const STAGES = { decode: 'Lecture du son…', model: 'Chargement du modèle de transcription…', transcribe: 'Transcription' } as const;
 
 const formatDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
 // Pick a file, convert it to notes in the browser, name it, save it.
-export function ImportModal({ subject, onClose, onSaved }: { subject: string; onClose(): void; onSaved(id: number): void }) {
+export function ImportModal({ subject, folders, onClose, onSaved }: { subject: string; folders: PieceFolder[]; onClose(): void; onSaved(id: number): void }) {
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [sensitivity, setSensitivity] = useState(0.5);
   const [progress, setProgress] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [title, setTitle] = useState('');
+  const [artist, setArtist] = useState('');
+  const [folder, setFolder] = useState<number | null>(null);
+  const [difficulty, setDifficulty] = useState<PieceDifficulty | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const kind = file ? fileKind(file) : null;
@@ -41,6 +46,7 @@ export function ImportModal({ subject, onClose, onSaved }: { subject: string; on
       }
       setResult(r);
       setTitle(r.title);
+      setArtist(r.artist ?? '');
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -54,7 +60,7 @@ export function ImportModal({ subject, onClose, onSaved }: { subject: string; on
     setError('');
     try {
       const { warnings: _, ...piece } = result;
-      const { id } = await piecesApi.create(subject, { ...piece, title: title.trim() || result.title });
+      const { id } = await piecesApi.create(subject, { ...piece, title: title.trim() || result.title, artist: artist.trim() || null }, { folder_id: folder, difficulty });
       onSaved(id);
     } catch (e) {
       setError((e as Error).message);
@@ -121,8 +127,21 @@ export function ImportModal({ subject, onClose, onSaved }: { subject: string; on
               {result.bpm && <> · {result.bpm} bpm</>}
               {result.warnings.map((w) => <p key={w} className="mt-1.5 text-xs text-amber-700">{w}</p>)}
             </div>
-            <Field label="Titre">
-              <input value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Titre">
+                <input value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+              </Field>
+              <Field label="Artiste">
+                <input value={artist} maxLength={120} placeholder="Facultatif" onChange={(e) => setArtist(e.target.value)} className={inputClass} />
+              </Field>
+            </div>
+            {folders.length > 0 && (
+              <Field label="Dossier">
+                <FolderSelect folders={folders} value={folder} onChange={setFolder} />
+              </Field>
+            )}
+            <Field label="Difficulté">
+              <DifficultyPicker value={difficulty} onChange={setDifficulty} />
             </Field>
           </div>
         )}

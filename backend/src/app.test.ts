@@ -26,7 +26,8 @@ async function login(username: string, password: string) {
 beforeEach(() => {
   db = openDatabase(':memory:');
   importSeeds(db, contentDir, () => {});
-  app = createApp(db);
+  // Covers: no network in tests; songs titled "Inconnu" have none.
+  app = createApp(db, { findCover: async (title, artist) => (title === 'Inconnu' ? null : `https://img.test/${artist ?? '-'}/${title}`) });
 });
 
 describe('content', () => {
@@ -144,7 +145,51 @@ describe('auth and progress', () => {
     await other.get(`/api/pieces/${id}`).expect(404);
     expect((await other.get('/api/pieces').expect(200)).body.data).toHaveLength(0);
     await request(app).get('/api/pieces').expect(401);
+    expect(list[0].artist).toBeNull();
+    expect(list[0].cover).toBe('https://img.test/-/Gamme');
     await me.patch(`/api/pieces/${id}`).send({ title: 'Do majeur' }).expect(200);
+    const renamed = await me.patch(`/api/pieces/${id}`).send({ artist: '  Bach ' }).expect(200);
+    expect(renamed.body.data.cover).toBe('https://img.test/Bach/Do majeur');
+    expect((await me.patch(`/api/pieces/${id}`).send({ title: 'Inconnu' }).expect(200)).body.data.cover).toBeNull();
+    expect((await me.get('/api/pieces').expect(200)).body.data[0].cover).toBeNull();
+    await me.patch(`/api/pieces/${id}`).send({ title: 'Do majeur' }).expect(200);
+    let meta = (await me.get('/api/pieces').expect(200)).body.data[0];
+    expect(meta).toMatchObject({ title: 'Do majeur', artist: 'Bach' });
+    await me.patch(`/api/pieces/${id}`).send({ artist: '' }).expect(200);
+    meta = (await me.get('/api/pieces').expect(200)).body.data[0];
+    expect(meta).toMatchObject({ title: 'Do majeur', artist: null });
+    await me.patch(`/api/pieces/${id}`).send({}).expect(400);
+    expect((await me.get('/api/pieces/cover?title=Hymne&artist=Moi').expect(200)).body.data.cover).toBe('https://img.test/Moi/Hymne');
+    expect((await me.get('/api/pieces/cover?title=Inconnu').expect(200)).body.data.cover).toBeNull();
+    await me.get('/api/pieces/cover').expect(400);
+    expect((await me.get('/api/pieces/cover?link=https://example.com/x').expect(200)).body.data.cover).toBeNull();
+    // A cover picked by hand: only catalogue images, kept over a new search.
+    await me.patch(`/api/pieces/${id}`).send({ cover: 'https://evil.test/x.jpg' }).expect(400);
+    const picked = 'https://cdn-images.dzcdn.net/images/cover/abc/250x250.jpg';
+    expect((await me.patch(`/api/pieces/${id}`).send({ title: 'Autre', cover: picked }).expect(200)).body.data.cover).toBe(picked);
+    expect((await me.get('/api/pieces').expect(200)).body.data[0].cover).toBe(picked);
+    await me.patch(`/api/pieces/${id}`).send({ cover: null }).expect(200);
+    expect((await me.get('/api/pieces').expect(200)).body.data[0].cover).toBeNull();
+    await me.patch(`/api/pieces/${id}`).send({ title: 'Do majeur' }).expect(200);
+    await request(app).get('/api/pieces/cover?title=x').expect(401);
+    await other.patch(`/api/pieces/${id}`).send({ artist: 'x' }).expect(404);
+
+    // Folders, in order of priority, and difficulty tags.
+    const first = (await me.post('/api/pieces/folders').send({ subject: 'piano', name: 'Priorité' }).expect(201)).body.data.id;
+    const second = (await me.post('/api/pieces/folders').send({ subject: 'piano', name: 'Plus tard' }).expect(201)).body.data.id;
+    await me.put('/api/pieces/folders/order').send({ ids: [second, first] }).expect(200);
+    const folders = (await me.get('/api/pieces/folders?subject=piano').expect(200)).body.data;
+    expect(folders.map((f: { name: string }) => f.name)).toEqual(['Plus tard', 'Priorité']);
+    expect((await other.get('/api/pieces/folders').expect(200)).body.data).toHaveLength(0);
+    const otherFolder = (await other.post('/api/pieces/folders').send({ subject: 'piano', name: 'À moi' }).expect(201)).body.data.id;
+    await me.patch(`/api/pieces/${id}`).send({ folder_id: otherFolder }).expect(400);
+    await me.patch(`/api/pieces/${id}`).send({ folder_id: first, difficulty: 'hard' }).expect(200);
+    await me.patch(`/api/pieces/${id}`).send({ difficulty: 'trivial' }).expect(400);
+    meta = (await me.get('/api/pieces').expect(200)).body.data[0];
+    expect(meta).toMatchObject({ folder_id: first, difficulty: 'hard', title: 'Do majeur' });
+    await me.delete(`/api/pieces/folders/${first}`).expect(200);
+    meta = (await me.get('/api/pieces').expect(200)).body.data[0];
+    expect(meta).toMatchObject({ folder_id: null, difficulty: 'hard' });
     await me.delete(`/api/pieces/${id}`).expect(200);
     expect((await me.get('/api/pieces').expect(200)).body.data).toHaveLength(0);
   });

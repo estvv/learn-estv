@@ -7,6 +7,13 @@ export type PlayMode = 'listen' | 'wait';
 
 // Notes starting within this window are played together (a chord).
 const CHORD_WINDOW = 0.04;
+// Loop bounds are bar lines; notes on them may land a hair early.
+const LOOP_SLACK = 0.03;
+
+export interface Loop {
+  start: number;
+  end: number;
+}
 
 interface Group {
   time: number;
@@ -33,6 +40,8 @@ export class PiecePlayer {
   position = 0;
   rate = 1;
   mode: PlayMode = 'listen';
+  // Played over and over while set.
+  loop: Loop | null = null;
 
   private groups: Group[];
   private nextNote = 0; // listen mode: index of the next note to sound
@@ -92,6 +101,11 @@ export class PiecePlayer {
     this.state.set((s) => ({ ...s, expected: [], played: [], finished: false }));
   }
 
+  setLoop(loop: Loop | null) {
+    this.loop = loop;
+    if (loop) this.seek(Math.max(0, loop.start - LOOP_SLACK));
+  }
+
   setMode(mode: PlayMode) {
     this.mode = mode;
     this.seek(this.position);
@@ -112,7 +126,9 @@ export class PiecePlayer {
     this.lastFrame = now;
     if (!this.waiting) {
       const next = this.position + dt * this.rate;
-      if (this.mode === 'wait') this.advanceWaiting(next);
+      if (this.loop && next >= this.loop.end - LOOP_SLACK) {
+        this.seek(Math.max(0, this.loop.start - LOOP_SLACK));
+      } else if (this.mode === 'wait') this.advanceWaiting(next);
       else this.advanceListening(next);
     }
     if (this.position >= this.duration + 0.5) {

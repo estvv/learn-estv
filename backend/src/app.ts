@@ -11,8 +11,9 @@ import { contentRoutes } from './routes/content.js';
 import { progressRoutes } from './routes/progress.js';
 import { pieceRoutes } from './routes/pieces.js';
 import { userRoutes } from './routes/users.js';
+import { catalogCover, type CoverFinder } from './covers.js';
 
-export function createApp(db: DB) {
+export function createApp(db: DB, { findCover = catalogCover }: { findCover?: CoverFinder } = {}) {
   const app = express();
   // Caddy -> nginx -> here: two proxies in front.
   app.set('trust proxy', 2);
@@ -41,7 +42,7 @@ export function createApp(db: DB) {
   app.use('/api/subjects', contentRoutes(db));
   app.use('/api/progress', progressRoutes(db));
   app.use('/api/users', userRoutes(db));
-  app.use('/api/pieces', pieceRoutes(db));
+  app.use('/api/pieces', pieceRoutes(db, findCover));
 
   app.use('/api', (_req, res) => void res.status(404).json({ success: false, error: 'Introuvable' }));
 
