@@ -36,11 +36,26 @@ export function DifficultyPicker({ value, onChange }: { value: PieceDifficulty |
   );
 }
 
+// Folders in tree order (each one followed by its subfolders), with their depth.
+export function folderTree(folders: PieceFolder[]): { folder: PieceFolder; depth: number }[] {
+  const out: { folder: PieceFolder; depth: number }[] = [];
+  const walk = (parent: number | null, depth: number) => {
+    for (const f of folders.filter((x) => x.parent_id === parent)) {
+      out.push({ folder: f, depth });
+      walk(f.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return out;
+}
+
 export function FolderSelect({ folders, value, onChange }: { folders: PieceFolder[]; value: number | null; onChange(id: number | null): void }) {
   return (
     <select value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)} className={inputClass}>
       <option value="">Sans dossier</option>
-      {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+      {folderTree(folders).map(({ folder, depth }) => (
+        <option key={folder.id} value={folder.id}>{'\u00a0\u00a0\u00a0'.repeat(depth)}{depth ? '└ ' : ''}{folder.name}</option>
+      ))}
     </select>
   );
 }

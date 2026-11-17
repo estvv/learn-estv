@@ -117,6 +117,9 @@ CREATE TABLE IF NOT EXISTS piece_folders (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   subject_id TEXT NOT NULL,
   name TEXT NOT NULL,
+  -- Folder it sits in; NULL at the top level.
+  parent_id INTEGER REFERENCES piece_folders(id) ON DELETE CASCADE,
+  -- Order of priority among the folders of the same parent.
   position INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );

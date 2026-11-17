@@ -6,7 +6,6 @@ import { Field, inputClass } from '../../../components/Field';
 import { ChevronDownIcon, PencilIcon, PlusIcon } from '../../../components/icons';
 import { ConfirmModal, Modal } from '../../../components/Modal';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
-import { readJson, writeJson } from '../../../lib/storage';
 import { foldersApi, piecesApi } from './api';
 import { ImportModal } from './ImportModal';
 import { Cover, DifficultyBadge, DifficultyPicker, FolderSelect } from './pieceFields';
@@ -14,12 +13,14 @@ import { difficultyLabels, difficultyStyles, sourceLabels, type PieceFolder, typ
 
 const formatDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
-// Collapsed folders, remembered per browser ("none" = pieces out of folders).
-const COLLAPSED_KEY = 'pieces.collapsed';
+// A folder, or "none" for the pieces out of any folder.
 type FolderKey = number | 'none';
+type Dragged = { kind: 'piece' | 'folder'; id: number };
+const INDENT = 14; // px per folder level
 
-// Side panel of the practice page: the account's pieces, sorted into folders
-// (in order of priority) and tagged by difficulty, and the import.
+// Side panel of the practice page: the account's pieces, sorted into a tree
+// of folders (in order of priority) and tagged by difficulty, and the import.
+// Every folder starts closed.
 export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   subject: string;
   current: number | null;
@@ -31,14 +32,14 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   const [pieces, setPieces] = useState<PieceSummary[] | null>(null);
   const [folders, setFolders] = useState<PieceFolder[]>([]);
   const [filter, setFilter] = useState<PieceDifficulty | null>(null);
-  const [collapsed, setCollapsed] = useState<FolderKey[]>(() => readJson(COLLAPSED_KEY, { keys: [] as FolderKey[] }).keys);
+  const [open, setOpen] = useState<FolderKey[]>([]);
   const [importing, setImporting] = useState(false);
   const [editing, setEditing] = useState<PieceSummary | null>(null);
   const [removing, setRemoving] = useState<PieceSummary | null>(null);
-  // Folder modal: new (no folder) or rename.
-  const [naming, setNaming] = useState<{ folder: PieceFolder | null } | null>(null);
+  // Folder modal: rename `folder`, or create one inside `parent`.
+  const [naming, setNaming] = useState<{ folder: PieceFolder | null; parent: number | null } | null>(null);
   const [removingFolder, setRemovingFolder] = useState<PieceFolder | null>(null);
-  const [dragged, setDragged] = useState<number | null>(null);
+  const [dragged, setDragged] = useState<Dragged | null>(null);
   const [dropTarget, setDropTarget] = useState<FolderKey | null>(null);
   const [error, setError] = useState('');
 
@@ -51,13 +52,22 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   }, [user, subject]);
   useEffect(load, [load]);
 
-  const run = (p: Promise<unknown>) => p.catch((e: Error) => setError(e.message));
+  const run = (p: Promise<unknown>) => p.catch((e: Error) => {
+    setError(e.message);
+    load();
+  });
 
-  const toggle = (key: FolderKey) => {
-    const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key];
-    setCollapsed(next);
-    writeJson(COLLAPSED_KEY, { keys: next });
+  const toggle = (key: FolderKey) => setOpen((o) => (o.includes(key) ? o.filter((k) => k !== key) : [...o, key]));
+  const childrenOf = (parent: number | null) => folders.filter((f) => f.parent_id === parent);
+  const known = new Set(folders.map((f) => f.id));
+  const folderOf = (p: PieceSummary): number | null => (p.folder_id !== null && known.has(p.folder_id) ? p.folder_id : null);
+  // `id` itself or one of its subfolders, at any depth.
+  const within = (id: number, ancestor: number) => {
+    for (let at: number | null = id; at !== null; at = folders.find((f) => f.id === at)?.parent_id ?? null) if (at === ancestor) return true;
+    return false;
   };
+  const visible = (pieces ?? []).filter((p) => !filter || p.difficulty === filter);
+  const countIn = (id: number, list: PieceSummary[]) => list.filter((p) => { const f = folderOf(p); return f !== null && within(f, id); }).length;
 
   const patchPiece = (p: PieceSummary, change: Partial<PieceMeta> & { cover?: string | null }) => {
     const meta = { title: p.title, artist: p.artist, folder_id: p.folder_id, difficulty: p.difficulty, cover: p.cover, ...change };
@@ -65,44 +75,74 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
     onUpdated(p.id, meta);
   };
 
-  const moveTo = (pieceId: number, folder: number | null) => {
+  const movePiece = (pieceId: number, folder: number | null) => {
     const p = pieces?.find((x) => x.id === pieceId);
     if (!p || p.folder_id === folder) return;
     patchPiece(p, { folder_id: folder });
-    void run(piecesApi.update(p.id, { folder_id: folder }).catch((e) => { load(); throw e; }));
+    void run(piecesApi.update(p.id, { folder_id: folder }));
   };
 
-  const moveFolder = (index: number, by: -1 | 1) => {
-    const next = [...folders];
-    const [f] = next.splice(index, 1);
-    next.splice(index + by, 0, f);
-    setFolders(next);
-    void run(foldersApi.reorder(next.map((x) => x.id)));
+  const moveFolderInto = (id: number, parent: number | null) => {
+    const f = folders.find((x) => x.id === id);
+    if (!f || f.parent_id === parent || (parent !== null && within(parent, id))) return;
+    setFolders((list) => list.map((x) => (x.id === id ? { ...x, parent_id: parent, position: Number.MAX_SAFE_INTEGER } : x)));
+    if (parent !== null) setOpen((o) => (o.includes(parent) ? o : [...o, parent]));
+    void run(foldersApi.update(id, { parent_id: parent }).then(load));
   };
 
-  const visible = (pieces ?? []).filter((p) => !filter || p.difficulty === filter);
-  const groups: { key: FolderKey; folder: PieceFolder | null; items: PieceSummary[] }[] = [
-    ...folders.map((f) => ({ key: f.id as FolderKey, folder: f, items: visible.filter((p) => p.folder_id === f.id) })),
-    { key: 'none', folder: null, items: visible.filter((p) => p.folder_id === null || !folders.some((f) => f.id === p.folder_id)) },
-  ];
+  // Up or down among the folders of the same parent.
+  const shift = (f: PieceFolder, by: -1 | 1) => {
+    const siblings = childrenOf(f.parent_id);
+    const i = siblings.findIndex((x) => x.id === f.id);
+    const order = [...siblings];
+    order.splice(i, 1);
+    order.splice(i + by, 0, f);
+    const position = new Map(order.map((x, k) => [x.id, k]));
+    setFolders((list) => [...list.map((x) => (position.has(x.id) ? { ...x, position: position.get(x.id)! } : x))].sort((a, b) => a.position - b.position || a.id - b.id));
+    void run(foldersApi.reorder(order.map((x) => x.id)));
+  };
 
-  const dropProps = (key: FolderKey) => ({
-    onDragOver: (e: DragEvent) => {
-      if (dragged === null) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      setDropTarget(key);
+  // Drop target: a folder, or "none" (out of any folder / top level).
+  const dropProps = (key: FolderKey) => {
+    const accepts = () => dragged !== null && (dragged.kind === 'piece' || key === 'none' || !within(key, dragged.id));
+    return {
+      onDragOver: (e: DragEvent) => {
+        if (!accepts()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        setDropTarget(key);
+      },
+      onDragLeave: (e: DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget((t) => (t === key ? null : t));
+      },
+      onDrop: (e: DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = key === 'none' ? null : key;
+        if (dragged?.kind === 'piece') movePiece(dragged.id, target);
+        else if (dragged && accepts()) moveFolderInto(dragged.id, target);
+        setDragged(null);
+        setDropTarget(null);
+      },
+    };
+  };
+  const dragProps = (item: Dragged) => ({
+    draggable: true,
+    onDragStart: (e: DragEvent) => {
+      e.stopPropagation();
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', `${item.kind}:${item.id}`);
+      setDragged(item);
     },
-    onDragLeave: (e: DragEvent) => {
-      if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget((t) => (t === key ? null : t));
-    },
-    onDrop: (e: DragEvent) => {
-      e.preventDefault();
-      if (dragged !== null) moveTo(dragged, key === 'none' ? null : key);
+    onDragEnd: () => {
       setDragged(null);
       setDropTarget(null);
     },
   });
+
+  const rootPieces = visible.filter((p) => folderOf(p) === null);
+  const hasFolders = folders.length > 0;
 
   return (
     <div className="fixed inset-0 z-30 flex justify-end bg-neutral-900/20" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -153,50 +193,30 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
                 </span>
               </button>
 
-              {pieces?.length === 0 && folders.length === 0 && <p className="px-3 py-4 text-sm text-neutral-400">Aucun morceau importé pour l’instant.</p>}
-
-              {pieces && groups.map(({ key, folder, items }, index) => {
-                // No "Sans dossier" heading while there are no folders at all.
-                if (!folder && folders.length === 0) {
-                  return <div key={key} className="mt-1 space-y-0.5">{items.map((p) => row(p))}</div>;
-                }
-                if (!folder && items.length === 0 && dragged === null) return null;
-                const open = !collapsed.includes(key);
-                const total = folder ? (pieces ?? []).filter((p) => p.folder_id === folder.id).length : items.length;
-                return (
-                  <section key={key} {...dropProps(key)} className={`mt-3 rounded-xl transition-colors ${dropTarget === key ? 'bg-sky-50 ring-2 ring-inset ring-sky-300' : ''}`}>
-                    <div className="group/folder flex items-center gap-1 px-1">
-                      <button type="button" onClick={() => toggle(key)} className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1.5 text-left">
-                        <ChevronDownIcon className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${open ? '' : '-rotate-90'}`} />
-                        {folder && index === 0 && folders.length > 1 && <span title="Dossier prioritaire" className="text-amber-500">★</span>}
-                        <span className={`truncate text-sm font-semibold ${folder ? 'text-neutral-900' : 'text-neutral-500'}`}>{folder?.name ?? 'Sans dossier'}</span>
-                        <span className="shrink-0 text-xs text-neutral-400">{filter && folder ? `${items.length}/${total}` : total}</span>
-                      </button>
-                      {folder && (
-                        <div className="hidden items-center group-hover/folder:flex">
-                          <IconButton title="Plus prioritaire" disabled={index === 0} onClick={() => moveFolder(index, -1)}>↑</IconButton>
-                          <IconButton title="Moins prioritaire" disabled={index === folders.length - 1} onClick={() => moveFolder(index, 1)}>↓</IconButton>
-                          <IconButton title="Renommer" onClick={() => setNaming({ folder })}><PencilIcon className="h-3.5 w-3.5" /></IconButton>
-                          <IconButton title="Supprimer le dossier" danger onClick={() => setRemovingFolder(folder)}><TrashIcon /></IconButton>
-                        </div>
-                      )}
-                    </div>
-                    {open && (
-                      <div className="space-y-0.5 pb-1">
-                        {items.map((p) => row(p))}
-                        {items.length === 0 && (
-                          <p className="px-8 py-2 text-xs text-neutral-400">
-                            {filter ? `Aucun morceau « ${difficultyLabels[filter]} » ici.` : 'Vide : glisse un morceau ici, ou choisis ce dossier en modifiant un morceau.'}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </section>
-                );
-              })}
+              {pieces?.length === 0 && !hasFolders && <p className="px-3 py-4 text-sm text-neutral-400">Aucun morceau importé pour l’instant.</p>}
 
               {pieces && (
-                <button type="button" onClick={() => setNaming({ folder: null })} className="mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900">
+                <div className="mt-2">
+                  {childrenOf(null).map((f, i, siblings) => folderNode(f, 0, i, siblings.length))}
+
+                  {/* Without folders, a plain list; with folders, a closed group like the others. */}
+                  {!hasFolders ? (
+                    <div className="space-y-0.5">{rootPieces.map((p) => row(p, 0))}</div>
+                  ) : (rootPieces.length > 0 || dragged !== null) && (
+                    <section {...dropProps('none')} className={`mt-1 rounded-xl transition-colors ${dropTarget === 'none' ? 'bg-sky-50 ring-2 ring-inset ring-sky-300' : ''}`}>
+                      <button type="button" onClick={() => toggle('none')} className="flex w-full min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-neutral-50">
+                        <ChevronDownIcon className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${open.includes('none') ? '' : '-rotate-90'}`} />
+                        <span className="truncate text-sm font-semibold text-neutral-500">{dragged?.kind === 'folder' ? 'Hors des dossiers' : 'Sans dossier'}</span>
+                        <span className="shrink-0 text-xs text-neutral-400">{rootPieces.length}</span>
+                      </button>
+                      {open.includes('none') && <div className="space-y-0.5 pb-1">{rootPieces.map((p) => row(p, 1))}</div>}
+                    </section>
+                  )}
+                </div>
+              )}
+
+              {pieces && (
+                <button type="button" onClick={() => setNaming({ folder: null, parent: null })} className="mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900">
                   <PlusIcon className="h-4 w-4" />Nouveau dossier
                 </button>
               )}
@@ -246,10 +266,14 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
       {naming && (
         <FolderModal
           folder={naming.folder}
+          parentName={naming.parent !== null ? folders.find((f) => f.id === naming.parent)?.name ?? null : null}
           onClose={() => setNaming(null)}
           onSave={async (name) => {
-            if (naming.folder) await foldersApi.rename(naming.folder.id, name);
-            else await foldersApi.create(subject, name);
+            if (naming.folder) await foldersApi.update(naming.folder.id, { name });
+            else {
+              await foldersApi.create(subject, name, naming.parent);
+              if (naming.parent !== null) setOpen((o) => (o.includes(naming.parent!) ? o : [...o, naming.parent!]));
+            }
             setNaming(null);
             load();
           }}
@@ -258,7 +282,7 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
       {removingFolder && (
         <ConfirmModal
           title={`Supprimer le dossier « ${removingFolder.name} » ?`}
-          message="Ses morceaux ne sont pas supprimés : ils passent dans « Sans dossier »."
+          message="Rien n’est perdu : ses morceaux et ses sous-dossiers remontent d’un niveau."
           confirmLabel="Supprimer le dossier"
           danger
           onConfirm={async () => {
@@ -271,22 +295,58 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
     </div>
   );
 
-  function row(p: PieceSummary) {
+  function folderNode(f: PieceFolder, depth: number, index: number, siblings: number): ReactNode {
+    const shown = countIn(f.id, visible);
+    const total = countIn(f.id, pieces ?? []);
+    // Filtering by difficulty hides the folders with nothing to show.
+    if (filter && shown === 0) return null;
+    const isOpen = open.includes(f.id);
+    const subfolders = childrenOf(f.id);
+    const own = visible.filter((p) => folderOf(p) === f.id);
+    return (
+      <section
+        key={f.id}
+        {...dropProps(f.id)}
+        className={`rounded-xl transition-colors ${dropTarget === f.id ? 'bg-sky-50 ring-2 ring-inset ring-sky-300' : ''} ${dragged?.kind === 'folder' && dragged.id === f.id ? 'opacity-40' : ''}`}
+      >
+        <div {...dragProps({ kind: 'folder', id: f.id })} className="group/folder flex items-center gap-1 rounded-lg pr-1 hover:bg-neutral-50" style={{ paddingLeft: depth * INDENT }}>
+          <button type="button" onClick={() => toggle(f.id)} className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left">
+            <ChevronDownIcon className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+            {depth === 0 && index === 0 && siblings > 1 && <span title="Dossier prioritaire" className="text-amber-500">★</span>}
+            <span className="truncate text-sm font-semibold text-neutral-900">{f.name}</span>
+            <span className="shrink-0 text-xs text-neutral-400">{filter ? `${shown}/${total}` : total}</span>
+          </button>
+          <div className="hidden shrink-0 items-center group-hover/folder:flex">
+            <IconButton title="Plus prioritaire" disabled={index === 0} onClick={() => shift(f, -1)}>↑</IconButton>
+            <IconButton title="Moins prioritaire" disabled={index === siblings - 1} onClick={() => shift(f, 1)}>↓</IconButton>
+            <IconButton title="Nouveau sous-dossier" onClick={() => setNaming({ folder: null, parent: f.id })}><PlusIcon className="h-3.5 w-3.5" /></IconButton>
+            <IconButton title="Renommer" onClick={() => setNaming({ folder: f, parent: f.parent_id })}><PencilIcon className="h-3.5 w-3.5" /></IconButton>
+            <IconButton title="Supprimer le dossier" danger onClick={() => setRemovingFolder(f)}><TrashIcon /></IconButton>
+          </div>
+        </div>
+        {isOpen && (
+          <div className="space-y-0.5 pb-1">
+            {subfolders.map((c, i) => folderNode(c, depth + 1, i, subfolders.length))}
+            {own.map((p) => row(p, depth + 1))}
+            {subfolders.length === 0 && own.length === 0 && (
+              <p className="py-2 pr-3 text-xs text-neutral-400" style={{ paddingLeft: (depth + 1) * INDENT + 12 }}>
+                {filter ? `Aucun morceau « ${difficultyLabels[filter]} » ici.` : 'Vide : glisse un morceau ou un dossier ici.'}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  function row(p: PieceSummary, depth: number) {
     const active = current === p.id;
     return (
       <div
         key={p.id}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.effectAllowed = 'move';
-          e.dataTransfer.setData('text/plain', String(p.id));
-          setDragged(p.id);
-        }}
-        onDragEnd={() => {
-          setDragged(null);
-          setDropTarget(null);
-        }}
-        className={`group flex items-center gap-1 rounded-xl pr-1.5 ${active ? 'bg-neutral-100' : 'hover:bg-neutral-50'} ${dragged === p.id ? 'opacity-40' : ''}`}
+        {...dragProps({ kind: 'piece', id: p.id })}
+        style={{ marginLeft: depth * INDENT }}
+        className={`group flex items-center gap-1 rounded-xl pr-1.5 ${active ? 'bg-neutral-100' : 'hover:bg-neutral-50'} ${dragged?.kind === 'piece' && dragged.id === p.id ? 'opacity-40' : ''}`}
       >
         <button
           type="button"
@@ -472,15 +532,15 @@ function EditModal({ piece, folders, onClose, onSaved }: { piece: PieceSummary; 
   );
 }
 
-function FolderModal({ folder, onClose, onSave }: { folder: PieceFolder | null; onClose(): void; onSave(name: string): Promise<void> }) {
+function FolderModal({ folder, parentName, onClose, onSave }: { folder: PieceFolder | null; parentName: string | null; onClose(): void; onSave(name: string): Promise<void> }) {
   const [name, setName] = useState(folder?.name ?? '');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   return (
     <Modal
-      title={folder ? 'Renommer le dossier' : 'Nouveau dossier'}
-      subtitle={folder ? undefined : 'Par exemple « À apprendre en priorité » ou « Plus tard ». L’ordre se change avec ↑ ↓.'}
+      title={folder ? 'Renommer le dossier' : parentName ? 'Nouveau sous-dossier' : 'Nouveau dossier'}
+      subtitle={!folder && parentName ? `Dans « ${parentName} »` : ''}
       onClose={onClose}
       footer={(
         <>

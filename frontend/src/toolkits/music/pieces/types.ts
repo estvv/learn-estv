@@ -32,6 +32,7 @@ export interface PieceFolder {
   id: number;
   subject: string;
   name: string;
+  parent_id: number | null;
   position: number;
 }
 

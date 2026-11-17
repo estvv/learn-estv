@@ -19,8 +19,10 @@ export const piecesApi = {
 
 export const foldersApi = {
   list: (subject: string) => api<PieceFolder[]>(`/pieces/folders?subject=${encodeURIComponent(subject)}`),
-  create: (subject: string, name: string) => api<{ id: number }>('/pieces/folders', { method: 'POST', json: { subject, name } }),
-  rename: (id: number, name: string) => api(`/pieces/folders/${id}`, { method: 'PATCH', json: { name } }),
+  create: (subject: string, name: string, parent_id: number | null = null) =>
+    api<{ id: number }>('/pieces/folders', { method: 'POST', json: { subject, name, parent_id } }),
+  // Rename, or move into another folder (parent_id null: top level).
+  update: (id: number, change: { name?: string; parent_id?: number | null }) => api(`/pieces/folders/${id}`, { method: 'PATCH', json: change }),
   reorder: (ids: number[]) => api('/pieces/folders/order', { method: 'PUT', json: { ids } }),
   remove: (id: number) => api(`/pieces/folders/${id}`, { method: 'DELETE' }),
 };

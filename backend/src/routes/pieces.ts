@@ -28,7 +28,9 @@ const updateBody = z.object({
 }).refine((b) => Object.values(b).some((v) => v !== undefined));
 
 const folderName = z.string().trim().min(1).max(60);
-const folderCreate = z.object({ subject: z.string().min(1).max(64), name: folderName });
+const folderCreate = z.object({ subject: z.string().min(1).max(64), name: folderName, parent_id: folderId.optional() });
+const folderUpdate = z.object({ name: folderName.optional(), parent_id: folderId.optional() })
+  .refine((b) => b.name !== undefined || b.parent_id !== undefined);
 const folderOrder = z.object({ ids: z.array(z.number().int().positive()).max(500) });
 
 // Empty artist: none.
@@ -59,11 +61,25 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     id == null || !!db.prepare('SELECT 1 FROM piece_folders WHERE id = ? AND user_id = ?').get(id, userId);
 
   // --- Folders (before /:id, which would catch "folders") ---------------------
+  // A tree: each folder has a parent (or none) and a position among the
+  // folders of that parent, its order of priority.
+
+  type FolderRow = { id: number; subject: string; parent_id: number | null };
+  const folder = (id: number, userId: number) =>
+    db.prepare('SELECT id, subject_id AS subject, parent_id FROM piece_folders WHERE id = ? AND user_id = ?').get(id, userId) as FolderRow | undefined;
+  const nextPosition = (userId: number, subject: string, parent: number | null) =>
+    ((db.prepare('SELECT MAX(position) AS last FROM piece_folders WHERE user_id = ? AND subject_id = ? AND parent_id IS ?')
+      .get(userId, subject, parent) as { last: number | null }).last ?? -1) + 1;
+  // Moving `id` under `parent` must not put a folder inside itself.
+  const createsCycle = (id: number, parent: number | null, userId: number) => {
+    for (let at = parent; at !== null; at = folder(at, userId)?.parent_id ?? null) if (at === id) return true;
+    return false;
+  };
 
   router.get('/folders', (req, res) => {
     const subject = typeof req.query.subject === 'string' ? req.query.subject : null;
     const rows = db.prepare(`
-      SELECT id, subject_id AS subject, name, position FROM piece_folders
+      SELECT id, subject_id AS subject, name, parent_id, position FROM piece_folders
       WHERE user_id = ? AND (? IS NULL OR subject_id = ?) ORDER BY position, id
     `).all(req.user!.id, subject, subject);
     res.json({ success: true, data: rows });
@@ -73,14 +89,14 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     const parsed = folderCreate.safeParse(req.body);
     if (!parsed.success) return void res.status(400).json({ success: false, error: 'Nom de dossier invalide' });
     const { subject, name } = parsed.data;
-    const { last } = db.prepare('SELECT MAX(position) AS last FROM piece_folders WHERE user_id = ? AND subject_id = ?')
-      .get(req.user!.id, subject) as { last: number | null };
-    const r = db.prepare('INSERT INTO piece_folders (user_id, subject_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(req.user!.id, subject, name, (last ?? -1) + 1, Date.now());
+    const parent = parsed.data.parent_id ?? null;
+    if (parent !== null && folder(parent, req.user!.id)?.subject !== subject) return void res.status(400).json({ success: false, error: 'Dossier parent introuvable' });
+    const r = db.prepare('INSERT INTO piece_folders (user_id, subject_id, name, parent_id, position, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(req.user!.id, subject, name, parent, nextPosition(req.user!.id, subject, parent), Date.now());
     res.status(201).json({ success: true, data: { id: Number(r.lastInsertRowid) } });
   });
 
-  // New order of priority: the folders' ids, most important first.
+  // New order of priority among sibling folders: their ids, most important first.
   router.put('/folders/order', (req, res) => {
     const parsed = folderOrder.safeParse(req.body);
     if (!parsed.success) return void res.status(400).json({ success: false, error: 'Ordre invalide' });
@@ -89,20 +105,34 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     res.json({ success: true });
   });
 
+  // Rename, or move into another folder (parent_id null: top level).
   router.patch('/folders/:id', (req, res) => {
-    const parsed = z.object({ name: folderName }).safeParse(req.body);
-    if (!parsed.success) return void res.status(400).json({ success: false, error: 'Nom de dossier invalide' });
-    const r = db.prepare('UPDATE piece_folders SET name = ? WHERE id = ? AND user_id = ?').run(parsed.data.name, Number(req.params.id), req.user!.id);
-    if (!r.changes) return void res.status(404).json({ success: false, error: 'Dossier introuvable' });
+    const parsed = folderUpdate.safeParse(req.body);
+    if (!parsed.success) return void res.status(400).json({ success: false, error: 'Dossier invalide' });
+    const id = Number(req.params.id);
+    const current = folder(id, req.user!.id);
+    if (!current) return void res.status(404).json({ success: false, error: 'Dossier introuvable' });
+    const { name, parent_id } = parsed.data;
+    if (parent_id !== undefined && parent_id !== current.parent_id) {
+      if (parent_id !== null && folder(parent_id, req.user!.id)?.subject !== current.subject) return void res.status(400).json({ success: false, error: 'Dossier parent introuvable' });
+      if (createsCycle(id, parent_id, req.user!.id)) return void res.status(400).json({ success: false, error: 'Un dossier ne peut pas aller dans un de ses sous-dossiers' });
+      db.prepare('UPDATE piece_folders SET parent_id = ?, position = ? WHERE id = ?').run(parent_id, nextPosition(req.user!.id, current.subject, parent_id), id);
+    }
+    if (name !== undefined) db.prepare('UPDATE piece_folders SET name = ? WHERE id = ?').run(name, id);
     res.json({ success: true });
   });
 
-  // The folder's pieces are kept, out of any folder.
+  // Nothing is lost: the folder's pieces and subfolders move up to its parent.
   router.delete('/folders/:id', (req, res) => {
     const id = Number(req.params.id);
+    const current = folder(id, req.user!.id);
+    if (!current) return void res.json({ success: true });
     db.transaction(() => {
-      db.prepare('UPDATE pieces SET folder_id = NULL WHERE folder_id = ? AND user_id = ?').run(id, req.user!.id);
-      db.prepare('DELETE FROM piece_folders WHERE id = ? AND user_id = ?').run(id, req.user!.id);
+      db.prepare('UPDATE pieces SET folder_id = ? WHERE folder_id = ? AND user_id = ?').run(current.parent_id, id, req.user!.id);
+      const children = db.prepare('SELECT id FROM piece_folders WHERE parent_id = ? ORDER BY position, id').all(id) as { id: number }[];
+      let at = nextPosition(req.user!.id, current.subject, current.parent_id);
+      for (const c of children) db.prepare('UPDATE piece_folders SET parent_id = ?, position = ? WHERE id = ?').run(current.parent_id, at++, c.id);
+      db.prepare('DELETE FROM piece_folders WHERE id = ?').run(id);
     })();
     res.json({ success: true });
   });

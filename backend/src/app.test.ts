@@ -187,9 +187,26 @@ describe('auth and progress', () => {
     await me.patch(`/api/pieces/${id}`).send({ difficulty: 'trivial' }).expect(400);
     meta = (await me.get('/api/pieces').expect(200)).body.data[0];
     expect(meta).toMatchObject({ folder_id: first, difficulty: 'hard', title: 'Do majeur' });
+
+    // Subfolders: no folder inside itself; deleting moves the content up.
+    const sub = (await me.post('/api/pieces/folders').send({ subject: 'piano', name: 'Chopin', parent_id: first }).expect(201)).body.data.id;
+    const subsub = (await me.post('/api/pieces/folders').send({ subject: 'piano', name: 'Nocturnes', parent_id: sub }).expect(201)).body.data.id;
+    await me.post('/api/pieces/folders').send({ subject: 'piano', name: 'x', parent_id: otherFolder }).expect(400);
+    await me.patch(`/api/pieces/folders/${first}`).send({ parent_id: subsub }).expect(400);
+    await me.patch(`/api/pieces/folders/${first}`).send({ parent_id: first }).expect(400);
+    await me.patch(`/api/pieces/folders/${subsub}`).send({ parent_id: second }).expect(200);
+    await me.patch(`/api/pieces/folders/${subsub}`).send({ parent_id: sub }).expect(200);
+    await me.patch(`/api/pieces/${id}`).send({ folder_id: sub }).expect(200);
+    await me.delete(`/api/pieces/folders/${sub}`).expect(200);
+    const tree = (await me.get('/api/pieces/folders?subject=piano').expect(200)).body.data as { id: number; parent_id: number | null }[];
+    expect(tree.find((f) => f.id === subsub)?.parent_id).toBe(first);
+    expect((await me.get('/api/pieces').expect(200)).body.data[0].folder_id).toBe(first);
+
     await me.delete(`/api/pieces/folders/${first}`).expect(200);
     meta = (await me.get('/api/pieces').expect(200)).body.data[0];
     expect(meta).toMatchObject({ folder_id: null, difficulty: 'hard' });
+    const top = (await me.get('/api/pieces/folders?subject=piano').expect(200)).body.data as { id: number; parent_id: number | null }[];
+    expect(top.find((f) => f.id === subsub)?.parent_id).toBeNull();
     await me.delete(`/api/pieces/${id}`).expect(200);
     expect((await me.get('/api/pieces').expect(200)).body.data).toHaveLength(0);
   });
