@@ -1,5 +1,4 @@
-import { pieceDifficulties, type PieceDifficulty } from '@learn/shared';
-import { useCallback, useEffect, useState, type DragEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useAuth } from '../../../app/auth';
 import { Field, inputClass } from '../../../components/Field';
@@ -7,20 +6,19 @@ import { ChevronDownIcon, PencilIcon, PlusIcon } from '../../../components/icons
 import { ConfirmModal, Modal } from '../../../components/Modal';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
 import { foldersApi, piecesApi } from './api';
+import { foldersToReveal, type FolderKey } from './folderPath';
 import { ImportModal } from './ImportModal';
 import { Cover, DifficultyBadge, DifficultyPicker, FolderSelect } from './pieceFields';
-import { difficultyLabels, difficultyStyles, sourceLabels, type PieceFolder, type PieceMeta, type PieceSummary } from './types';
+import { sourceLabels, type PieceFolder, type PieceMeta, type PieceSummary } from './types';
 
 const formatDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
-// A folder, or "none" for the pieces out of any folder.
-type FolderKey = number | 'none';
 type Dragged = { kind: 'piece' | 'folder'; id: number };
 const INDENT = 14; // px per folder level
 
 // Side panel of the practice page: the account's pieces, sorted into a tree
-// of folders (in order of priority) and tagged by difficulty, and the import.
-// Every folder starts closed.
+// of folders, and the import.
+// Folders start closed, except the way down to the current piece.
 export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   subject: string;
   current: number | null;
@@ -31,7 +29,6 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   const { user } = useAuth();
   const [pieces, setPieces] = useState<PieceSummary[] | null>(null);
   const [folders, setFolders] = useState<PieceFolder[]>([]);
-  const [filter, setFilter] = useState<PieceDifficulty | null>(null);
   const [open, setOpen] = useState<FolderKey[]>([]);
   const [importing, setImporting] = useState(false);
   const [editing, setEditing] = useState<PieceSummary | null>(null);
@@ -43,11 +40,20 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   const [dropTarget, setDropTarget] = useState<FolderKey | null>(null);
   const [error, setError] = useState('');
 
+  // Read at the first load only: later reloads (after an edit) keep what the
+  // user opened or closed.
+  const currentRef = useRef(current);
+  const revealed = useRef(false);
+
   const load = useCallback(() => {
     if (!user) return;
     Promise.all([piecesApi.list(subject), foldersApi.list(subject)]).then(([p, f]) => {
       setPieces(p);
       setFolders(f);
+      if (!revealed.current) {
+        revealed.current = true;
+        setOpen(foldersToReveal(currentRef.current, p, f));
+      }
     }, (e: Error) => setError(e.message));
   }, [user, subject]);
   useEffect(load, [load]);
@@ -66,8 +72,8 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
     for (let at: number | null = id; at !== null; at = folders.find((f) => f.id === at)?.parent_id ?? null) if (at === ancestor) return true;
     return false;
   };
-  const visible = (pieces ?? []).filter((p) => !filter || p.difficulty === filter);
-  const countIn = (id: number, list: PieceSummary[]) => list.filter((p) => { const f = folderOf(p); return f !== null && within(f, id); }).length;
+  const visible = pieces ?? [];
+  const countIn = (id: number) => visible.filter((p) => { const f = folderOf(p); return f !== null && within(f, id); }).length;
 
   const patchPiece = (p: PieceSummary, change: Partial<PieceMeta> & { cover?: string | null }) => {
     const meta = { title: p.title, artist: p.artist, folder_id: p.folder_id, difficulty: p.difficulty, cover: p.cover, ...change };
@@ -160,19 +166,20 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
           </div>
         ) : (
           <>
-            <div className="space-y-3 p-4 pb-2">
-              <button type="button" onClick={() => setImporting(true)} className={`${primaryButton} w-full`}>
+            <div className="flex gap-2 p-4 pb-2">
+              <button type="button" onClick={() => setImporting(true)} className={`${primaryButton} min-w-0 flex-1`}>
                 <PlusIcon className="h-4 w-4" />Importer un morceau
               </button>
-              {pieces && pieces.length > 0 && (
-                <div className="flex flex-wrap gap-1" role="group" aria-label="Filtrer par difficulté">
-                  <FilterChip on={filter === null} onClick={() => setFilter(null)}>Tous</FilterChip>
-                  {pieceDifficulties.map((d) => (
-                    <FilterChip key={d} on={filter === d} onClick={() => setFilter(filter === d ? null : d)}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${difficultyStyles[d].dot}`} />{difficultyLabels[d]}
-                    </FilterChip>
-                  ))}
-                </div>
+              {pieces && (
+                <button
+                  type="button"
+                  onClick={() => setNaming({ folder: null, parent: null })}
+                  title="Nouveau dossier"
+                  aria-label="Nouveau dossier"
+                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-white px-3 text-neutral-700 transition-colors hover:bg-neutral-50"
+                >
+                  <FolderPlusIcon />
+                </button>
               )}
             </div>
 
@@ -215,11 +222,6 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
                 </div>
               )}
 
-              {pieces && (
-                <button type="button" onClick={() => setNaming({ folder: null, parent: null })} className="mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900">
-                  <PlusIcon className="h-4 w-4" />Nouveau dossier
-                </button>
-              )}
               <div className="px-3"><ErrorText>{error}</ErrorText></div>
             </div>
           </>
@@ -296,10 +298,7 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   );
 
   function folderNode(f: PieceFolder, depth: number, index: number, siblings: number): ReactNode {
-    const shown = countIn(f.id, visible);
-    const total = countIn(f.id, pieces ?? []);
-    // Filtering by difficulty hides the folders with nothing to show.
-    if (filter && shown === 0) return null;
+    const total = countIn(f.id);
     const isOpen = open.includes(f.id);
     const subfolders = childrenOf(f.id);
     const own = visible.filter((p) => folderOf(p) === f.id);
@@ -312,13 +311,12 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
         <div {...dragProps({ kind: 'folder', id: f.id })} className="group/folder flex items-center gap-1 rounded-lg pr-1 hover:bg-neutral-50" style={{ paddingLeft: depth * INDENT }}>
           <button type="button" onClick={() => toggle(f.id)} className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left">
             <ChevronDownIcon className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
-            {depth === 0 && index === 0 && siblings > 1 && <span title="Dossier prioritaire" className="text-amber-500">★</span>}
             <span className="truncate text-sm font-semibold text-neutral-900">{f.name}</span>
-            <span className="shrink-0 text-xs text-neutral-400">{filter ? `${shown}/${total}` : total}</span>
+            <span className="shrink-0 text-xs text-neutral-400">{total}</span>
           </button>
           <div className="hidden shrink-0 items-center group-hover/folder:flex">
-            <IconButton title="Plus prioritaire" disabled={index === 0} onClick={() => shift(f, -1)}>↑</IconButton>
-            <IconButton title="Moins prioritaire" disabled={index === siblings - 1} onClick={() => shift(f, 1)}>↓</IconButton>
+            <IconButton title="Monter" disabled={index === 0} onClick={() => shift(f, -1)}>↑</IconButton>
+            <IconButton title="Descendre" disabled={index === siblings - 1} onClick={() => shift(f, 1)}>↓</IconButton>
             <IconButton title="Nouveau sous-dossier" onClick={() => setNaming({ folder: null, parent: f.id })}><PlusIcon className="h-3.5 w-3.5" /></IconButton>
             <IconButton title="Renommer" onClick={() => setNaming({ folder: f, parent: f.parent_id })}><PencilIcon className="h-3.5 w-3.5" /></IconButton>
             <IconButton title="Supprimer le dossier" danger onClick={() => setRemovingFolder(f)}><TrashIcon /></IconButton>
@@ -330,7 +328,7 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
             {own.map((p) => row(p, depth + 1))}
             {subfolders.length === 0 && own.length === 0 && (
               <p className="py-2 pr-3 text-xs text-neutral-400" style={{ paddingLeft: (depth + 1) * INDENT + 12 }}>
-                {filter ? `Aucun morceau « ${difficultyLabels[filter]} » ici.` : 'Vide : glisse un morceau ou un dossier ici.'}
+                Vide : glisse un morceau ou un dossier ici.
               </p>
             )}
           </div>
@@ -374,19 +372,6 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   }
 }
 
-function FilterChip({ on, onClick, children }: { on: boolean; onClick(): void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${on ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function IconButton({ title, onClick, disabled, danger, children }: { title: string; onClick(): void; disabled?: boolean; danger?: boolean; children: ReactNode }) {
   return (
     <button
@@ -402,6 +387,12 @@ function IconButton({ title, onClick, disabled, danger, children }: { title: str
     </button>
   );
 }
+
+const FolderPlusIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v5M9.5 13.5h5" />
+  </svg>
+);
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>

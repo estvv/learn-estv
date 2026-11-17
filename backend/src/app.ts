@@ -24,7 +24,8 @@ export function createApp(db: DB, { findCover = catalogCover }: { findCover?: Co
     crossOriginResourcePolicy: { policy: 'same-site' },
   }));
   app.use(compression());
-  app.use((req, res, next) => (req.path === '/api/pieces' ? next() : express.json({ limit: '2mb' })(req, res, next)));
+  // Pieces and corrected notes have their own, larger limit.
+  app.use((req, res, next) => (/^\/api\/pieces(\/\d+\/notes)?$/.test(req.path) ? next() : express.json({ limit: '2mb' })(req, res, next)));
   app.use(cookieParser());
 
   app.get('/health', (_req, res) => void res.json({ status: 'ok' }));

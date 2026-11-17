@@ -14,7 +14,18 @@ export const pieceNoteSchema = z.object({
   velocity: z.number().min(0).max(1),
   // Unknown for most audio transcriptions and single-track MIDI files.
   hand: z.enum(hands).nullable(),
+  // Index in the piece's `tracks`, for files with several instruments.
+  track: z.number().int().min(0).max(63).optional(),
 });
+
+// One instrument of a multi-track file (MIDI): every track is kept, the
+// owner turns them on and off.
+export const pieceTrackSchema = z.object({
+  name: z.string().max(120),
+  instrument: z.string().max(120).nullable(),
+  enabled: z.boolean(),
+});
+export type PieceTrack = z.infer<typeof pieceTrackSchema>;
 
 export const pieceSources = ['midi', 'musicxml', 'audio'] as const;
 
@@ -30,7 +41,9 @@ export const pieceSchema = z.object({
   // Beats per minute of the original, when known (MIDI, MusicXML).
   bpm: z.number().positive().nullable(),
   notes: z.array(pieceNoteSchema).min(1).max(50_000),
-});
+  // Only for files with several instruments.
+  tracks: z.array(pieceTrackSchema).max(64).optional(),
+}).refine((p) => p.notes.every((n) => n.track === undefined || (p.tracks && n.track < p.tracks.length)), { message: 'Piste inconnue' });
 
 export type PieceNote = z.infer<typeof pieceNoteSchema>;
 export type Piece = z.infer<typeof pieceSchema>;

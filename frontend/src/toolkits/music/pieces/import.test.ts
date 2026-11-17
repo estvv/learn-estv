@@ -25,6 +25,62 @@ describe('MIDI import', () => {
   });
 });
 
+describe('MIDI import with several instruments', () => {
+  const band = () => {
+    const midi = new Midi();
+    midi.header.setTempo(120);
+    const piano = midi.addTrack();
+    piano.name = 'Piano';
+    piano.instrument.number = 0; // acoustic grand piano
+    piano.addNote({ midi: 72, time: 0, duration: 0.5 });
+    piano.addNote({ midi: 48, time: 0, duration: 0.5 });
+    const bass = midi.addTrack();
+    bass.instrument.number = 33; // electric bass (finger)
+    bass.addNote({ midi: 36, time: 0.5, duration: 0.5 });
+    const drums = midi.addTrack();
+    drums.channel = 9;
+    drums.addNote({ midi: 38, time: 0, duration: 0.1 });
+    return new File([midi.toArray() as BlobPart], 'Groupe - Chanson.mid');
+  };
+
+  it('keeps every instrument but the drums, piano on and the others off', async () => {
+    const r = await importMidi(band());
+    expect(r.tracks).toEqual([
+      { name: 'Piano', instrument: 'Acoustic grand piano', enabled: true },
+      { name: 'Electric bass (finger)', instrument: 'Electric bass (finger)', enabled: false },
+    ]);
+    expect(r.notes.map((n) => [n.midi, n.track])).toEqual([[72, 0], [48, 0], [36, 1]]);
+    // One piano track: hands split at middle C.
+    expect(r.notes.find((n) => n.midi === 72)?.hand).toBe('right');
+    expect(r.notes.find((n) => n.midi === 48)?.hand).toBe('left');
+    expect(r.warnings.some((w) => w.includes('Pistes'))).toBe(true);
+  });
+
+  it('has no tracks for a single-instrument file', async () => {
+    const midi = new Midi();
+    midi.addTrack().addNote({ midi: 60, time: 0, duration: 1 });
+    const r = await importMidi(new File([midi.toArray() as BlobPart], 'solo.mid'));
+    expect(r.tracks).toBeUndefined();
+    expect(r.notes[0].track).toBeUndefined();
+  });
+});
+
+describe('player with tracks turned on and off', () => {
+  it('keeps its place and the whole-piece duration when the notes change', () => {
+    const notes = [
+      { midi: 60, time: 0, duration: 1, velocity: 0.8, hand: null, track: 0 },
+      { midi: 40, time: 3, duration: 1, velocity: 0.8, hand: null, track: 1 },
+    ];
+    const player = new PiecePlayer(notes, 4);
+    player.seek(2);
+    player.setNotes(notes.filter((n) => n.track === 0));
+    expect(player.position).toBe(2);
+    expect(player.duration).toBe(4);
+    expect(player.notes).toHaveLength(1);
+    player.dispose();
+  });
+});
+
 const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <work><work-title>Petite pièce</work-title></work>

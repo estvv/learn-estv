@@ -136,6 +136,8 @@ CREATE TABLE IF NOT EXISTS pieces (
   difficulty TEXT,
   -- Cover image URL; '' when searched without result, NULL when not searched yet.
   cover TEXT,
+  -- Instruments of a multi-track file, JSON [{ name, instrument, enabled }].
+  tracks TEXT,
   source TEXT NOT NULL,
   bpm REAL,
   data TEXT NOT NULL,

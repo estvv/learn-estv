@@ -34,8 +34,10 @@ export interface PlayerState {
 // Plays a piece in sync with the screen. `position` is read every animation
 // frame (falling notes) so it lives outside React; coarse state is observable.
 export class PiecePlayer {
-  readonly notes: PieceNote[];
-  readonly duration: number;
+  notes: PieceNote[] = [];
+  // Of the whole piece: turning tracks off does not change the timeline
+  // (cutting the piece in the editor does).
+  duration: number;
   readonly state = new Observable<PlayerState>({ playing: false, expected: [], played: [], wrong: null, finished: false });
   position = 0;
   rate = 1;
@@ -43,7 +45,7 @@ export class PiecePlayer {
   // Played over and over while set.
   loop: Loop | null = null;
 
-  private groups: Group[];
+  private groups: Group[] = [];
   private nextNote = 0; // listen mode: index of the next note to sound
   private nextGroup = 0; // wait mode: index of the next chord to wait for
   private waiting = false;
@@ -52,16 +54,27 @@ export class PiecePlayer {
   private wrongTimer: ReturnType<typeof setTimeout> | undefined;
   private unsubscribe: () => void;
 
-  constructor(notes: PieceNote[]) {
+  constructor(notes: PieceNote[], duration?: number) {
+    this.load(notes);
+    this.duration = duration ?? this.notes.reduce((end, n) => Math.max(end, n.time + n.duration), 0);
+    this.unsubscribe = inputBus.subscribe((e) => this.onInput(e));
+  }
+
+  // Other notes (tracks turned on or off, corrections), same place in the piece.
+  setNotes(notes: PieceNote[], duration = this.duration) {
+    this.load(notes);
+    this.duration = duration;
+    this.seek(this.position);
+  }
+
+  private load(notes: PieceNote[]) {
     this.notes = [...notes].sort((a, b) => a.time - b.time);
-    this.duration = this.notes.reduce((end, n) => Math.max(end, n.time + n.duration), 0);
     this.groups = [];
     for (const n of this.notes) {
       const last = this.groups[this.groups.length - 1];
       if (last && n.time - last.time <= CHORD_WINDOW) last.notes.push(n);
       else this.groups.push({ time: n.time, notes: [n] });
     }
-    this.unsubscribe = inputBus.subscribe((e) => this.onInput(e));
   }
 
   dispose() {

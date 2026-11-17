@@ -1,4 +1,4 @@
-import type { Piece } from '@learn/shared';
+import type { Piece, PieceNote } from '@learn/shared';
 import { api } from '../../../lib/api';
 import type { PieceFolder, PieceMeta, PieceSummary, StoredPiece } from './types';
 
@@ -9,8 +9,10 @@ export const piecesApi = {
     api<{ id: number }>('/pieces', { method: 'POST', json: { subject, piece, ...extra } }),
   // Answers the cover, searched again when the title or artist changed.
   // cover: picked by hand (from a link); left out, it follows the title and artist.
-  update: (id: number, meta: Partial<PieceMeta> & { cover?: string | null }) => api<{ cover: string | null }>(`/pieces/${id}`, { method: 'PATCH', json: meta }),
+  update: (id: number, meta: Partial<PieceMeta> & { cover?: string | null; tracks_enabled?: boolean[] }) => api<{ cover: string | null }>(`/pieces/${id}`, { method: 'PATCH', json: meta }),
   remove: (id: number) => api(`/pieces/${id}`, { method: 'DELETE' }),
+  // Corrected notes replace the piece's.
+  saveNotes: (id: number, notes: PieceNote[]) => api(`/pieces/${id}/notes`, { method: 'PUT', json: { notes } }),
   coverFromLink: (link: string, signal?: AbortSignal) =>
     api<{ cover: string | null }>(`/pieces/cover?${new URLSearchParams({ link })}`, { signal }),
   findCover: (title: string, artist: string | null, signal?: AbortSignal) =>

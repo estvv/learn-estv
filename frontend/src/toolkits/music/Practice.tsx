@@ -50,7 +50,13 @@ export function MusicPractice({ subject }: { subject: string }) {
 
       {pieceId ? (
         piece ? (
-          <PlayAlong key={piece.id} piece={piece} labels={labels} keyboardHeight={keyboardHeight(0.24)} />
+          <PlayAlong
+            key={piece.id}
+            piece={piece}
+            labels={labels}
+            keyboardHeight={keyboardHeight(0.24)}
+            onNotesSaved={(notes) => setPiece((p) => (p && p.id === piece.id ? { ...p, notes } : p))}
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-neutral-400">{error || 'Chargement du morceau…'}</div>
         )

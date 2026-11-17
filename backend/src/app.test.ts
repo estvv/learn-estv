@@ -147,6 +147,32 @@ describe('auth and progress', () => {
     await request(app).get('/api/pieces').expect(401);
     expect(list[0].artist).toBeNull();
     expect(list[0].cover).toBe('https://img.test/-/Gamme');
+
+    // Several instruments: every track kept, switched on and off.
+    const band = {
+      ...piece, title: 'Groupe',
+      tracks: [{ name: 'Piano', instrument: 'acoustic grand piano', enabled: true }, { name: 'Basse', instrument: 'electric bass (finger)', enabled: false }],
+      notes: [{ ...piece.notes[0], track: 0 }, { ...piece.notes[1], track: 1 }],
+    };
+    await me.post('/api/pieces').send({ subject: 'piano', piece: { ...band, notes: [{ ...piece.notes[0], track: 5 }] } }).expect(400);
+    const bandId = (await me.post('/api/pieces').send({ subject: 'piano', piece: band }).expect(201)).body.data.id;
+    await me.patch(`/api/pieces/${bandId}`).send({ tracks_enabled: [true] }).expect(400);
+    await me.patch(`/api/pieces/${bandId}`).send({ tracks_enabled: [false, true] }).expect(200);
+    const bandFull = (await me.get(`/api/pieces/${bandId}`).expect(200)).body.data;
+    expect(bandFull.tracks.map((t: { enabled: boolean }) => t.enabled)).toEqual([false, true]);
+    expect(bandFull.notes.map((n: { track: number }) => n.track)).toEqual([1, 0]);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.tracks).toBeUndefined();
+
+    // Corrected notes replace the piece's.
+    const fixed = [{ midi: 61, time: 0, duration: 0.5, velocity: 0.8, hand: 'right', track: 1 }];
+    await me.put(`/api/pieces/${bandId}/notes`).send({ notes: [{ ...fixed[0], track: 7 }] }).expect(400);
+    await me.put(`/api/pieces/${bandId}/notes`).send({ notes: [] }).expect(400);
+    await other.put(`/api/pieces/${bandId}/notes`).send({ notes: fixed }).expect(404);
+    await me.put(`/api/pieces/${bandId}/notes`).send({ notes: fixed }).expect(200);
+    const corrected = (await me.get(`/api/pieces/${bandId}`).expect(200)).body.data;
+    expect(corrected.notes).toEqual(fixed);
+    expect((await me.get('/api/pieces').expect(200)).body.data.find((p: { id: number }) => p.id === bandId)).toMatchObject({ note_count: 1, duration: 0.5 });
+    await me.delete(`/api/pieces/${bandId}`).expect(200);
     await me.patch(`/api/pieces/${id}`).send({ title: 'Do majeur' }).expect(200);
     const renamed = await me.patch(`/api/pieces/${id}`).send({ artist: '  Bach ' }).expect(200);
     expect(renamed.body.data.cover).toBe('https://img.test/Bach/Do majeur');
