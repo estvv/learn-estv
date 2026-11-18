@@ -33,6 +33,11 @@ export const pieceSources = ['midi', 'musicxml', 'audio'] as const;
 export const pieceDifficulties = ['easy', 'medium', 'hard', 'impossible'] as const;
 export type PieceDifficulty = (typeof pieceDifficulties)[number];
 
+// How much of a piece is shown and played: everything, the melody over the
+// bass, or the melody alone (worked out in the player, the notes unchanged).
+export const pieceLevels = ['original', 'simplified', 'melody'] as const;
+export type PieceLevel = (typeof pieceLevels)[number];
+
 export const pieceSchema = z.object({
   title: z.string().trim().min(1).max(120),
   // Performer or composer, when known.

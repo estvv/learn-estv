@@ -140,6 +140,8 @@ CREATE TABLE IF NOT EXISTS pieces (
   cover TEXT,
   -- Instruments of a multi-track file, JSON [{ name, instrument, enabled }].
   tracks TEXT,
+  -- Level shown in the player (original, simplified, melody); NULL: original.
+  level TEXT,
   source TEXT NOT NULL,
   bpm REAL,
   data TEXT NOT NULL,

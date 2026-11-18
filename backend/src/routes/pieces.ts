@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { pieceDifficulties, pieceDuration, pieceNoteSchema, pieceSchema } from '@learn/shared';
+import { pieceDifficulties, pieceDuration, pieceLevels, pieceNoteSchema, pieceSchema } from '@learn/shared';
 import { z } from 'zod';
 import { requireUser } from '../auth/session.js';
 import { coverFromLink, isCatalogImage, type CoverFinder } from '../covers.js';
@@ -26,6 +26,7 @@ const updateBody = z.object({
   description: description.optional(),
   folder_id: folderId.optional(),
   difficulty: difficulty.optional(),
+  level: z.enum(pieceLevels).optional(),
   // Which tracks are on, one flag per track of the piece.
   tracks_enabled: z.array(z.boolean()).max(64).optional(),
   // Cover picked by hand (from a link): a catalogue image, or null for none.
@@ -169,7 +170,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
   });
 
   router.get('/:id', (req, res) => {
-    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, data FROM pieces WHERE id = ? AND user_id = ?`)
+    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, COALESCE(level, 'original') AS level, data FROM pieces WHERE id = ? AND user_id = ?`)
       .get(Number(req.params.id), req.user!.id) as { data: string } & Record<string, unknown> | undefined;
     if (!row) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
     const { data, tracks, ...meta } = row;
@@ -212,6 +213,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     if (b.artist !== undefined) { sets.push('artist = ?'); values.push(artistOrNull(b.artist)); }
     if (b.folder_id !== undefined) { sets.push('folder_id = ?'); values.push(b.folder_id); }
     if (b.difficulty !== undefined) { sets.push('difficulty = ?'); values.push(b.difficulty); }
+    if (b.level !== undefined) { sets.push('level = ?'); values.push(b.level); }
     if (b.description !== undefined) { sets.push('description = ?'); values.push(textOrNull(b.description)); }
     if (b.tracks_enabled !== undefined) {
       const tracks = old.tracks ? (JSON.parse(old.tracks) as { enabled: boolean }[]) : [];

@@ -1,4 +1,4 @@
-import type { Piece, PieceDifficulty } from '@learn/shared';
+import type { Piece, PieceDifficulty, PieceLevel } from '@learn/shared';
 
 export interface ImportResult extends Piece {
   // Things the user should know about the conversion.
@@ -29,6 +29,7 @@ export interface StoredPiece extends Piece {
   difficulty?: PieceDifficulty | null;
   cover?: string | null;
   description?: string | null;
+  level?: PieceLevel;
 }
 
 export interface PieceFolder {

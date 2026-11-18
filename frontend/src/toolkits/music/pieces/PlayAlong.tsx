@@ -1,4 +1,4 @@
-import { pieceDuration, type PieceNote, type PieceTrack } from '@learn/shared';
+import { pieceDuration, type PieceLevel, type PieceNote, type PieceTrack } from '@learn/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PencilIcon, RepeatIcon } from '../../../components/icons';
 import { ConfirmModal } from '../../../components/Modal';
@@ -15,6 +15,7 @@ import { FallingNotes } from './FallingNotes';
 import { PiecePlayer, pieceRange, type PlayMode } from './player';
 import { Cover } from './pieceFields';
 import { detectSections, type Section } from './sections';
+import { simplify } from './simplify';
 import type { StoredPiece } from './types';
 
 const RATES = [0.5, 0.75, 1, 1.25];
@@ -40,10 +41,15 @@ export function PlayAlong({ piece, labels, keyboardHeight, onNotesSaved }: {
   // Multi-track files: the notes of the tracks turned on. The player stays the
   // same when tracks change, so does the place in the piece.
   const [enabled, setEnabled] = useState<boolean[]>(() => piece.tracks?.map((t) => t.enabled) ?? []);
-  const notes = useMemo(
+  const trackNotes = useMemo(
     () => (piece.tracks ? source.filter((n) => n.track === undefined || enabled[n.track]) : source),
     [source, piece.tracks, enabled],
   );
+  // Level: the whole piece, or an easier version (see simplify.ts). The
+  // editor always works on the real notes.
+  const [level, setLevel] = useState<PieceLevel>(piece.level ?? 'original');
+  const isEditing = history !== null;
+  const notes = useMemo(() => (isEditing ? trackNotes : simplify(trackNotes, level)), [trackNotes, level, isEditing]);
   const duration = useMemo(() => pieceDuration(source), [source]);
   const player = useMemo(() => new PiecePlayer(piece.notes, pieceDuration(piece.notes)), [piece.notes]);
   useEffect(() => () => player.dispose(), [player]);
@@ -269,6 +275,22 @@ export function PlayAlong({ piece, labels, keyboardHeight, onNotesSaved }: {
               >
                 <PencilIcon className="h-4 w-4" />Corriger
               </button>
+              <select
+                value={level}
+                onChange={(e) => {
+                  const next = e.target.value as PieceLevel;
+                  // Other notes, other sections: a running loop would no longer fit.
+                  applyLoop(null);
+                  setLevel(next);
+                  void piecesApi.update(piece.id, { level: next }).catch(() => {});
+                }}
+                title="Niveau : le morceau complet, la mélodie sur la basse, ou la mélodie seule"
+                className="rounded-lg border border-neutral-200 bg-white py-1.5 pl-2 pr-1 text-sm text-neutral-700 hover:border-neutral-300 focus:outline-none"
+              >
+                <option value="original">Original</option>
+                <option value="simplified">Simplifié</option>
+                <option value="melody">Mélodie seule</option>
+              </select>
               <Segmented<PlayMode>
                 value={mode}
                 onChange={(m) => { setMode(m); player.setMode(m); }}

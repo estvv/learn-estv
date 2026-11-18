@@ -150,6 +150,10 @@ describe('auth and progress', () => {
     await me.patch(`/api/pieces/${id}`).send({ description: '  boucle du refrain ' }).expect(200);
     expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.description).toBe('boucle du refrain');
     await me.patch(`/api/pieces/${id}`).send({ description: 'x'.repeat(201) }).expect(400);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.level).toBe('original');
+    await me.patch(`/api/pieces/${id}`).send({ level: 'melody' }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.level).toBe('melody');
+    await me.patch(`/api/pieces/${id}`).send({ level: 'expert' }).expect(400);
     await me.patch(`/api/pieces/${id}`).send({ description: '' }).expect(200);
     expect((await me.get('/api/pieces').expect(200)).body.data[0].description).toBeNull();
     const withDesc = (await me.post('/api/pieces').send({ subject: 'piano', piece, description: 'en entier' }).expect(201)).body.data.id;
