@@ -2,7 +2,7 @@ import { isDue, type Accent, type Mastery } from '@learn/shared';
 import { useMemo } from 'react';
 import { Link, Navigate, useParams } from 'react-router';
 import { ArrowRightIcon, CheckIcon, ChevronDownIcon, PlayIcon, RepeatIcon } from '../components/icons';
-import { SubjectLogo } from '../components/SubjectLogo';
+import { SubjectImage } from '../components/SubjectImage';
 import { Badge, Bar, ErrorText, LoadingState, Page, panel, primaryButton, secondaryButton, SectionTitle } from '../components/ui';
 import { nextStepOf, SubjectModel } from '../content/subject';
 import { useSubject } from '../content/useSubject';
@@ -40,7 +40,7 @@ export function SubjectPage() {
       <div className="mb-8">
         <Link to="/" className="text-sm text-neutral-500 hover:text-neutral-900">← Sujets</Link>
         <div className="mt-3 flex flex-wrap items-center gap-4">
-          <SubjectLogo id={pack.subject.id} name={pack.subject.name} accent={a} className="h-14 w-14" text="text-xl" />
+          <SubjectImage id={pack.subject.id} name={pack.subject.name} accent={a} className="h-20 w-32 rounded-xl" text="text-xl" />
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-bold text-neutral-900 md:text-3xl">{pack.subject.name}</h1>
             <p className="mt-1 text-neutral-500">{pack.subject.description}</p>

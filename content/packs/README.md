@@ -46,3 +46,7 @@ Dans les tests web : `$click`, `$type`, `$key`, `$submit`, `$fire`, `$text`, `$t
 Dans tous les tests : `expect(x)` (`toBe`, `toEqual`, `toThrow`, `toReject`…), `$logs` (lignes affichées), `$source` (code sans commentaires), `$capture(f)`, `$sleep(ms)` ; dans les `@types` : `$Expect<$Equal<A, B>>`.
 
 `npm test -w frontend` vérifie tout : chaque solution réussit, chaque départ échoue, les exemples compilent et les réponses aux questions sont les bonnes.
+
+## Image du sujet
+
+`frontend/public/subjects/<id>.png`, 960×600, avec sa source dans `CREDITS.md`. Sans image : une tuile de couleur avec l’initiale.

@@ -3,7 +3,7 @@ import { Link, Navigate, useParams } from 'react-router';
 import { useAuth, type User } from '../app/auth';
 import { Avatar } from '../components/Avatar';
 import { FlameIcon, PencilIcon } from '../components/icons';
-import { SubjectLogo } from '../components/SubjectLogo';
+import { SubjectImage } from '../components/SubjectImage';
 import { Bar, EmptyState, ErrorText, LoadingState, Page, panel, SectionTitle, StatTile } from '../components/ui';
 import { relativeDay } from '../content/overview';
 import { api } from '../lib/api';
@@ -88,7 +88,7 @@ export function ProfilePage() {
             <div className="space-y-3">
               {stats.subjects.map((s) => (
                 <Link key={s.id} to={`/s/${s.id}`} className={`${panel} flex items-center gap-4 px-4 py-3 transition-shadow hover:shadow-md`}>
-                  <SubjectLogo id={s.id} name={s.name} accent={s.accent} className="h-10 w-10" text="text-base" />
+                  <SubjectImage id={s.id} name={s.name} accent={s.accent} className="h-10 w-16 rounded-lg" text="text-base" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3">
                       <span className="truncate text-sm font-semibold text-neutral-900">{s.name}</span>
@@ -112,7 +112,7 @@ export function ProfilePage() {
             <ol className={`${panel} divide-y divide-neutral-100 overflow-hidden`}>
               {stats.recent.map((r) => (
                 <li key={r.step} className="flex items-center gap-3 px-4 py-2.5">
-                  <SubjectLogo id={r.subject} name={r.subject_name} accent={r.accent} className="h-7 w-7" text="text-xs" />
+                  <SubjectImage id={r.subject} name={r.subject_name} accent={r.accent} className="h-7.5 w-12 rounded-md" text="text-xs" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-neutral-900">{r.title}</span>
                     <span className="block text-xs text-neutral-400">{r.subject_name} · {relativeDay(r.completed_at)}</span>
