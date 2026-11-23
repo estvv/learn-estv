@@ -1,6 +1,6 @@
 import { pieceDuration, type PieceLevel, type PieceNote, type PieceTrack } from '@learn/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PencilIcon, RepeatIcon } from '../../../components/icons';
+import { PencilIcon, RepeatIcon, ShuffleIcon } from '../../../components/icons';
 import { ConfirmModal } from '../../../components/Modal';
 import { Segmented } from '../../../components/Segmented';
 import { useObservable } from '../../../lib/store';
@@ -18,16 +18,27 @@ import { detectSections, type Section } from './sections';
 import { simplify } from './simplify';
 import type { StoredPiece } from './types';
 
+// Shuffled listening: the pieces follow one another (see shuffle.ts).
+export interface Listening {
+  next(): void;
+  previous(): void;
+  stop(): void;
+}
+
+// Before that, "previous" goes to the piece before; after, back to the start.
+const RESTART_AFTER = 3;
+
 const RATES = [0.5, 0.75, 1, 1.25];
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 // A piece with falling notes above the keyboard: listen to it, or let it wait
 // for the right notes. "Corriger" turns the notes into an editor for small
 // fixes (see edit.ts).
-export function PlayAlong({ piece, labels, keyboardHeight, onNotesSaved }: {
+export function PlayAlong({ piece, labels, keyboardHeight, listening, onNotesSaved }: {
   piece: StoredPiece;
   labels: KeyLabels;
   keyboardHeight: number;
+  listening?: Listening;
   onNotesSaved(notes: PieceNote[]): void;
 }) {
   // Editing: the notes being corrected, with undo; null when not editing.
@@ -138,6 +149,17 @@ export function PlayAlong({ piece, labels, keyboardHeight, onNotesSaved }: {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [editing]);
 
+  // Shuffled listening: starts by itself, then goes to the next piece.
+  const auto = !!listening;
+  const listeningRef = useRef(listening);
+  listeningRef.current = listening;
+  useEffect(() => {
+    if (auto && !player.state.get().playing) void player.play();
+  }, [auto, player]);
+  useEffect(() => {
+    if (state.finished && !editing) listeningRef.current?.next();
+  }, [state.finished, editing]);
+
   // Notes picked and still there (a deleted note is not "selected").
   const selectedCount = history ? history.present.filter((n) => selected.has(n.id)).length : 0;
 
@@ -202,6 +224,20 @@ export function PlayAlong({ piece, labels, keyboardHeight, onNotesSaved }: {
         </div>
 
         <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
+          {listening && (
+            <>
+              <button
+                type="button"
+                onClick={listening.stop}
+                aria-pressed
+                title="Lecture aléatoire en boucle : cliquer pour rester sur ce morceau"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700 transition-colors hover:bg-sky-200"
+              >
+                <ShuffleIcon className="h-4 w-4" />
+              </button>
+              <SkipButton title="Morceau précédent" flip onClick={() => (player.position > RESTART_AFTER ? seek(0) : listening.previous())} />
+            </>
+          )}
           <button
             type="button"
             onClick={() => player.toggle()}
@@ -212,6 +248,7 @@ export function PlayAlong({ piece, labels, keyboardHeight, onNotesSaved }: {
               ? <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
               : <svg viewBox="0 0 24 24" className="ml-0.5 h-4 w-4" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" /></svg>}
           </button>
+          {listening && <SkipButton title="Morceau suivant" onClick={listening.next} />}
           {sections.length > 1 && (
             <button
               type="button"
@@ -341,7 +378,7 @@ export function PlayAlong({ piece, labels, keyboardHeight, onNotesSaved }: {
       {mode === 'wait' && state.expected.length > 0 && (
         <div className="pb-2 text-center text-xs text-neutral-500">Joue {state.expected.length > 1 ? 'les notes en surbrillance' : 'la note en surbrillance'} pour continuer</div>
       )}
-      {state.finished && <div className="pb-2 text-center text-sm font-medium text-emerald-700">Terminé ! Espace pour rejouer.</div>}
+      {state.finished && !listening && <div className="pb-2 text-center text-sm font-medium text-emerald-700">Terminé ! Espace pour rejouer.</div>}
 
       <div className="relative min-h-0 flex-1 border-t border-neutral-200 bg-white px-2 sm:px-4">
         <FallingNotes
@@ -366,6 +403,14 @@ export function PlayAlong({ piece, labels, keyboardHeight, onNotesSaved }: {
         <PianoKeyboard from={from} to={to} labels={labels} marks={marks} height={keyboardHeight} />
       </div>
     </div>
+  );
+}
+
+function SkipButton({ title, flip, onClick }: { title: string; flip?: boolean; onClick(): void }) {
+  return (
+    <button type="button" onClick={onClick} title={title} aria-label={title} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900">
+      <svg viewBox="0 0 24 24" fill="currentColor" className={`h-4 w-4 ${flip ? '-scale-x-100' : ''}`} aria-hidden><path d="M5 5.3v13.4a.8.8 0 0 0 1.2.7l10.3-6.7a.8.8 0 0 0 0-1.4L6.2 4.6a.8.8 0 0 0-1.2.7Z" /><rect x="17" y="4.5" width="2.5" height="15" rx="1" /></svg>
+    </button>
   );
 }
 

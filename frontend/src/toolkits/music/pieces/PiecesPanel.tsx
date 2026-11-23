@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNod
 import { Link } from 'react-router';
 import { useAuth } from '../../../app/auth';
 import { Field, inputClass } from '../../../components/Field';
-import { ChevronDownIcon, PencilIcon, PlusIcon } from '../../../components/icons';
+import { ChevronDownIcon, PencilIcon, PlusIcon, ShuffleIcon } from '../../../components/icons';
 import { ConfirmModal, Modal } from '../../../components/Modal';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
 import { foldersApi, piecesApi } from './api';
@@ -19,10 +19,13 @@ const INDENT = 14; // px per folder level
 // Side panel of the practice page: the account's pieces, sorted into a tree
 // of folders, and the import.
 // Folders start closed, except the way down to the current piece.
-export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
+export function PiecesPanel({ subject, current, listening, onPick, onShuffle, onUpdated, onClose }: {
   subject: string;
   current: number | null;
+  listening: boolean;
   onPick(id: number | null): void;
+  // Plays these pieces in a random order, endlessly.
+  onShuffle(ids: number[]): void;
   onUpdated(id: number, meta: PieceMeta & { cover?: string | null }): void;
   onClose(): void;
 }) {
@@ -73,7 +76,7 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
     return false;
   };
   const visible = pieces ?? [];
-  const countIn = (id: number) => visible.filter((p) => { const f = folderOf(p); return f !== null && within(f, id); }).length;
+  const piecesIn = (id: number) => visible.filter((p) => { const f = folderOf(p); return f !== null && within(f, id); });
 
   const patchPiece = (p: PieceSummary, change: Partial<PieceMeta> & { cover?: string | null }) => {
     const meta = { title: p.title, artist: p.artist, description: p.description, folder_id: p.folder_id, difficulty: p.difficulty, cover: p.cover, ...change };
@@ -200,6 +203,22 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
                 </span>
               </button>
 
+              {visible.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onShuffle(visible.map((p) => p.id))}
+                  className={`mt-0.5 flex w-full items-center gap-3 rounded-xl p-2 text-left ${listening ? 'bg-sky-50' : 'hover:bg-neutral-50'}`}
+                >
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
+                    <ShuffleIcon />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-neutral-900">Lecture aléatoire</span>
+                    <span className="block text-xs text-neutral-500">{listening ? 'En cours · cliquer pour remélanger tout' : `${visible.length} morceau${visible.length > 1 ? 'x' : ''} au hasard, en boucle`}</span>
+                  </span>
+                </button>
+              )}
+
               {pieces?.length === 0 && !hasFolders && <p className="px-3 py-4 text-sm text-neutral-400">Aucun morceau importé pour l’instant.</p>}
 
               {pieces && (
@@ -298,7 +317,7 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
   );
 
   function folderNode(f: PieceFolder, depth: number, index: number, siblings: number): ReactNode {
-    const total = countIn(f.id);
+    const inside = piecesIn(f.id);
     const isOpen = open.includes(f.id);
     const subfolders = childrenOf(f.id);
     const own = visible.filter((p) => folderOf(p) === f.id);
@@ -312,9 +331,10 @@ export function PiecesPanel({ subject, current, onPick, onUpdated, onClose }: {
           <button type="button" onClick={() => toggle(f.id)} className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left">
             <ChevronDownIcon className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
             <span className="truncate text-sm font-semibold text-neutral-900">{f.name}</span>
-            <span className="shrink-0 text-xs text-neutral-400">{total}</span>
+            <span className="shrink-0 text-xs text-neutral-400">{inside.length}</span>
           </button>
           <div className="hidden shrink-0 items-center group-hover/folder:flex">
+            {inside.length > 0 && <IconButton title="Écouter ce dossier au hasard, en boucle" onClick={() => onShuffle(inside.map((p) => p.id))}><ShuffleIcon className="h-3.5 w-3.5" /></IconButton>}
             <IconButton title="Monter" disabled={index === 0} onClick={() => shift(f, -1)}>↑</IconButton>
             <IconButton title="Descendre" disabled={index === siblings - 1} onClick={() => shift(f, 1)}>↓</IconButton>
             <IconButton title="Nouveau sous-dossier" onClick={() => setNaming({ folder: null, parent: f.id })}><PlusIcon className="h-3.5 w-3.5" /></IconButton>

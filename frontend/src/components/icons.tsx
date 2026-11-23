@@ -43,6 +43,9 @@ export const FlameIcon = ({ className }: IconProps) => (
 export const RepeatIcon = ({ className }: IconProps) => (
   <svg {...base} className={cls(className)}><path d="M17 2.5 20.5 6 17 9.5" /><path d="M3.5 11V9a3 3 0 0 1 3-3h14" /><path d="M7 21.5 3.5 18 7 14.5" /><path d="M20.5 13v2a3 3 0 0 1-3 3h-14" /></svg>
 );
+export const ShuffleIcon = ({ className }: IconProps) => (
+  <svg {...base} className={cls(className)}><path d="M3.5 7h3.2a4 4 0 0 1 3.3 1.8l4 6.4a4 4 0 0 0 3.3 1.8h3.2M17.5 13.5l3.5 3.5-3.5 3.5M3.5 17h3.2a4 4 0 0 0 3.3-1.8l4-6.4A4 4 0 0 1 17.3 7h3.2M17.5 3.5 21 7l-3.5 3.5" /></svg>
+);
 export const ArrowRightIcon = ({ className }: IconProps) => (
   <svg {...base} className={cls(className)}><path d="M5 12h14M13 6l6 6-6 6" /></svg>
 );

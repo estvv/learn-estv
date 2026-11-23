@@ -1,10 +1,10 @@
 import { frenchName, MIDI_MAX, MIDI_MIN, noteName } from '@learn/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Segmented } from '../../components/Segmented';
 import { useObservable } from '../../lib/store';
 import { NoteText } from './Accidentals';
-import { audioState } from './audio';
+import { audioState, ensureAudio } from './audio';
 import { sourceLabels, type SourceId } from './input/bus';
 import { useHeldNotes, useNoteInput } from './input/hooks';
 import { keyLabel } from './input/keyboard';
@@ -13,6 +13,7 @@ import { PianoKeyboard, type KeyLabels } from './PianoKeyboard';
 import { piecesApi } from './pieces/api';
 import { PiecesPanel } from './pieces/PiecesPanel';
 import { PlayAlong } from './pieces/PlayAlong';
+import { currentOf, drop, next, previous, startQueue, type Queue } from './pieces/shuffle';
 import type { StoredPiece } from './pieces/types';
 
 type Span = '2' | '4' | 'full';
@@ -20,10 +21,15 @@ type Span = '2' | '4' | 'full';
 const keyboardHeight = (share: number) => Math.round(Math.min(320, Math.max(140, window.innerHeight * share)));
 
 // Practice page of music subjects: free play, or one of the account's
-// imported pieces (?morceau=<id>) with falling notes.
+// imported pieces (?morceau=<id>) with falling notes, or all of them one after
+// the other in a random order.
 export function MusicPractice({ subject }: { subject: string }) {
   const [params, setParams] = useSearchParams();
-  const pieceId = Number(params.get('morceau')) || null;
+  const [queue, setQueue] = useState<Queue | null>(null);
+  const pieceId = queue ? currentOf(queue) : Number(params.get('morceau')) || null;
+  // Kept when the listening stops, so that the piece goes on.
+  const turn = useRef(0);
+  if (queue) turn.current = queue.turn;
   const [piece, setPiece] = useState<StoredPiece | null>(null);
   const [error, setError] = useState('');
   const [panel, setPanel] = useState(false);
@@ -32,8 +38,24 @@ export function MusicPractice({ subject }: { subject: string }) {
   useEffect(() => {
     setPiece(null);
     setError('');
-    if (pieceId) piecesApi.get(pieceId).then(setPiece, (e: Error) => setError(e.message));
+    if (!pieceId) return;
+    let stale = false;
+    piecesApi.get(pieceId).then((p) => !stale && setPiece(p), (e: Error) => {
+      if (stale) return;
+      setError(e.message);
+      setQueue((q) => q && drop(q, pieceId));
+    });
+    return () => {
+      stale = true;
+    };
   }, [pieceId]);
+
+  // Listening: the address follows the piece being played.
+  const queued = queue && pieceId;
+  useEffect(() => {
+    if (queued) setParams({ morceau: String(queued) }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queued]);
 
   return (
     <div className="h-full">
@@ -49,12 +71,17 @@ export function MusicPractice({ subject }: { subject: string }) {
       </button>
 
       {pieceId ? (
-        piece ? (
+        piece && piece.id === pieceId ? (
           <PlayAlong
-            key={piece.id}
+            key={`${piece.id}-${turn.current}`}
             piece={piece}
             labels={labels}
             keyboardHeight={keyboardHeight(0.24)}
+            listening={queue ? {
+              next: () => setQueue((q) => q && next(q)),
+              previous: () => setQueue((q) => q && previous(q)),
+              stop: () => setQueue(null),
+            } : undefined}
             onNotesSaved={(notes) => setPiece((p) => (p && p.id === piece.id ? { ...p, notes } : p))}
           />
         ) : (
@@ -68,8 +95,17 @@ export function MusicPractice({ subject }: { subject: string }) {
         <PiecesPanel
           subject={subject}
           current={pieceId}
+          listening={queue !== null}
+          onShuffle={(ids) => {
+            // Browsers only start the sound from a click.
+            void ensureAudio().catch(() => {});
+            setPanel(false);
+            const started = startQueue(ids);
+            setQueue(started && { ...started, turn: turn.current + 1 });
+          }}
           onPick={(id) => {
             setPanel(false);
+            setQueue(null);
             setParams(id ? { morceau: String(id) } : {});
           }}
           onUpdated={(id, meta) => setPiece((p) => (p && p.id === id ? { ...p, ...meta } : p))}

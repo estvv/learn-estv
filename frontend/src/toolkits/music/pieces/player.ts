@@ -2,6 +2,7 @@ import type { Hand, PieceNote } from '@learn/shared';
 import { Observable } from '../../../lib/store';
 import { ensureAudio, playNote, releaseAll } from '../audio';
 import { inputBus, type NoteEvent } from '../input/bus';
+import { startBackgroundTimer } from './backgroundTimer';
 
 export type PlayMode = 'listen' | 'wait';
 
@@ -51,6 +52,8 @@ export class PiecePlayer {
   private waiting = false;
   private raf = 0;
   private lastFrame = 0;
+  private starts = 0; // a pause while the sounds load cancels the start
+  private stopTimer: (() => void) | null = null;
   private wrongTimer: ReturnType<typeof setTimeout> | undefined;
   private unsubscribe: () => void;
 
@@ -84,16 +87,23 @@ export class PiecePlayer {
   }
 
   async play() {
+    const start = ++this.starts;
     await ensureAudio().catch(() => {});
+    if (start !== this.starts) return;
     if (this.state.get().finished) this.seek(0);
     this.lastFrame = performance.now();
     this.state.set((s) => ({ ...s, playing: true }));
     cancelAnimationFrame(this.raf);
     this.raf = requestAnimationFrame(this.tick);
+    // The music goes on while the tab is hidden.
+    this.stopTimer ??= startBackgroundTimer(() => document.hidden && this.state.get().playing && this.step(performance.now()));
   }
 
   pause() {
+    this.starts++;
     cancelAnimationFrame(this.raf);
+    this.stopTimer?.();
+    this.stopTimer = null;
     releaseAll();
     this.state.set((s) => ({ ...s, playing: false }));
   }
@@ -135,7 +145,12 @@ export class PiecePlayer {
   }
 
   private tick = (now: number) => {
-    const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
+    if (this.step(now)) this.raf = requestAnimationFrame(this.tick);
+  };
+
+  // False at the end of the piece.
+  private step(now: number): boolean {
+    const dt = Math.min(0.1, Math.max(0, now - this.lastFrame) / 1000);
     this.lastFrame = now;
     if (!this.waiting) {
       const next = this.position + dt * this.rate;
@@ -147,10 +162,10 @@ export class PiecePlayer {
     if (this.position >= this.duration + 0.5) {
       this.pause();
       this.state.set((s) => ({ ...s, finished: true }));
-      return;
+      return false;
     }
-    this.raf = requestAnimationFrame(this.tick);
-  };
+    return true;
+  }
 
   private advanceListening(next: number) {
     while (this.nextNote < this.notes.length && this.notes[this.nextNote].time < next) {
