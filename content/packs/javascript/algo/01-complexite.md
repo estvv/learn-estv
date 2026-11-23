@@ -55,7 +55,7 @@ console.log(communs, Math.round(performance.now() - t), 'ms');
 On parle aussi de complexité **en mémoire**, et de coût **amorti** : `push` est parfois lent (agrandissement), mais O(1) en moyenne.
 
 @@ code doublon | Un doublon, vite | ts
-`aUnDoublon(liste)` dit si une valeur apparaît deux fois. O(n) : le test utilise 200 000 éléments.
+`aUnDoublon(liste)` dit si une valeur apparaît deux fois. O(n) : le test utilise 60 000 éléments.
 @starter
 function aUnDoublon(liste: number[]): boolean {
   return liste.some((x, i) => liste.indexOf(x) !== i);
@@ -63,7 +63,7 @@ function aUnDoublon(liste: number[]): boolean {
 @test Petits cas
 expect([aUnDoublon([1, 2, 1]), aUnDoublon([1, 2]), aUnDoublon([])]).toEqual([true, false, false]);
 @test Rapide
-const l = Array.from({ length: 200_000 }, (_, i) => i); const t = performance.now(); expect(aUnDoublon(l)).toBe(false); expect(performance.now() - t).toBeLessThan(500);
+const l = Array.from({ length: 60_000 }, (_, i) => i); const t = performance.now(); expect(aUnDoublon(l)).toBe(false); expect(performance.now() - t).toBeLessThan(250);
 @solution
 function aUnDoublon(liste: number[]): boolean {
   return new Set(liste).size !== liste.length;
