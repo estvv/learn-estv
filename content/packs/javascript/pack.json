@@ -1,0 +1,87 @@
+{
+  "format": 1,
+  "subject": {
+    "id": "javascript",
+    "name": "JavaScript & TypeScript",
+    "accent": "amber",
+    "practice": "code",
+    "lang": "fr",
+    "description": "Les deux langages en un seul parcours : leçons, exercices à coder, mini-projets et révisions.",
+    "facets": [
+      {
+        "id": "lire",
+        "label": "Lire du code",
+        "description": "Un bout de code est montré, je dis ce qu’il fait.",
+        "kinds": [
+          "predict"
+        ],
+        "review": {
+          "module": "quiz",
+          "config": {
+            "mode": "generated",
+            "select": {
+              "kind": "predict"
+            },
+            "facet": "lire",
+            "prompt": "{{prompt}}",
+            "answer": "{{answer}}",
+            "wrong": "wrong",
+            "explanation": "{{why}}",
+            "count": 20
+          }
+        }
+      },
+      {
+        "id": "retenir",
+        "label": "Retenir la syntaxe",
+        "description": "Une question de syntaxe ou de vocabulaire, je réponds de tête.",
+        "kinds": [
+          "card"
+        ],
+        "review": {
+          "module": "flashcards",
+          "config": {
+            "select": {
+              "kind": "card"
+            },
+            "facet": "retenir",
+            "front": "{{front}}",
+            "back": "{{back}}"
+          }
+        }
+      }
+    ]
+  },
+  "paths": [
+    {
+      "id": "bases",
+      "name": "1 · Les bases",
+      "description": "La syntaxe de tous les jours, avec les types TypeScript dès le début."
+    },
+    {
+      "id": "avance",
+      "name": "2 · JavaScript en profondeur",
+      "description": "Comment le langage fonctionne vraiment."
+    },
+    {
+      "id": "typescript",
+      "name": "3 · TypeScript en profondeur",
+      "description": "Le système de types, des unions aux types conditionnels."
+    },
+    {
+      "id": "web",
+      "name": "4 · Le web : DOM et React",
+      "description": "Faire vivre une page, puis construire des interfaces avec React et TypeScript."
+    },
+    {
+      "id": "algo",
+      "name": "5 · Algorithmes et architecture",
+      "description": "Structures de données, algorithmes classiques, patterns et tests."
+    },
+    {
+      "id": "expert",
+      "name": "6 · TypeScript expert",
+      "description": "Programmer avec les types, et concevoir des API de bibliothèque."
+    }
+  ]
+}

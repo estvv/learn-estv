@@ -6,6 +6,7 @@ import type { DB } from '../db/index.js';
 
 const reviewsBody = z.object({ reviews: z.array(reviewEventSchema).min(1).max(200) });
 const stepBody = z.object({ step: z.string().min(1).max(300), score: z.number().min(0).max(1).optional() });
+const codeBody = z.object({ step: z.string().min(1).max(300), files: z.record(z.string().max(80), z.string().max(40_000)) });
 const subjectPrefix = (subject: string) => `${subject}/`;
 
 export function progressRoutes(db: DB) {
@@ -20,6 +21,23 @@ export function progressRoutes(db: DB) {
       FROM srs_state WHERE user_id = ? GROUP BY subject
     `).all(Date.now(), req.user!.id);
     res.json({ success: true, data: rows });
+  });
+
+  // Code typed in an exercise; before `/:subject`, which would match it.
+  router.get('/code', (req, res) => {
+    const row = db.prepare('SELECT files FROM step_code WHERE user_id = ? AND step_id = ?')
+      .get(req.user!.id, String(req.query.step ?? '')) as { files: string } | undefined;
+    res.json({ success: true, data: row ? JSON.parse(row.files) : null });
+  });
+
+  router.put('/code', (req, res) => {
+    const parsed = codeBody.safeParse(req.body);
+    if (!parsed.success) return void res.status(400).json({ success: false, error: 'Code invalide' });
+    db.prepare(`
+      INSERT INTO step_code (user_id, step_id, files, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT (user_id, step_id) DO UPDATE SET files = excluded.files, updated_at = excluded.updated_at
+    `).run(req.user!.id, parsed.data.step, JSON.stringify(parsed.data.files), Date.now());
+    res.json({ success: true });
   });
 
   router.get('/:subject', (req, res) => {

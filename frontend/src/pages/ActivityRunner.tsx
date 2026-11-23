@@ -6,11 +6,13 @@ import type { ActivityResult } from '../modules/types';
 import { Empty } from '../modules/ui';
 
 // Validates a step config against its module and mounts the module's player.
-export function ActivityRunner({ subject, module: moduleId, config, onReview, onFinish }: {
+export function ActivityRunner({ subject, module: moduleId, config, stepId, onReview, onComplete, onFinish }: {
   subject: SubjectModel;
   module: string;
   config: unknown;
+  stepId?: string;
   onReview(e: ReviewEvent): void;
+  onComplete?(r: ActivityResult): void;
   onFinish(r: ActivityResult): void;
 }) {
   const mod = getModule(moduleId);
@@ -19,5 +21,5 @@ export function ActivityRunner({ subject, module: moduleId, config, onReview, on
   if (!parsed?.success) {
     return <Empty>Configuration invalide pour « {mod.label} » : {parsed?.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join(', ')}</Empty>;
   }
-  return <mod.Player subject={subject} config={parsed.data} onReview={onReview} onFinish={onFinish} />;
+  return <mod.Player subject={subject} config={parsed.data} stepId={stepId} onReview={onReview} onComplete={onComplete} onFinish={onFinish} />;
 }

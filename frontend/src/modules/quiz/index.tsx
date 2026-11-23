@@ -30,7 +30,8 @@ function buildQuestions(subject: SubjectModel, config: QuizConfig): Question[] {
   const poolAnswers = [...new Set(pool.map((e) => fillTemplate(config.answer, e)))];
   return drawCycling(selected, config.count).map((e) => {
     const answer = fillTemplate(config.answer, e);
-    const choices = config.choices > 0
+    const own = config.wrong ? e.data[config.wrong] : undefined;
+    const choices = Array.isArray(own) ? shuffle([answer, ...own.map(String)]) : config.choices > 0
       ? shuffle([answer, ...shuffle(poolAnswers.filter((a) => a !== answer)).slice(0, config.choices - 1)])
       : undefined;
     return {
@@ -44,6 +45,9 @@ function buildQuestions(subject: SubjectModel, config: QuizConfig): Question[] {
     };
   });
 }
+
+// `code` between backquotes, in choices and answers.
+const inlineCode = (text: string) => text.split(/`([^`]+)`/).map((part, i) => (i % 2 ? <code key={i} className="font-mono text-[0.95em]">{part}</code> : part));
 
 const normalize = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -140,7 +144,7 @@ function QuizPlayer({ subject, config, onReview, onFinish }: PlayerProps<QuizCon
                       : 'border-neutral-200 bg-white shadow-sm hover:border-neutral-400 disabled:opacity-60'
                 }`}
               >
-                {c}
+                <span className="min-w-0 whitespace-pre-wrap break-words">{inlineCode(c)}</span>
                 <Kbd>{i + 1}</Kbd>
               </button>
             );
@@ -162,7 +166,7 @@ function QuizPlayer({ subject, config, onReview, onFinish }: PlayerProps<QuizCon
 
       {answered && (
         <div className={`mt-4 rounded-lg border px-4 py-3 text-sm ${isRight(picked!) ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
-          <div className="font-semibold">{isRight(picked!) ? 'Correct' : `Réponse : ${q.answer}`}</div>
+          <div className="font-semibold">{isRight(picked!) ? 'Correct' : <>Réponse : {inlineCode(q.answer)}</>}</div>
           {q.explanation && <Markdown className="mt-1">{q.explanation}</Markdown>}
           <div className="mt-3 flex justify-end">
             <Button onClick={next} autoFocus>Suivant <Kbd>Entrée</Kbd></Button>

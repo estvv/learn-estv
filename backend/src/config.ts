@@ -15,6 +15,8 @@ function findRepoRoot(): string {
 const repoRoot = findRepoRoot();
 
 export const config = {
+  // Deployed commit, shown by /health so a deploy can check itself.
+  commit: process.env.APP_COMMIT || 'dev',
   port: Number(process.env.PORT ?? 3014),
   dbPath: process.env.DB_PATH ?? path.join(repoRoot, 'data/learn.db'),
   contentDir: process.env.CONTENT_DIR ?? path.join(repoRoot, 'content/packs'),

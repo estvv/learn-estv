@@ -16,8 +16,8 @@ export const panel = 'rounded-xl border border-neutral-200 bg-white shadow-sm';
 // Clickable card: lifts on hover, like quizz-estv and music-estv.
 export const card = `${panel} hover:shadow-md hover:-translate-y-0.5 transition-all`;
 
-export function Page({ children, width = 'md' }: { children: ReactNode; width?: 'sm' | 'md' | 'lg' }) {
-  const max = { sm: 'max-w-md', md: 'max-w-3xl', lg: 'max-w-5xl' }[width];
+export function Page({ children, width = 'md' }: { children: ReactNode; width?: 'sm' | 'md' | 'lg' | 'full' }) {
+  const max = { sm: 'max-w-md', md: 'max-w-3xl', lg: 'max-w-5xl', full: 'max-w-[110rem]' }[width];
   return <main className={`${max} mx-auto px-4 py-8 md:py-10`}>{children}</main>;
 }
 

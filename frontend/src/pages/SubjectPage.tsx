@@ -1,10 +1,10 @@
 import { isDue, type Accent, type Mastery } from '@learn/shared';
 import { useMemo } from 'react';
-import { Link, useParams } from 'react-router';
-import { ArrowRightIcon, CheckIcon, PlayIcon, RepeatIcon } from '../components/icons';
+import { Link, Navigate, useParams } from 'react-router';
+import { ArrowRightIcon, CheckIcon, ChevronDownIcon, PlayIcon, RepeatIcon } from '../components/icons';
 import { SubjectLogo } from '../components/SubjectLogo';
 import { Badge, Bar, ErrorText, LoadingState, Page, panel, primaryButton, secondaryButton, SectionTitle } from '../components/ui';
-import { SubjectModel } from '../content/subject';
+import { nextStepOf, SubjectModel } from '../content/subject';
 import { useSubject } from '../content/useSubject';
 import { accent } from '../lib/theme';
 import { getModule } from '../modules/registry';
@@ -25,12 +25,15 @@ export function SubjectPage() {
 
   if (error) return <Page width="lg"><ErrorText>{error}</ErrorText></Page>;
   if (!pack || !model) return <LoadingState />;
+  if (model.practiceOnly) return <Navigate to={`/s/${model.id}/pratique`} replace />;
 
   const a = pack.subject.accent;
   const steps = model.steps();
   const done = progress ? steps.filter((s) => progress.steps.has(s.fullId)).length : 0;
-  const nextStep = progress ? steps.find((s) => !progress.steps.has(s.fullId)) : undefined;
+  const nextStep = progress ? nextStepOf(steps, progress.steps) : undefined;
   const rootSkills = pack.skills.filter((s) => !s.parent);
+  // A long course shows only where the user is.
+  const long = pack.paths.reduce((n, path) => n + path.units.length, 0) > 8;
 
   return (
     <Page width="lg">
@@ -76,15 +79,19 @@ export function SubjectPage() {
                     const unitSteps = pathSteps.filter((s) => s.unitId === unit.id);
                     const unitDone = progress ? unitSteps.filter((s) => progress.steps.has(s.fullId)).length : 0;
                     return (
-                      <div key={unit.id} className={`${panel} overflow-hidden`}>
-                        <div className="flex items-start gap-3 border-b border-neutral-100 px-5 py-4">
+                      <details key={unit.id} open={!long || (nextStep?.pathId === path.id && nextStep.unitId === unit.id)} className={`${panel} group overflow-hidden`}>
+                        <summary className="flex cursor-pointer list-none items-start gap-3 px-5 py-4 hover:bg-neutral-50 group-open:border-b group-open:border-neutral-100 [&::-webkit-details-marker]:hidden">
                           <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${accent(a).tile}`}>{ui + 1}</span>
                           <div className="min-w-0 flex-1">
                             <div className="font-semibold text-neutral-900">{unit.name}</div>
                             {unit.description && <div className="text-sm text-neutral-500">{unit.description}</div>}
                           </div>
-                          <span className="pt-1 text-xs tabular-nums text-neutral-400">{unitDone}/{unitSteps.length}</span>
-                        </div>
+                          <span className="flex items-center gap-2 pt-1 text-xs tabular-nums text-neutral-400">
+                            {unitDone === unitSteps.length && unitDone > 0 && <CheckIcon className="h-4 w-4 text-emerald-500" />}
+                            {unitDone}/{unitSteps.length}
+                            <ChevronDownIcon className="h-4 w-4 transition-transform group-open:rotate-180" />
+                          </span>
+                        </summary>
                         <ol className="divide-y divide-neutral-50">
                           {unitSteps.map((s) => {
                             const record = progress?.steps.get(s.fullId);
@@ -99,13 +106,13 @@ export function SubjectPage() {
                                   </span>
                                   <span className={`flex-1 ${record ? 'text-neutral-500' : 'font-medium text-neutral-900'}`}>{s.step.title}</span>
                                   {record?.best_score != null && <span className="text-xs tabular-nums text-neutral-400">{Math.round(record.best_score * 100)} %</span>}
-                                  <span className="w-14 text-right text-xs text-neutral-400">{getModule(s.step.module)?.label ?? s.step.module}</span>
+                                  <span className="w-14 text-right text-xs text-neutral-400">{s.step.config.challenge ? 'Défi' : getModule(s.step.module)?.label ?? s.step.module}</span>
                                 </Link>
                               </li>
                             );
                           })}
                         </ol>
-                      </div>
+                      </details>
                     );
                   })}
                 </div>
@@ -121,7 +128,7 @@ export function SubjectPage() {
               {rootSkills.map((root) => (
                 <div key={root.id} className="space-y-2.5">
                   <SkillRow name={root.name} mastery={progress ? model.mastery(root.id, progress) : undefined} accent={a} strong />
-                  {pack.skills.filter((s) => s.parent === root.id).map((c) => (
+                  {(!long || root.id === nextStep?.pathId) && pack.skills.filter((s) => s.parent === root.id).map((c) => (
                     <div key={c.id} className="pl-3">
                       <SkillRow name={c.name} mastery={progress ? model.mastery(c.id, progress) : undefined} accent={a} />
                     </div>
@@ -130,7 +137,7 @@ export function SubjectPage() {
               ))}
             </div>
           </section>
-          {pack.lessons.length > 0 && (
+          {!long && pack.lessons.length > 0 && (
             <section>
               <SectionTitle>Leçons</SectionTitle>
               <ul className={`${panel} divide-y divide-neutral-100 overflow-hidden`}>

@@ -1,5 +1,6 @@
 import { Link, Navigate, useParams } from 'react-router';
 import { LoadingState } from '../components/ui';
+import { isPracticeOnly } from '../content/subject';
 import { useSubject } from '../content/useSubject';
 import { toolkits } from '../toolkits';
 
@@ -12,12 +13,13 @@ export function PracticePage() {
   if (!pack) return <LoadingState />;
   const toolkit = toolkits.find((t) => t.id === pack.subject.practice);
   if (!toolkit?.Practice) return <Navigate to={`/s/${pack.subject.id}`} replace />;
+  const back = isPracticeOnly(pack) ? { to: '/', label: 'Retour : accueil' } : { to: `/s/${pack.subject.id}`, label: `Retour : ${pack.subject.name}` };
 
   return (
     <div className="fixed inset-0 bg-[#fafafa]">
       <Link
-        to={`/s/${pack.subject.id}`}
-        title={`Retour : ${pack.subject.name}`}
+        to={back.to}
+        title={back.label}
         aria-label="Retour"
         className="absolute left-4 top-4 z-10 rounded-lg border border-neutral-200 bg-white p-2 text-neutral-500 shadow-sm transition-colors hover:text-neutral-900"
       >

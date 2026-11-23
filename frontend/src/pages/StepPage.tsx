@@ -5,6 +5,7 @@ import { SubjectModel } from '../content/subject';
 import { useSubject } from '../content/useSubject';
 import type { ActivityResult } from '../modules/types';
 import { Breadcrumb, EmptyState, ErrorText, LoadingState, Page, panel } from '../components/ui';
+import { getModule } from '../modules/registry';
 import { Button } from '../modules/ui';
 import { useSubjectProgress } from '../progress/useProgress';
 import { ActivityRunner } from './ActivityRunner';
@@ -26,13 +27,16 @@ export function StepPage() {
   const index = steps.findIndex((s) => s.pathId === path && s.unitId === unit && s.step.id === step);
   if (index < 0) return <Page><EmptyState>Étape introuvable.</EmptyState></Page>;
   const current = steps[index];
-  const next = steps[index + 1];
+  const next = steps.slice(index + 1).find((s) => !s.step.config.challenge) ?? steps[index + 1];
   const unitName = pack.paths.find((p) => p.id === path)?.units.find((u) => u.id === unit)?.name;
 
-  const finish = (r: ActivityResult) => {
+  const complete = (r: ActivityResult) => {
     if (r.passed) void completeStep(stepFullId(model.id, current.pathId, current.unitId, current.step.id), r.score);
-    // A lesson has nothing to summarise: go straight on.
-    if (current.step.module === 'lesson' && next) {
+  };
+  const finish = (r: ActivityResult) => {
+    complete(r);
+    // A lesson or an exercise has nothing to summarise: go straight on.
+    if (['lesson', 'code'].includes(current.step.module) && next) {
       navigate(stepUrl(model.id, next));
       return;
     }
@@ -40,7 +44,7 @@ export function StepPage() {
   };
 
   return (
-    <Page>
+    <Page width={getModule(current.step.module)?.wide ? 'full' : 'md'}>
       <Breadcrumb items={[{ label: pack.subject.name, to: `/s/${model.id}` }, { label: unitName, to: `/s/${model.id}` }, { label: current.step.title }]} />
 
       {result ? (
@@ -59,7 +63,9 @@ export function StepPage() {
           subject={model}
           module={current.step.module}
           config={current.step.config}
+          stepId={current.fullId}
           onReview={(e) => void record([e])}
+          onComplete={complete}
           onFinish={finish}
         />
       )}

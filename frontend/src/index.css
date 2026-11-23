@@ -46,3 +46,15 @@ body {
 .md table { @apply w-full border-collapse text-sm; }
 .md th, .md td { @apply border border-neutral-200 px-3 py-1.5 text-left; }
 .md th { @apply bg-neutral-50 font-semibold; }
+
+/* Code colours, in the editor and in lessons (@lezer/highlight classes). */
+.md pre code { background: none; padding: 0; font-size: inherit; }
+.tok-keyword, .tok-operatorKeyword { color: #7c3aed; }
+.tok-string, .tok-string2 { color: #047857; }
+.tok-number, .tok-bool, .tok-atom, .tok-literal { color: #b45309; }
+.tok-comment { color: #8a8a8a; font-style: italic; }
+.tok-typeName, .tok-className, .tok-namespace { color: #0f766e; }
+.tok-propertyName { color: #1d4ed8; }
+.tok-variableName.tok-definition { color: #171717; font-weight: 600; }
+.tok-meta, .tok-punctuation, .tok-operator { color: #525252; }
+.tok-invalid { color: #dc2626; }

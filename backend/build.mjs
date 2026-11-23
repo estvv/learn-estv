@@ -9,7 +9,7 @@ const sharedPkg = JSON.parse(readFileSync(new URL('../shared/package.json', impo
 external.push(...Object.keys(sharedPkg.dependencies ?? {}));
 
 await build({
-  entryPoints: ['src/index.ts', 'src/scripts/create-admin.ts'],
+  entryPoints: ['src/index.ts', 'src/scripts/create-admin.ts', 'src/scripts/prepare-db.ts'],
   outdir: 'dist',
   outbase: 'src',
   bundle: true,

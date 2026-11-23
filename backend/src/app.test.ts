@@ -7,7 +7,7 @@ import { hashPassword } from './auth/crypto.js';
 import { importSeeds } from './content/store.js';
 import { openDatabase, type DB } from './db/index.js';
 
-const contentDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../content/packs');
+const contentDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/packs');
 
 let db: DB;
 let app: ReturnType<typeof createApp>;
@@ -37,6 +37,14 @@ describe('content', () => {
     const pack = await request(app).get('/api/subjects/piano').expect(200);
     expect(pack.body.data.elements.length).toBe(37);
     expect(pack.body.data.paths[0].units[0].steps[0].module).toBe('lesson');
+  });
+
+  it('imports packs written as folders of Markdown units', () => {
+    const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../content/packs');
+    const logs: string[] = [];
+    importSeeds(db, dir, (m) => logs.push(m));
+    expect(logs).toContain('Seed javascript importé');
+    expect(logs.join()).not.toMatch(/invalide|illisible/);
   });
 
   it('skips seeds that did not change', async () => {
@@ -84,6 +92,20 @@ describe('auth and progress', () => {
 
     const summary = await agent.get('/api/progress').expect(200);
     expect(summary.body.data[0]).toMatchObject({ subject: 'piano', started: 1 });
+  });
+
+  it('keeps the code typed in an exercise, per user', async () => {
+    await addUser('a', 'password123');
+    await addUser('b', 'password123');
+    const a = await login('a', 'password123');
+    const step = 'javascript/bases/variables/echange';
+    expect((await a.get('/api/progress/code').query({ step }).expect(200)).body.data).toBeNull();
+    await a.put('/api/progress/code').send({ step, files: { 'main.js': 'let a;' } }).expect(200);
+    await a.put('/api/progress/code').send({ step, files: { 'main.js': 'let b;' } }).expect(200);
+    expect((await a.get('/api/progress/code').query({ step })).body.data).toEqual({ 'main.js': 'let b;' });
+    expect((await (await login('b', 'password123')).get('/api/progress/code').query({ step })).body.data).toBeNull();
+    await a.put('/api/progress/code').send({ step, files: { 'main.js': 'x'.repeat(50_000) } }).expect(400);
+    await request(app).put('/api/progress/code').send({ step, files: {} }).expect(401);
   });
 
   it('lets the admin create accounts', async () => {

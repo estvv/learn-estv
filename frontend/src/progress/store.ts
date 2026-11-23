@@ -26,6 +26,9 @@ export interface ProgressStore {
   load(subject: string): Promise<SubjectProgress>;
   record(reviews: ReviewEvent[]): Promise<SrsEntry[]>;
   completeStep(step: string, score?: number): Promise<void>;
+  // Code typed in an exercise: file name -> code.
+  loadCode(step: string): Promise<Record<string, string> | null>;
+  saveCode(step: string, files: Record<string, string>): Promise<void>;
   summary(): Promise<SubjectSummaryProgress[]>;
 }
 
@@ -46,10 +49,15 @@ export const serverStore: ProgressStore = {
   async completeStep(step, score) {
     await api('/progress/steps', { method: 'POST', json: { step, score } });
   },
+  loadCode: (step) => api<Record<string, string> | null>(`/progress/code?step=${encodeURIComponent(step)}`),
+  async saveCode(step, files) {
+    await api('/progress/code', { method: 'PUT', json: { step, files }, keepalive: true });
+  },
   summary: () => api<SubjectSummaryProgress[]>('/progress'),
 };
 
 const GUEST_KEY = 'learn.guest.v1';
+const CODE_KEY = 'learn.guest.code.v1';
 interface GuestData {
   srs: Record<string, SrsEntry>;
   steps: Record<string, StepRecord>;
@@ -89,6 +97,12 @@ export const guestStore: ProgressStore = {
     data.steps[step] = { step, completed_at: Date.now(), best_score: best };
     writeJson(GUEST_KEY, data);
   },
+  async loadCode(step) {
+    return readJson<Record<string, Record<string, string>>>(CODE_KEY, {})[step] ?? null;
+  },
+  async saveCode(step, files) {
+    writeJson(CODE_KEY, { ...readJson<Record<string, Record<string, string>>>(CODE_KEY, {}), [step]: files });
+  },
   async summary() {
     const bySubject = new Map<string, SubjectSummaryProgress>();
     const now = new Date();
@@ -106,6 +120,7 @@ export const guestStore: ProgressStore = {
 export function clearGuestProgress() {
   try {
     localStorage.removeItem(GUEST_KEY);
+    localStorage.removeItem(CODE_KEY);
   } catch {
     // Storage blocked: nothing to clear.
   }

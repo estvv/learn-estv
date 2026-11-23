@@ -7,6 +7,7 @@ import { loadSession } from './auth/session.js';
 import type { DB } from './db/index.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
+import { config } from './config.js';
 import { contentRoutes } from './routes/content.js';
 import { progressRoutes } from './routes/progress.js';
 import { pieceRoutes } from './routes/pieces.js';
@@ -28,7 +29,7 @@ export function createApp(db: DB, { findCover = catalogCover }: { findCover?: Co
   app.use((req, res, next) => (/^\/api\/pieces(\/\d+\/notes)?$/.test(req.path) ? next() : express.json({ limit: '2mb' })(req, res, next)));
   app.use(cookieParser());
 
-  app.get('/health', (_req, res) => void res.json({ status: 'ok' }));
+  app.get('/health', (_req, res) => void res.json({ status: 'ok', commit: config.commit }));
 
   app.use('/api', rateLimit({
     windowMs: 60 * 1000,

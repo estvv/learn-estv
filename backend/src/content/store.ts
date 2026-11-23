@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fullId, packSchema, type Accent, type Pack } from '@learn/shared';
+import { buildPack, fullId, packSchema, type Accent, type Pack, type PackInput, type UnitFile } from '@learn/shared';
 import type { DB } from '../db/index.js';
 
 export type Source = 'seed' | 'user' | 'ai';
@@ -119,16 +119,45 @@ export function listSubjects(db: DB): SubjectSummary[] {
   `).all() as SubjectSummary[];
 }
 
-// Imports every pack of the content directory whose file changed since the
+// A pack is a JSON file, or a folder: pack.json + <path>/NN-<unit>.md files
+// (format in shared/src/unitFile.ts).
+function readPack(entry: string): unknown {
+  const read = (file: string) => fs.readFileSync(file, 'utf8');
+  if (!fs.statSync(entry).isDirectory()) return JSON.parse(read(entry));
+  const base = JSON.parse(read(path.join(entry, 'pack.json'))) as PackInput;
+  const units: UnitFile[] = (base.paths ?? []).flatMap((p) => {
+    const dir = path.join(entry, p.id);
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort()
+      .map((f) => ({ path: p.id, id: f.replace(/^\d+-|\.md$/g, ''), text: read(path.join(dir, f)) }));
+  });
+  return buildPack(base, units);
+}
+
+// Imports every pack of the content directory whose content changed since the
 // last import. A subject edited in the app (source != seed) is left alone.
-export function importSeeds(db: DB, dir: string, log = console.log) {
-  if (!fs.existsSync(dir)) return log(`Seed: dossier absent (${dir})`);
-  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
-    const raw = fs.readFileSync(path.join(dir, file), 'utf8');
-    const hash = createHash('sha256').update(raw).digest('hex');
-    const parsed = packSchema.safeParse(JSON.parse(raw));
+// Returns the packs that could not be imported.
+export function importSeeds(db: DB, dir: string, log = console.log): string[] {
+  const failed: string[] = [];
+  if (!fs.existsSync(dir)) {
+    log(`Seed: dossier absent (${dir})`);
+    return [dir];
+  }
+  const isPack = (f: string) => f.endsWith('.json') || fs.existsSync(path.join(dir, f, 'pack.json'));
+  for (const file of fs.readdirSync(dir).filter(isPack).sort()) {
+    let raw: unknown;
+    try {
+      raw = readPack(path.join(dir, file));
+    } catch (e) {
+      log(`Seed ${file} illisible : ${(e as Error).message}`);
+      failed.push(file);
+      continue;
+    }
+    const hash = createHash('sha256').update(JSON.stringify(raw)).digest('hex');
+    const parsed = packSchema.safeParse(raw);
     if (!parsed.success) {
       log(`Seed ${file} invalide :\n${parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n')}`);
+      failed.push(file);
       continue;
     }
     const current = db.prepare('SELECT source, seed_hash FROM subjects WHERE id = ?').get(parsed.data.subject.id) as
@@ -142,4 +171,5 @@ export function importSeeds(db: DB, dir: string, log = console.log) {
     importPack(db, parsed.data, 'seed', hash);
     log(`Seed ${file} importé`);
   }
+  return failed;
 }

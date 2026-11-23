@@ -9,7 +9,7 @@ Les invités ont accès à tout, leur progression reste dans le navigateur. Les 
 - npm workspaces : `shared/` (schémas Zod des packs, FSRS, notes de musique, utilisés par le front et le back), `backend/`, `frontend/`
 - Backend : Node, Express 5, better-sqlite3, bundlé avec esbuild
 - Frontend : React 19, Vite, Tailwind v4, Tone.js (piano Salamander), pitchy (micro), Web MIDI
-- Contenu de départ : `content/packs/*.json`, importé au démarrage quand le fichier change
+- Contenu de départ : `content/packs/` (JSON ou dossiers Markdown, voir [`content/packs/README.md`](content/packs/README.md)), importé au démarrage quand il change
 
 ## Mise en route sur le VPS
 
@@ -21,6 +21,10 @@ docker compose exec backend npm run create-admin -- <identifiant>   # affiche le
 ```
 
 Puis ajouter le bloc de `Caddyfile.snippet` dans le Caddyfile, recharger Caddy, et ajouter l'app dans `home-estv`.
+
+## Déploiement automatique
+
+Chaque push sur `main` est testé, puis mis en ligne sur le VPS avec la base de données (sauvegarde, répétition sur une copie, retour automatique en cas d'échec). Mise en place : `deploy/setup.sh`, tutoriel dans [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## Dev local
 
@@ -45,7 +49,7 @@ Tests et typage : `npm test` et `npm run typecheck`.
 
 ## Boîtes à outils
 
-Ce qui est propre à une famille de sujets vit dans `frontend/src/toolkits/<id>/` : entrées, son, blocs Markdown interactifs, panneau de réglages. Aujourd'hui `music` (piano échantillonné, clavier à l'écran/ordinateur/MIDI/micro, blocs ```` ```keyboard ```` et ```` ```play ````). Un nouveau toolkit (ex. `speech` pour les langues) s'ajoute dans `frontend/src/toolkits/index.ts` ; ses réglages apparaissent automatiquement dans **Réglages**.
+Ce qui est propre à une famille de sujets vit dans `frontend/src/toolkits/<id>/` : entrées, son, blocs Markdown interactifs, panneau de réglages. Aujourd'hui `music` (piano échantillonné, clavier à l'écran/ordinateur/MIDI/micro, blocs ```` ```keyboard ```` et ```` ```play ````). Et `code` (éditeur CodeMirror, TypeScript dans un worker, exécution dans un worker jetable, blocs ```` ```js-run ```` et ```` ```ts-run ````, bac à sable) : rien n'est exécuté sur le serveur. Un nouveau toolkit (ex. `speech` pour les langues) s'ajoute dans `frontend/src/toolkits/index.ts` ; ses réglages apparaissent automatiquement dans **Réglages**.
 
 ## Partition → MIDI
 

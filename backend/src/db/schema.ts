@@ -158,4 +158,13 @@ CREATE TABLE IF NOT EXISTS step_progress (
   best_score REAL,
   PRIMARY KEY (user_id, step_id)
 );
+
+-- What the user typed in a code exercise, JSON { file name: code }.
+CREATE TABLE IF NOT EXISTS step_code (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  step_id TEXT NOT NULL,
+  files TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, step_id)
+);
 `;

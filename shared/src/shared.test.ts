@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { fillTemplate, frenchName, isDue, noteLabel, noteName, packSchema, parseNote, parseRange, retrievability, reviewCard, selectElements } from './index.ts';
+import { buildPack, fillTemplate, frenchName, isDue, noteLabel, noteName, packSchema, parseNote, parseRange, retrievability, reviewCard, selectElements } from './index.ts';
 
 describe('music', () => {
   it('parses and names notes', () => {
@@ -47,6 +47,27 @@ describe('srs', () => {
     expect(again.lapses + again.reps).toBeGreaterThan(card.reps);
     expect(retrievability(undefined)).toBe(0);
     expect(retrievability(card, now)).toBeGreaterThan(0.9);
+  });
+});
+
+describe('unit files', () => {
+  it('builds lessons, exercises, questions and cards', () => {
+    const pack = buildPack({ format: 1, subject: { id: 's', name: 'S' }, paths: [{ id: 'p', name: 'P' }] }, [{ path: 'p', id: 'u', text: [
+      '# Unité', '> Description', '', '@@ lesson l | Leçon', '', 'Texte', '',
+      '@@ code c | Code | ts', 'Consigne', '@starter', 'let a;', '@part Un', 'Fais', '@test T1', 'expect(a)', '@part Deux', '@types T2', 'type A = 1;', '@hint', 'Aide', '@solution', 'let a = 1;', '',
+      '@@ predict q', 'Quoi ?', '@answer `1`', '@wrong `2`', '@why Parce que', '', '@@ card k', 'Recto', '@back', 'Verso', '',
+    ].join('\n') }]);
+    expect(packSchema.safeParse(pack).error?.issues).toBeUndefined();
+    const unit = pack.paths![0].units![0];
+    expect([unit.name, unit.description, unit.steps!.map((x) => x.id)]).toEqual(['Unité', 'Description', ['l', 'c', 'lire', 'retenir']]);
+    expect(unit.steps![1].config).toMatchObject({
+      instructions: 'Consigne',
+      files: [{ name: 'main.ts', code: 'let a;\n', readonly: false }],
+      parts: [{ title: 'Un', instructions: 'Fais', tests: [{ name: 'T1', code: 'expect(a)' }] }, { title: 'Deux', types: [{ name: 'T2', code: 'type A = 1;' }] }],
+      hints: ['Aide'],
+      solution: [{ name: 'main.ts', code: 'let a = 1;\n' }],
+    });
+    expect(pack.elements!.map((e) => e.data)).toEqual([{ prompt: 'Quoi ?', answer: '`1`', wrong: ['`2`'], why: 'Parce que' }, { front: 'Recto', back: 'Verso' }]);
   });
 });
 

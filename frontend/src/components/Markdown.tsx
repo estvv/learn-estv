@@ -10,7 +10,7 @@ const components: Components = {
       const cls = (code.properties.className as string[] | undefined)?.find((c) => c.startsWith('language-'));
       const Block = cls ? blocks[cls.slice('language-'.length)] : undefined;
       const text = code.children.map((c) => (c.type === 'text' ? c.value : '')).join('');
-      if (Block) return <Block params={parseBlock(text)} />;
+      if (Block) return <Block params={parseBlock(text)} source={text} />;
     }
     return <pre {...rest} className="overflow-x-auto rounded-lg bg-neutral-100 p-3 text-sm">{children}</pre>;
   },

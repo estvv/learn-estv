@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import type { ProgressStore, SubjectProgress } from '../progress/store';
 import { useProgressStore } from '../progress/useProgress';
-import { SubjectModel } from './subject';
+import { nextStepOf, SubjectModel } from './subject';
 import { loadSubject, type SubjectSummary } from './useSubject';
 
 export interface SubjectOverview {
@@ -35,11 +35,12 @@ async function loadOverview(store: ProgressStore): Promise<SubjectOverview[]> {
       summary,
       model,
       progress,
-      due: [...progress.srs.values()].filter((e) => isDue(e.card, now)).length,
+      due: model.practiceOnly ? 0 : [...progress.srs.values()].filter((e) => isDue(e.card, now)).length,
       stepsDone: steps.filter((s) => progress.steps.has(s.fullId)).length,
       stepsTotal: steps.length,
-      next: steps.find((s) => !progress.steps.has(s.fullId)),
-      started: progress.steps.size > 0 || progress.srs.size > 0,
+      next: nextStepOf(steps, progress.steps),
+      // Progress left from removed lessons does not count.
+      started: !model.practiceOnly && (progress.steps.size > 0 || progress.srs.size > 0),
     };
   }));
 }

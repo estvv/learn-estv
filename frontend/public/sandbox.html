@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- Empty page that runs the student's web code, framed with sandbox="allow-scripts":
+     its origin is opaque, so it reaches neither the app nor its storage. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body { font: 15px/1.5 system-ui, sans-serif; margin: 12px; color: #171717; }</style>
+</head>
+<body>
+<script>
+  addEventListener('message', function start(e) {
+    if (e.source !== parent || !e.data || !e.data.scripts) return;
+    removeEventListener('message', start);
+    var style = document.createElement('style');
+    style.textContent = e.data.css;
+    document.head.append(style);
+    document.body.innerHTML = e.data.html;
+    e.data.scripts.forEach(function (text) {
+      var s = document.createElement('script');
+      s.textContent = text;
+      document.head.append(s);
+    });
+  });
+  parent.postMessage({ type: 'ready' }, '*');
+</script>
+</body>
+</html>

@@ -9,6 +9,12 @@ export class SubjectModel {
     return this.pack.subject.id;
   }
 
+  // A subject with a practice playground and nothing to learn or review
+  // (no path, no facet): its pages lead straight to the practice.
+  get practiceOnly() {
+    return isPracticeOnly(this.pack);
+  }
+
   elementId(local: string) {
     return fullId(this.id, local);
   }
@@ -56,4 +62,16 @@ export class SubjectModel {
     const elements = this.pack.elements.filter((e) => e.skills.some((s) => skills.has(s)));
     return mastery(this.pack, elements, (key) => progress.srs.get(key)?.card, now);
   }
+}
+
+type CourseStep = ReturnType<SubjectModel['steps']>[number];
+
+// What to do next: challenges wait until everything else is done.
+export function nextStepOf(steps: CourseStep[], done: { has(id: string): boolean }): CourseStep | undefined {
+  const left = steps.filter((s) => !done.has(s.fullId));
+  return left.find((s) => !s.step.config.challenge) ?? left[0];
+}
+
+export function isPracticeOnly(pack: Pack): boolean {
+  return !!pack.subject.practice && pack.paths.length === 0 && pack.subject.facets.length === 0;
 }

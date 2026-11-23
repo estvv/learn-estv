@@ -1,10 +1,11 @@
+import { codeModule } from './code';
 import { flashcardsModule } from './flashcards';
 import { lessonModule } from './lesson';
 import { quizModule } from './quiz';
 import type { ActivityModule } from './types';
 
 // Every activity module, by id. Pack steps reference these ids.
-const modules: ActivityModule<any>[] = [lessonModule, flashcardsModule, quizModule];
+const modules: ActivityModule<any>[] = [lessonModule, flashcardsModule, quizModule, codeModule];
 
 export const registry = new Map<string, ActivityModule<any>>(modules.map((m) => [m.id, m]));
 

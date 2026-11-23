@@ -167,7 +167,7 @@ Réservé aux comptes connectés ; désactivé si `MISTRAL_API_KEY` est absente.
 - **Partitions** : VexFlow pour les portées générées (lecture de notes, oreille, leçons), OpenSheetMusicDisplay pour les morceaux MusicXML.
 - **Schémas** : Zod, partagés front/back (dossier `shared/`).
 - **SRS** : `ts-fsrs`.
-- **Déploiement** : Docker Compose sur `caddy_net`, GitHub Action → SSH → `make learn-estv-update`, entrée dans `home-estv`.
+- **Déploiement** : Docker Compose sur `caddy_net`, GitHub Action → SSH → `deploy/deploy.sh` (voir [`DEPLOY.md`](DEPLOY.md)), entrée dans `home-estv`.
 - **Ports dev** : backend 3014, override compose 8095.
 
 ### 12.1 Modèle de données (première ébauche)

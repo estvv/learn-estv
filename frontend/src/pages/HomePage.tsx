@@ -70,7 +70,7 @@ export function HomePage() {
 
 function SubjectTile({ subject: s }: { subject: SubjectOverview }) {
   return (
-    <Link to={`/s/${s.summary.id}`} className={`${card} relative flex w-full flex-col items-center justify-center gap-3 px-3 py-6 text-center sm:py-7`}>
+    <Link to={s.model.practiceOnly ? `/s/${s.summary.id}/pratique` : `/s/${s.summary.id}`} className={`${card} relative flex w-full flex-col items-center justify-center gap-3 px-3 py-6 text-center sm:py-7`}>
       {s.due > 0 && (
         <span className="absolute right-2.5 top-2.5"><Badge accent={s.summary.accent}>{s.due} à réviser</Badge></span>
       )}
@@ -78,7 +78,7 @@ function SubjectTile({ subject: s }: { subject: SubjectOverview }) {
       <span>
         <span className="block font-semibold text-neutral-900">{s.summary.name}</span>
         <span className="mt-0.5 hidden text-xs text-neutral-500 sm:block">
-          {s.started ? `${s.stepsDone} / ${s.stepsTotal} étapes` : `${s.stepsTotal} étapes · ${s.summary.lessons} leçons`}
+          {s.model.practiceOnly ? 'Pratique' : s.started ? `${s.stepsDone} / ${s.stepsTotal} étapes` : `${s.stepsTotal} étapes · ${s.summary.lessons} leçons`}
         </span>
       </span>
     </Link>

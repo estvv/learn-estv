@@ -10,7 +10,8 @@ import type { ComponentType } from 'react';
 //
 // Toolkits register their blocks here (music: keyboard, play…).
 
-export type BlockProps = { params: Record<string, string> };
+// `source` is the raw text, for blocks that are not `key: value` lines (code).
+export type BlockProps = { params: Record<string, string>; source: string };
 export const blocks: Record<string, ComponentType<BlockProps>> = {};
 
 export function registerBlock(name: string, component: ComponentType<BlockProps>) {
