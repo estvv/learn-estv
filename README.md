@@ -32,9 +32,9 @@ Sur l'hôte (Node ≥ 22) :
 
 ```bash
 npm install
-make backend    # API sur :3014, base dans data/learn.db
-make frontend   # http://localhost:5173
-make admin NAME=estv
+npm run dev -w backend    # API sur :3014, base dans data/learn.db
+npm run dev -w frontend   # http://localhost:5173
+npm run create-admin -w backend -- estv
 ```
 
 Ou avec Docker : `cp docker-compose.override.example.yml docker-compose.override.yml && docker compose up` → http://127.0.0.1:8095.
