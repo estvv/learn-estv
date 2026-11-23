@@ -11,3 +11,4 @@ data/
 .vscode
 docker-compose.override.yml
 *.tsbuildinfo
+Makefile
