@@ -1,20 +1,26 @@
 import type { PieceNote } from '@learn/shared';
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, type CSSProperties } from 'react';
 import { Field } from '../../../components/Field';
 import { Segmented } from '../../../components/Segmented';
 import { Toggle } from '../../../components/settings';
 import { useObservable } from '../../../lib/store';
 import { FallingNotes, type NoteSource } from '../pieces/FallingNotes';
 import { PianoKeyboard } from '../PianoKeyboard';
-import { setStage, stage, STYLE_IDS, STYLE_NAMES, type Effects, type StageColors, type StyleId } from './settings';
+import { MOODS } from './colors';
+import { MOOD_IDS, MOOD_NAMES, setStage, stage, STYLE_IDS, STYLE_NAMES, type Effects, type MoodId, type StyleId } from './settings';
 
-const SWATCHES: Record<StyleId, string> = {
-  classic: 'linear-gradient(90deg, var(--color-hand-l-pale) 50%, var(--color-hand-r-pale) 50%)',
-  neon: 'radial-gradient(circle at 30% 60%, #ff2d95, transparent 45%), radial-gradient(circle at 72% 40%, #22e5ff, transparent 45%), #05050a',
-  crystal: 'linear-gradient(115deg, #000 20%, #ff1f45 38%, #f4d9ff 47%, #a855f7 56%, #000 80%)',
-  fire: 'linear-gradient(0deg, #ffe9a8, #ffb300 25%, #ff3d00 55%, #120402 95%)',
-  liquid: 'radial-gradient(circle at 35% 35%, #ffffff 0 5%, #ff5fa2 12% 30%, transparent 32%), radial-gradient(circle at 70% 62%, #ffffff 0 4%, #2dd4ff 10% 26%, transparent 28%), #04162a',
-  galaxy: 'radial-gradient(circle at 30% 40%, #5b2bd6aa, transparent 50%), radial-gradient(circle at 75% 60%, #0e8fceaa, transparent 45%), #03030c',
+// What each looks like, on a button.
+const SWATCHES: Record<StyleId, CSSProperties> = {
+  classic: { background: 'linear-gradient(90deg, var(--color-hand-l-pale) 50%, var(--color-hand-r-pale) 50%)' },
+  glow: { background: 'linear-gradient(#7d9bff, #cfdcff)', boxShadow: '0 0 14px #6f8dffaa' },
+  glass: { background: '#7d9bff3d', border: '1.5px solid #a9bdff', boxShadow: '0 0 10px #6f8dff66' },
+  outline: { border: '2px solid #8ea6ff', boxShadow: '0 0 12px #6f8dffaa, inset 0 0 6px #6f8dff66' },
+  comet: { background: 'linear-gradient(transparent, #7d9bff 60%, #ffffff)', borderRadius: 99, boxShadow: '0 6px 12px -2px #8ea6ffcc' },
+};
+const MOOD_SWATCH: Record<MoodId, string> = {
+  hands: 'linear-gradient(90deg, var(--color-hand-l) 50%, var(--color-hand-r) 50%)',
+  rainbow: 'linear-gradient(90deg, #ff4d4d, #ffd24d, #4dff88, #4dc3ff, #a64dff)',
+  ...(Object.fromEntries(Object.entries(MOODS).map(([id, [far, near]]) => [id, `linear-gradient(${far}, ${near})`])) as Record<keyof typeof MOODS, string>),
 };
 
 export function StageFields() {
@@ -32,7 +38,9 @@ export function StageFields() {
               aria-pressed={s.style === id}
               className={`overflow-hidden rounded-lg border text-center text-xs font-medium transition-colors ${s.style === id ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 text-neutral-700 hover:border-neutral-400'}`}
             >
-              <span className="block h-9" style={{ background: SWATCHES[id] }} />
+              <span className={`flex h-11 items-center justify-center ${id === 'classic' ? '' : 'bg-black'}`}>
+                {id === 'classic' ? <span className="h-full w-full" style={SWATCHES.classic} /> : <span className="h-7 w-3.5 rounded" style={SWATCHES[id]} />}
+              </span>
               <span className="block py-1.5">{STYLE_NAMES[id]}</span>
             </button>
           ))}
@@ -40,14 +48,27 @@ export function StageFields() {
       </Field>
       {!plain && (
         <>
-          <Field label="Couleurs des notes">
-            <Segmented<StageColors> full value={s.colors} onChange={(colors) => setStage({ colors })} options={[{ value: 'hands', label: 'Mains' }, { value: 'style', label: 'Du style' }, { value: 'rainbow', label: 'Arc-en-ciel' }]} />
+          <Field label="Couleurs">
+            <div className="grid grid-cols-4 gap-2">
+              {MOOD_IDS.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setStage({ mood: id })}
+                  aria-pressed={s.mood === id}
+                  className={`overflow-hidden rounded-lg border text-center text-[11px] font-medium transition-colors ${s.mood === id ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 text-neutral-700 hover:border-neutral-400'}`}
+                >
+                  <span className="block h-5" style={{ background: MOOD_SWATCH[id] }} />
+                  <span className="block truncate px-0.5 py-1">{MOOD_NAMES[id]}</span>
+                </button>
+              ))}
+            </div>
           </Field>
           <Field label="Particules">
             <Segmented<Effects> full value={s.effects} onChange={(effects) => setStage({ effects })} options={[{ value: 'off', label: 'Aucune' }, { value: 'soft', label: 'Douces' }, { value: 'max', label: 'Max' }]} />
           </Field>
           <div className="space-y-2">
-            <Toggle checked={s.led} onChange={(led) => setStage({ led })} label="Barre de LED au-dessus du clavier" />
+            <Toggle checked={s.led} onChange={(led) => setStage({ led })} label="Ligne de LED au-dessus du clavier" />
             <Toggle checked={s.keys} onChange={(keys) => setStage({ keys })} label="Les notes éclairent les touches" />
           </div>
         </>

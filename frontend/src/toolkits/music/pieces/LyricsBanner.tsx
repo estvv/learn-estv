@@ -11,6 +11,9 @@ const FILL = 'linear-gradient(90deg, var(--color-sky-600) var(--sung, 0%), var(-
 // A wait this long before a line is counted down (seconds).
 const WAIT = 4;
 const COUNT = 3;
+// The last line stays a little (seconds).
+const LINGER = 1.5;
+const lastWord = (lines: SungLine[]) => lines.reduce((end, l) => (l.words.length ? Math.max(end, l.end) : end), 0);
 
 type Place = 'gone' | 'now' | 'next' | 'later';
 const PLACES: Record<Place, string> = {
@@ -28,15 +31,19 @@ export function LyricsBanner({ lines, player, short }: { lines: LyricLine[]; pla
   // Seconds before the next line, after a rest; dots are shown instead of the
   // line that is over.
   const [count, setCount] = useState(0);
+  // No more words: no more banner.
+  const [over, setOver] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
   // Every picture: smoother than the rest of the page.
   useEffect(() => {
     let raf = 0;
+    const end = lastWord(sung) + LINGER;
     const draw = () => {
       const time = player.position;
       const at = sungAt(sung, time);
       setNow(at);
+      setOver(time > end);
       const next = sung[at + 1];
       const rest = sung[at]?.text ? sung[at].end : at < 0 ? 0 : sung[at].time;
       const left = next ? next.time - time : Infinity;
@@ -52,7 +59,7 @@ export function LyricsBanner({ lines, player, short }: { lines: LyricLine[]; pla
   const places = short ? SHORT : PLACES;
   const shown: [number, Place][] = [[now - 1, 'gone'], [now, 'now'], [now + 1, 'next'], [now + 2, 'later']];
   return (
-    <div className={`relative shrink-0 overflow-hidden border-t border-neutral-100 bg-white px-4 ${short ? 'h-9' : 'h-19'}`}>
+    <div className={`relative shrink-0 overflow-hidden bg-white px-4 transition-[height,opacity] duration-500 motion-reduce:transition-none ${over ? 'h-0 opacity-0' : `border-t border-neutral-100 ${short ? 'h-9' : 'h-19'}`}`}>
       <div ref={box} className={`relative h-full ${short ? 'pt-0.5' : 'pt-2'}`}>
         {shown.map(([i, place]) => sung[i] && (
           <div
@@ -97,7 +104,7 @@ function Line({ line, now, short }: { line: SungLine; now: boolean; short: boole
             {/* Only the line being sung is filled. */}
             <span data-word style={now ? { backgroundImage: FILL, backgroundClip: 'text', WebkitBackgroundClip: 'text', color: 'transparent' } : { color: 'var(--color-neutral-800)' }}>{w.text}</span>
           </span>
-        )) : <span className="text-neutral-300">♪</span>}
+        )) : '\u00a0'}
       </p>
     </div>
   );

@@ -15,6 +15,7 @@ import { CopyModal, PasteModal } from './PasteModal';
 import { copyOf, encodePieces, looksLikePieces, type PieceCopy } from './pieceCopy';
 import { Cover, DifficultyBadge, DifficultyPicker, FolderSelect } from './pieceFields';
 import type { ScoreDraft } from './ScoreEditor';
+import { voices } from './voice/store';
 import { sourceLabels, type PieceFolder, type PieceMeta, type PieceSummary } from './types';
 
 const formatDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
@@ -375,6 +376,7 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
           danger
           onConfirm={async () => {
             await piecesApi.remove(removing.id);
+            void voices.remove(removing.id).catch(() => {});
             if (current === removing.id) onPick(null);
             load();
           }}

@@ -19,7 +19,7 @@ type Tab = 'play' | 'look' | 'edit';
 let lastTab: Tab = 'play';
 
 // Everything that is not needed while playing, in a window.
-export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onExtract, lyrics, onLyrics, onKaraoke, onClose }: {
+export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onExtract, lyrics, onLyrics, onKaraoke, voice, onVoice, onVoiceFile, onClose }: {
   mode: PlayMode;
   level: PieceLevel;
   rate: number;
@@ -49,6 +49,10 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
   onLyrics(on: boolean): void;
   // Finding them, putting them in their place.
   onKaraoke(): void;
+  // A recording heard along; null: none on this device.
+  voice: { on: boolean; volume: number } | null;
+  onVoice(patch: Partial<{ on: boolean; volume: number }>): void;
+  onVoiceFile(): void;
   onClose(): void;
 }) {
   const [tab, setTab] = useState<Tab>(lastTab);
@@ -88,6 +92,12 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
             <div className="space-y-3 sm:col-span-2">
               <Toggle checked={numbered} onChange={onNumbered} label="Chiffres sur les notes et les touches" />
               {lyrics !== null && <Toggle checked={lyrics} onChange={onLyrics} label="Paroles au-dessus des notes" />}
+              {voice && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <Toggle checked={voice.on} onChange={(on) => onVoice({ on })} label={mode === 'wait' ? 'Voix (muette en mode Attente)' : 'Voix'} />
+                  <input type="range" min={0} max={1} step={0.02} value={voice.volume} disabled={!voice.on} onChange={(e) => onVoice({ volume: Number(e.target.value) })} aria-label="Volume de la voix" className="w-40 accent-neutral-900 disabled:opacity-40" />
+                </div>
+              )}
               {mode === 'wait' && bigKeys !== null && (
                 <div>
                   <Toggle checked={bigKeys} onChange={onBigKeys} label="Grandes touches" />
@@ -123,6 +133,12 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
               text="Karaoké : les trouver, et les caler sur le morceau."
               icon={lyrics === null ? <PlusIcon className="h-4 w-4" /> : <PencilIcon className="h-4 w-4" />}
               onClick={onKaraoke}
+            />
+            <Choice
+              title={voice ? 'Voix' : 'Ajouter la voix'}
+              text={voice ? 'Changer le fichier, le caler, l’enlever.' : 'Un mp3 joué en même temps que les notes.'}
+              icon={voice ? <PencilIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
+              onClick={onVoiceFile}
             />
             <Choice title="Nouveau morceau avec des parties" text="Garder seulement quelques parties. Celui-ci ne change pas." icon={<PlusIcon className="h-4 w-4" />} onClick={onExtract} />
           </div>

@@ -7,31 +7,31 @@ import { presence, type Particle } from './particles';
 export interface Box { x: number; y: number; w: number; h: number }
 type Ctx = CanvasRenderingContext2D;
 
-const glows = new Map<string, HTMLCanvasElement>();
-const GLOW = 64;
-// A round light.
-export function glow(color: string): HTMLCanvasElement {
-  let c = glows.get(color);
-  if (!c) {
-    c = document.createElement('canvas');
-    c.width = GLOW;
-    c.height = GLOW;
-    const ctx = c.getContext('2d');
-    if (ctx) {
-      const t = tone(color);
-      const g = ctx.createRadialGradient(GLOW / 2, GLOW / 2, 0, GLOW / 2, GLOW / 2, GLOW / 2);
-      g.addColorStop(0, alpha(t, 1));
-      g.addColorStop(0.2, alpha(t, 0.55));
-      g.addColorStop(0.5, alpha(t, 0.16));
-      g.addColorStop(1, alpha(t, 0));
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, GLOW, GLOW);
+function kept(size: number, stops: (t: Tone) => [number, string][]) {
+  const all = new Map<string, HTMLCanvasElement>();
+  return (color: string): HTMLCanvasElement => {
+    let c = all.get(color);
+    if (!c) {
+      c = document.createElement('canvas');
+      c.width = size;
+      c.height = size;
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+        for (const [at, paint] of stops(tone(color))) g.addColorStop(at, paint);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, size, size);
+      }
+      if (all.size > 200) all.clear();
+      all.set(color, c);
     }
-    if (glows.size > 200) glows.clear();
-    glows.set(color, c);
-  }
-  return c;
+    return c;
+  };
 }
+// A round light.
+const glow = kept(64, (t) => [[0, alpha(t, 1)], [0.2, alpha(t, 0.55)], [0.5, alpha(t, 0.16)], [1, alpha(t, 0)]]);
+// A speck: white, sharp, a little light of its colour around.
+const speck = kept(32, (t) => [[0, '#ffffff'], [0.2, '#ffffff'], [0.3, alpha(tone(t.hot), 0.8)], [0.5, alpha(t, 0.3)], [1, alpha(t, 0)]]);
 
 export function light(ctx: Ctx, color: string, x: number, y: number, rx: number, ry: number, a: number) {
   if (a <= 0.004 || rx <= 0 || ry <= 0) return;
@@ -49,7 +49,8 @@ export function round(ctx: Ctx, b: Box, r: number) {
 export function halo(ctx: Ctx, t: Tone, strength: number) {
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineJoin = 'round';
-  for (const [width, a] of [[18, 0.05], [11, 0.09], [6, 0.16]]) {
+  ctx.lineCap = 'round';
+  for (const [width, a] of [[44, 0.012], [32, 0.016], [22, 0.024], [14, 0.036], [8, 0.055], [4, 0.09]]) {
     ctx.lineWidth = width;
     ctx.strokeStyle = alpha(t, a * strength);
     ctx.stroke();
@@ -62,64 +63,26 @@ export function vertical(ctx: Ctx, b: Box, stops: [number, string][]): CanvasGra
   for (const [at, color] of stops) g.addColorStop(at, color);
   return g;
 }
-export function horizontal(ctx: Ctx, b: Box, stops: [number, string][]): CanvasGradient {
-  const g = ctx.createLinearGradient(b.x, 0, b.x + b.w, 0);
-  for (const [at, color] of stops) g.addColorStop(at, color);
-  return g;
-}
 
 export function drawParticles(ctx: Ctx, all: readonly Particle[]) {
   ctx.globalCompositeOperation = 'lighter';
   for (const p of all) {
     const a = presence(p);
-    const { x, y, size } = p;
-    switch (p.kind) {
-      case 'smoke':
-        light(ctx, p.color, x, y, size, size, a * 0.1);
-        break;
-      case 'ring':
-        ctx.globalAlpha = a * 0.8;
-        ctx.strokeStyle = tone(p.color).light;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(x, y, size, size * 0.32, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-        break;
-      case 'shard': {
-        // A long thin flash, along its way.
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(Math.atan2(p.vy, p.vx));
-        light(ctx, p.color, 0, 0, size * 5, size * 0.9, a * 0.9);
-        light(ctx, tone(p.color).hot, 0, 0, size * 2.4, size * 0.4, a);
-        ctx.restore();
-        break;
-      }
-      case 'star': {
-        const twinkle = 0.55 + 0.45 * Math.sin(p.seed + p.age * 14);
-        light(ctx, p.color, x, y, size * 3, size * 3, a * 0.5);
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(p.turn);
-        light(ctx, tone(p.color).hot, 0, 0, size * 3.4, size * 0.45, a * twinkle);
-        light(ctx, tone(p.color).hot, 0, 0, size * 0.45, size * 3.4, a * twinkle);
-        ctx.restore();
-        break;
-      }
-      case 'drop':
-        light(ctx, p.color, x, y, size * 2.4, size * 2.4, a * 0.5);
-        ctx.globalAlpha = a;
-        ctx.fillStyle = tone(p.color).light;
-        ctx.beginPath();
-        ctx.arc(x, y, size * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        break;
-      default:
-        light(ctx, p.color, x, y, size * 2.6, size * 2.6, a * 0.75);
-        light(ctx, tone(p.color).hot, x, y, size, size, a);
+    if (a <= 0.01) continue;
+    if (p.kind === 'mote') {
+      const r = p.size * 4;
+      ctx.globalAlpha = a;
+      ctx.drawImage(speck(p.color), p.x - r, p.y - r, r * 2, r * 2);
+      ctx.globalAlpha = 1;
+      continue;
     }
+    // A long thin light, along its way.
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(Math.atan2(p.vy, p.vx));
+    light(ctx, p.color, 0, 0, p.size * 9, p.size * 1.1, a * 0.7);
+    light(ctx, tone(p.color).hot, 0, 0, p.size * 6, p.size * 0.4, a);
+    ctx.restore();
   }
   ctx.globalCompositeOperation = 'source-over';
 }

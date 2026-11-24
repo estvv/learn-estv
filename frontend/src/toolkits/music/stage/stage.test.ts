@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { keyLayout } from '../keyGeometry';
-import { hex, noteColor, tone } from './colors';
-import { Particles, presence, type Kind } from './particles';
+import { hex, MOODS, pairOf, tone, warm } from './colors';
+import { Particles, presence, wind, type Kind } from './particles';
 import { Scene, type Picture, type SeenNote } from './scene';
-import { cleanedStage, STYLE_IDS, type StageSettings } from './settings';
+import { cleanedStage, MOOD_IDS, STYLE_IDS, type StageSettings } from './settings';
 
 // A canvas that only counts what is drawn, and refuses what a real one would.
 function canvas() {
@@ -28,7 +28,7 @@ function canvas() {
   });
   return { ctx: ctx as unknown as CanvasRenderingContext2D, calls: () => calls };
 }
-const settings = (more: Partial<StageSettings> = {}): StageSettings => ({ ...cleanedStage({}), style: 'neon', ...more });
+const settings = (more: Partial<StageSettings> = {}): StageSettings => ({ ...cleanedStage({}), style: 'glow', ...more });
 const layout = keyLayout(48, 83);
 const hands = { left: '#ff0000', right: '#0000ff' };
 const id = {};
@@ -38,30 +38,37 @@ const picture = (notes: SeenNote[], moving = true): Picture => ({ w: 800, h: 400
 describe('how the notes look', () => {
   it('is the classic way unless chosen otherwise', () => {
     expect(cleanedStage({}).style).toBe('classic');
-    expect(cleanedStage({ style: 'galaxy', led: false, effects: 'lots' as never })).toMatchObject({ style: 'galaxy', led: false, effects: 'max', keys: true });
-    expect(cleanedStage({ style: 'gone' as never }).style).toBe('classic');
+    expect(cleanedStage({ style: 'glass', led: false, effects: 'lots' as never, mood: 'gold' })).toMatchObject({ style: 'glass', led: false, effects: 'max', keys: true, mood: 'gold' });
+    expect(cleanedStage({ style: 'gone' as never, mood: 'gone' as never })).toMatchObject({ style: 'classic', mood: 'hands' });
+    // Styles there used to be: still in the dark.
+    expect(cleanedStage({ style: 'crystal' as never }).style).toBe('glow');
   });
 
-  it('takes the colours of the hands, of the style or of the keys', () => {
-    const palette = { left: '#111111', right: '#222222' };
-    expect(noteColor('hands', 'left', 60, hands, palette)).toBe('#ff0000');
-    expect(noteColor('style', 'right', 60, hands, palette)).toBe('#222222');
-    expect(noteColor('hands', null, 40, hands, palette)).toBe('#ff0000');
-    const keys = [21, 50, 80, 108].map((m) => noteColor('rainbow', 'left', m, hands, palette));
+  it('takes the colours of the hands, of a mood or of the keys', () => {
+    expect(pairOf('hands', 'left', 60, hands)[0]).toBe('#ff0000');
+    expect(pairOf('hands', null, 40, hands)[0]).toBe('#ff0000');
+    expect(pairOf('gold', 'left', 40, hands)).toEqual(MOODS.gold);
+    const keys = [21, 50, 80, 108].map((m) => pairOf('rainbow', 'left', m, hands)[0]);
     expect(new Set(keys).size).toBe(4);
-    for (const k of keys) expect(k).toMatch(/^#[0-9a-f]{6}$/);
+    for (const mood of MOOD_IDS) for (const m of [21, 60, 108]) for (const c of pairOf(mood, 'right', m, hands)) expect(c).toMatch(/^#[0-9a-f]{6}$/);
     expect([hex(0, 1, 0.5), hex(120, 1, 0.5), hex(240, 1, 0.5)]).toEqual(['#ff0000', '#00ff00', '#0000ff']);
     expect(tone('#336699').rgb).toBe('51, 102, 153');
+  });
+
+  it('warms up as notes come, by a few colours only', () => {
+    const pair = ['#000000', '#ffffff'] as const;
+    expect([warm(pair, -1), warm(pair, 0), warm(pair, 1), warm(pair, 2)]).toEqual(['#000000', '#000000', '#ffffff', '#ffffff']);
+    expect(new Set(Array.from({ length: 500 }, (_, i) => warm(pair, i / 499))).size).toBeLessThan(12);
   });
 
   it.each(STYLE_IDS.filter((s) => s !== 'classic'))('can be drawn: %s', (style) => {
     const scene = new Scene();
     const { ctx, calls } = canvas();
-    for (const colors of ['hands', 'style', 'rainbow'] as const) {
+    for (const mood of MOOD_IDS) {
       for (let i = 0; i < 40; i++) {
         // Coming, sounding, then gone; tall, flat, thin.
         const boxes = [{ x: 10, y: -50, w: 30, h: 300 }, { x: 60, y: 390, w: 3, h: 4 }, { x: 90, y: 100, w: 40, h: 8 }];
-        scene.draw(ctx, picture(boxes.map((box, k) => note(i > 10 && i < 25, { box, midi: 60 + k, id: boxes[0] }))), settings({ style, colors }), 0.016);
+        scene.draw(ctx, picture(boxes.map((box, k) => note(i > 10 && i < 25, { box, midi: 60 + k, id: boxes[0] }))), settings({ style, mood }), 0.016);
         scene.drawKeys(ctx, 800, 160, layout);
       }
     }
@@ -85,24 +92,45 @@ describe('how the notes look', () => {
     const scene = new Scene();
     const { ctx } = canvas();
     for (let i = 0; i < 400; i++) scene.draw(ctx, picture([]), settings(), 0.06);
-    expect(scene.particles.limit).toBeLessThan(400);
+    expect(scene.particles.limit).toBeLessThan(900);
     for (let i = 0; i < 1200; i++) scene.draw(ctx, picture([]), settings(), 0.012);
-    expect(scene.particles.limit).toBe(1000);
+    expect(scene.particles.limit).toBe(2600);
   });
 
   it('never has too many sparks, and they all go', () => {
     const p = new Particles(50);
-    const kinds: Kind[] = ['dust', 'ember', 'drop', 'star', 'shard', 'ring', 'smoke'];
-    for (let i = 0; i < 200; i++) p.add({ kind: kinds[i % 7], color: '#ffffff', x: 0, y: 0, vx: 10, vy: 10, size: 2, life: 1, turn: 0 });
+    const kinds: Kind[] = ['mote', 'flash'];
+    for (let i = 0; i < 200; i++) p.add({ kind: kinds[i % 2], color: '#ffffff', x: 0, y: 0, vx: 10, vy: -200, size: 1, life: 1 });
     expect(p.all).toHaveLength(50);
-    p.step(0.5, 3);
-    expect(p.all.every((x) => Number.isFinite(x.x + x.y + x.size) && presence(x) > 0 && presence(x) <= 1)).toBe(true);
-    // Drops stay above the keyboard.
-    expect(p.all.filter((x) => x.kind === 'drop').every((x) => x.y <= 3)).toBe(true);
-    p.step(0.6, 3);
+    p.step(0.5);
+    expect(p.all.every((x) => Number.isFinite(x.x + x.y) && presence(x) >= 0 && presence(x) <= 1)).toBe(true);
+    p.step(0.6);
     expect(p.all).toHaveLength(0);
     p.limit = 0;
-    p.add({ kind: 'dust', color: '#ffffff', x: 0, y: 0, vx: 0, vy: 0, size: 1, life: 1, turn: 0 });
+    p.add({ kind: 'mote', color: '#ffffff', x: 0, y: 0, vx: 0, vy: 0, size: 1, life: 1 });
     expect(p.all).toHaveLength(0);
+  });
+
+  it('carries a cloud as one, then lets it spread', () => {
+    const p = new Particles(500);
+    for (let i = 0; i < 100; i++) p.add({ kind: 'mote', color: '#ffffff', x: 300 + (i % 10), y: 500 - i / 10, vx: 0, vy: -250 - (i % 7) * 10, size: 1, life: 3 });
+    const spread = () => {
+      const xs = p.all.map((x) => x.x);
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    for (let i = 0; i < 15; i++) p.step(1 / 60);
+    const early = spread();
+    expect(early).toBeLessThan(40);
+    for (let i = 0; i < 90; i++) p.step(1 / 60);
+    // Higher, curled, but still a cloud.
+    expect(p.all.every((x) => x.y < 480)).toBe(true);
+    expect(spread()).toBeGreaterThan(early);
+    expect(spread()).toBeLessThan(420);
+    // The air turns, it does not gather: as much goes in as comes out.
+    const e = 0.01;
+    for (const [x, y, t] of [[10, 20, 0], [300, 140, 2], [777, 400, 5]]) {
+      const out = (wind(x + e, y, t)[0] - wind(x - e, y, t)[0] + wind(x, y + e, t)[1] - wind(x, y - e, t)[1]) / (2 * e);
+      expect(Math.abs(out)).toBeLessThan(0.01);
+    }
   });
 });

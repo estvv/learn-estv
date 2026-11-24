@@ -33,6 +33,8 @@ export function ensureAudio(): Promise<void> {
   loading = (async () => {
     tone = await import('tone');
     await tone.start();
+    // Many notes at once, or a voice over them, would saturate.
+    tone.getDestination().chain(new tone.Limiter(-1));
     sampler = new tone.Sampler({
       urls: Object.fromEntries(SAMPLE_NOTES.map((n) => [n, `${n.replace('#', 's')}.mp3`])),
       baseUrl: '/samples/piano/',
@@ -79,6 +81,38 @@ export function tick(first: boolean) {
   osc.connect(gain).connect(ctx.destination);
   osc.start();
   osc.stop(ctx.currentTime + 0.07);
+}
+
+// The clock notes are played on. `ahead`: asked for now, they are heard that much
+// later. Null: no sound yet.
+export function audioClock(): { now: number; ahead: number } | null {
+  if (!tone || audioState.get() !== 'ready') return null;
+  const ctx = tone.getContext();
+  return ctx.state === 'running' ? { now: ctx.currentTime, ahead: ctx.lookAhead } : null;
+}
+
+export interface Clip {
+  setVolume(v: number): void;
+  stop(fade: number): void;
+}
+
+// A recording, on the same clock. `when` is on it, `from` in the recording.
+export function startClip(buffer: AudioBuffer, { when, from, rate, volume, fade }: { when: number; from: number; rate: number; volume: number; fade: number }): Clip | null {
+  if (!tone) return null;
+  const gain = new tone.Gain(volume).toDestination();
+  const source = new tone.ToneBufferSource({ url: buffer, playbackRate: rate, fadeIn: fade, fadeOut: fade }).connect(gain);
+  // The source lets go of itself.
+  source.onended = () => void gain.dispose();
+  source.start(when, from);
+  return {
+    setVolume: (v) => void (gain.disposed || gain.gain.rampTo(v, 0.05)),
+    stop: (f) => {
+      if (source.disposed || gain.disposed) return;
+      // Silenced, then let go.
+      gain.gain.rampTo(0, f);
+      source.stop(`+${f}`);
+    },
+  };
 }
 
 export function releaseAll() {

@@ -14,6 +14,8 @@ import { layoutOf, levelNotes, levelOf, playedSpan } from './derive';
 import { FallingNotes } from './FallingNotes';
 import { LyricsBanner } from './LyricsBanner';
 import { LyricsModal } from './LyricsModal';
+import { useVoice, useVoicePlayer } from './voice/useVoice';
+import { VoiceModal } from './voice/VoiceModal';
 import { FullscreenControls, FullscreenIcon } from './FullscreenControls';
 import { FINGER_KEY, scrollToKeys } from './keyScroll';
 import { numberPiece, partAt } from './numbers';
@@ -103,6 +105,10 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
   const [lyricsOn, setLyricsOn] = useState(() => readJson(LYRICS_KEY, { on: true }).on);
   const lyrics = piece.lyrics?.some((l) => l.time !== null) ? piece.lyrics : null;
   const [karaoke, setKaraoke] = useState(false);
+  // A recording heard along, not while the piece waits for the notes.
+  const { voice, save: saveVoice, tweak: tweakVoice } = useVoice(piece.id);
+  const [voicing, setVoicing] = useState(false);
+  useVoicePlayer(voice, player, !!voice?.on && mode === 'listen');
   // Beside the notes on a computer, over them on a smaller screen.
   const [panel, setPanel] = useState(() => !compact && readJson(PANEL_KEY, { open: true }).open);
   const [big, setBig] = useState(false);
@@ -375,6 +381,13 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
             setLyricsOn(on);
             writeJson(LYRICS_KEY, { on });
           }}
+          voice={voice && { on: voice.on, volume: voice.volume }}
+          onVoice={tweakVoice}
+          onVoiceFile={() => {
+            setOptions(false);
+            player.pause();
+            setVoicing(true);
+          }}
           onKaraoke={() => {
             setOptions(false);
             player.pause();
@@ -389,6 +402,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
         />
       )}
 
+      {voicing && <VoiceModal piece={piece} voice={voice} onSave={saveVoice} onClose={() => setVoicing(false)} />}
       {karaoke && (
         <LyricsModal
           piece={piece}
@@ -405,7 +419,6 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
       {mode === 'wait' && state.expected.length > 0 && (
         <div className="pb-2 text-center text-xs text-neutral-500">Joue {state.expected.length > 1 ? 'les notes en surbrillance' : 'la note en surbrillance'} pour continuer</div>
       )}
-      {state.finished && !nav.shuffle && <div className="pb-2 text-center text-sm font-medium text-emerald-700">{touch ? 'Terminé !' : 'Terminé ! Espace pour rejouer.'}</div>}
 
       {big && part && (
         <Numbers

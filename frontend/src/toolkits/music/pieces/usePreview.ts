@@ -16,6 +16,7 @@ export function usePreview(notes: PieceNote[], duration: number) {
     return () => clearInterval(id);
   }, [playing]);
   return {
+    player,
     playing,
     position: player.position,
     stop: () => player.pause(),

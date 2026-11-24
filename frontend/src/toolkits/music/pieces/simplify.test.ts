@@ -53,4 +53,11 @@ describe('simplified levels', () => {
     simplify(dense, 'simplified');
     expect(JSON.stringify(dense)).toBe(before);
   });
+
+  it('takes a rolled chord as one, not a fast line', () => {
+    const rolled = [note(43, 0, 3.6, 'left'), note(50, 0.03, 3.6, 'left'), note(58, 0.06, 3, 'left'), note(38, 4, 3, 'left')];
+    expect(pitches(simplify(rolled, 'simplified'))).toEqual([43, 38]);
+    const fast = [43, 50, 58].map((m, i) => note(m, i * 0.06, 0.06, 'left'));
+    expect(pitches(simplify(fast, 'simplified'))).toEqual([43, 50, 58]);
+  });
 });

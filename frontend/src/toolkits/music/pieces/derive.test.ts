@@ -19,7 +19,7 @@ const chords = [n(48, 0), n(52, 0), n(55, 0), n(53, 1), n(57, 1), n(48, 2), n(60
 
 describe('from a piece to its numbers', () => {
   it('follows the level', () => {
-    expect(numbers(piece(chords))).toBe('48=1 52=1 55=2 53=3 57=4 48=1 60=5');
+    expect(numbers(piece(chords))).toBe('48=1 52=2 55=3 53=4 57=5 48=1 60=6');
     expect(numbers(piece(chords, { level: 'simplified' }))).toBe('48=1 53=2 48=1');
   });
 
@@ -144,26 +144,23 @@ describe('from a piece to its numbers', () => {
     expect([...handsOfThird(withTracks(true, false, true))]).toEqual(['left']);
   });
 
-  it('shares a lone melody between the hands, at any level', () => {
+  it('leaves a lone melody to its hand, at any level, but for what is too far', () => {
     const tune = [63, 64, 66, 67, 72, 71, 64, 67, 71, 70, 75, 74];
-    const p = piece(tune.map((m, i) => n(m, i / 2, 'right')));
-    const hands = (level: StoredPiece['level']) => levelNotes({ ...p, level }).map((x) => x.hand![0]).join('');
-    expect(hands('original')).toBe('llllrrllrrrr');
-    expect(hands('melody')).toBe('llllrrllrrrr');
-    expect(levelNotes({ ...p, level: 'melody' })).toHaveLength(tune.length);
-    // Each hand has its own numbers, from 1.
-    const { parts } = numbersOf(levelNotes(p), layoutOf(p));
-    expect(parts[0].rows.map((r) => r.hand)).toEqual(['left', 'right']);
-    expect(Math.max(...parts[0].keys.map((k) => k.number))).toBeLessThan(7);
+    const hands = (midis: number[], level: StoredPiece['level']) =>
+      levelNotes({ ...piece(midis.map((m, i) => n(m, i / 2, 'right'))), level }).map((x) => x.hand![0]).join('');
+    for (const level of ['original', 'melody'] as const) expect(hands(tune, level)).toBe('r'.repeat(12));
+    expect(hands([84, 86, 84, 86, 88, 60, 62, 60, 59, 60, 62, 60], 'original')).toBe('rrrrrlllllll');
   });
 
   it('gives the hands anew at an easier level, even those that were chosen', () => {
-    const line = Array.from({ length: 80 }, (_, i) => ({ ...n(66 + Math.round(9 * Math.sin(i / 5)), i / 4, 'right'), pinned: true }));
-    const p = piece([...line, n(43, 0), n(45, 8)]);
+    // High, then an octave and more lower in no time, all pinned to the right.
+    const line = Array.from({ length: 80 }, (_, i) => ({ ...n((i % 16 < 8 ? 84 : 62) + (i % 3) * 2, i / 4, 'right'), duration: 0.12, pinned: true }));
+    const p = piece([...line, n(43, 0), n(45, 19)]);
     expect(levelNotes(p).filter((x) => x.hand === 'left')).toHaveLength(2);
     const melody = levelNotes({ ...p, level: 'melody' });
     expect(melody).toHaveLength(80);
-    expect(melody.filter((x) => x.hand === 'left').length).toBeGreaterThan(20);
+    expect(melody.filter((x) => x.midi >= 84).every((x) => x.hand === 'right')).toBe(true);
+    expect(melody.filter((x) => x.midi < 70 && x.hand === 'left').length).toBeGreaterThan(20);
     // One note at a time in each hand.
     for (const hand of ['left', 'right']) {
       const own = levelNotes({ ...p, level: 'simplified' }).filter((x) => x.hand === hand);

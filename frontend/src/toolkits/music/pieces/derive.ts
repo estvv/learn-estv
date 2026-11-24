@@ -1,10 +1,11 @@
 import { pieceDuration, renderScore, soundingSpan, trimSilence, type LyricLine, type PieceEdits, type PieceLevel, type PieceNote, type PieceNumber, type PieceSection } from '@learn/shared';
 import { BeatGrid, beatGrid } from './grid';
-import { assignHands, credible, rebalanceHands, shareHands } from './hands';
+import { assignHands, credible } from './hands';
 import { applyEdit, editOf } from './levelEdits';
 import { givenByOwner, givenByScore, numberPiece, type Given, type NumberedPiece } from './numbers';
 import { fromSaved } from './parts';
 import { detectSections, type Section } from './sections';
+import { settleHands } from './settle';
 import { oneByOne, simplify } from './simplify';
 import type { StoredPiece } from './types';
 
@@ -55,20 +56,23 @@ function voices(piece: StoredPiece): PieceNote[] {
   return assignHands(notes, (n) => !!n.hand && (file || !!n.pinned));
 }
 
-// Two hands whenever there is something for both: a lone melody or bass line is
-// shared out, at whatever level it is all there is.
-const twoHands = (piece: StoredPiece, notes: PieceNote[]) => (piece.score ? notes : shareHands(notes, (n) => !!n.pinned));
-export const played = (piece: StoredPiece): PieceNote[] => twoHands(piece, voices(piece));
-// The melody and the bass are picked first. What is left is another piece: who
-// plays what is looked at again, whatever was decided for the original.
+// What the hands can really do, at any level (settle.ts). Hands chosen by the owner
+// stay at the original level; an easier one is another piece.
+const settled = new WeakMap<StoredPiece, PieceNote[]>();
+export function played(piece: StoredPiece): PieceNote[] {
+  let notes = settled.get(piece);
+  if (!notes) settled.set(piece, (notes = piece.score ? voices(piece) : settleHands(voices(piece), (n) => !!n.pinned)));
+  return notes;
+}
+// The melody and the bass are picked first, then who plays them.
 const levels = new WeakMap<StoredPiece, PieceNote[]>();
 function plainLevel(piece: StoredPiece): PieceNote[] {
   const level = levelOf(piece);
-  if (level === 'original') return twoHands(piece, voices(piece));
+  if (level === 'original') return played(piece);
   let notes = levels.get(piece);
   if (!notes) {
     const left = simplify(voices(piece), level);
-    const given = rebalanceHands(left);
+    const given = settleHands(left);
     notes = given === left ? left : oneByOne(given);
     levels.set(piece, notes);
   }

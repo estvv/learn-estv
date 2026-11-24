@@ -10,6 +10,11 @@ import type { Hand, PieceLevel, PieceNote } from '@learn/shared';
 // Notes starting this close together form one chord (as in the player).
 const CHORD_WINDOW = 0.04;
 const MIN_DURATION = 0.05;
+// Of rolled chords, in seconds: between two notes, from the first to the last, and
+// how long they are held.
+const ROLL = 0.07;
+const ROLLED = 0.25;
+const STAYS = 0.5;
 
 // Notes without a hand (audio transcriptions) go by pitch around middle C.
 export const handOf = (n: PieceNote): Hand => n.hand ?? (n.midi >= 60 ? 'right' : 'left');
@@ -30,9 +35,13 @@ function line(notes: PieceNote[], better: (a: PieceNote, b: PieceNote) => boolea
   const sorted = [...notes].sort((a, b) => a.time - b.time);
   const picked: PieceNote[] = [];
   let start = -Infinity;
+  let before = sorted[0];
   for (const n of sorted) {
     const last = picked[picked.length - 1];
-    if (last && n.time - start <= CHORD_WINDOW) {
+    // A rolled chord is one too: its notes come one after the other, and stay.
+    const rolled = !!last && n.time - before.time <= ROLL && n.time - start <= ROLLED && before.duration >= STAYS && n.duration >= STAYS;
+    before = n;
+    if (last && (n.time - start <= CHORD_WINDOW || rolled)) {
       if (better(last, n)) picked[picked.length - 1] = n;
     } else {
       picked.push(n);

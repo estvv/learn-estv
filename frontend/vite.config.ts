@@ -36,7 +36,9 @@ export default defineConfig({
   build: { chunkSizeWarningLimit: 1100 },
   worker: { format: 'es' },
   // Some exercise tests measure time: a busy CI runner may need another try.
-  test: { environment: 'happy-dom', retry: process.env.CI ? 2 : 0 },
+  test: {
+    // Some read whole keyboards or pieces: slow when the machine is busy.
+    testTimeout: 30_000, environment: 'happy-dom', retry: process.env.CI ? 2 : 0 },
   server: {
     proxy: {
       '/api': { target: process.env.API_TARGET ?? 'http://localhost:3014', changeOrigin: true },

@@ -1,7 +1,8 @@
-// What flies around the notes. No more than a fixed number of them: the oldest
-// make room for the new ones.
+// What rises from the keys: clouds of motes, carried by the same moving air, so
+// that each cloud turns and stretches as one; and now and then a flash. No more
+// than a fixed number of them: the oldest make room for the new ones.
 
-export type Kind = 'dust' | 'ember' | 'drop' | 'star' | 'shard' | 'ring' | 'smoke';
+export type Kind = 'mote' | 'flash';
 
 export interface Particle {
   kind: Kind;
@@ -13,23 +14,34 @@ export interface Particle {
   size: number;
   age: number;
   life: number; // seconds
-  turn: number;
   seed: number;
 }
 
-interface Law { gravity: number; drag: number; sway: number; grow: number }
-const LAWS: Record<Kind, Law> = {
-  dust: { gravity: 60, drag: 1.6, sway: 60, grow: 0 },
-  ember: { gravity: -90, drag: 0.9, sway: 110, grow: 0 },
-  drop: { gravity: 900, drag: 0.2, sway: 0, grow: 0 },
-  star: { gravity: -10, drag: 1.4, sway: 30, grow: 0 },
-  shard: { gravity: -40, drag: 0.6, sway: 50, grow: 0 },
-  ring: { gravity: 0, drag: 0, sway: 0, grow: 150 },
-  smoke: { gravity: -22, drag: 0.5, sway: 24, grow: 26 },
-};
+// The air: waves of several sizes, drifting. It turns and never gathers (a curl).
+const WAVES = [
+  { x: 0.009, y: 0.007, t: 0.35, a: 62 },
+  { x: -0.021, y: 0.015, t: -0.5, a: 52 },
+  { x: 0.041, y: -0.033, t: 0.8, a: 40 },
+  { x: 0.074, y: 0.069, t: -1.1, a: 22 },
+];
+export function wind(x: number, y: number, time: number): [number, number] {
+  let vx = 0;
+  let vy = 0;
+  WAVES.forEach((w, i) => {
+    const slope = Math.cos(x * w.x + y * w.y + time * w.t * 2 + i * 1.9) * w.a;
+    vx += slope * w.y * 60;
+    vy -= slope * w.x * 60;
+  });
+  return [vx, vy];
+}
+
+// How quickly they take the speed of the air, and lose their own.
+const CARRIED = 1.7;
+const RISE = 46;
 
 export class Particles {
   readonly all: Particle[] = [];
+  private time = 0;
 
   constructor(public limit: number) {}
 
@@ -39,37 +51,35 @@ export class Particles {
     this.all.push({ ...p, age: 0, seed: Math.random() * 100 });
   }
 
-  step(dt: number, floor: number) {
+  // `scale`: of the stage next to a usual one.
+  step(dt: number, scale = 1) {
+    this.time += dt;
+    const keep = Math.exp(-CARRIED * dt);
     let kept = 0;
     for (const p of this.all) {
       p.age += dt;
       if (p.age >= p.life) continue;
-      const law = LAWS[p.kind];
-      const slow = Math.exp(-law.drag * dt);
-      p.vx = p.vx * slow + Math.sin(p.seed + p.age * 5) * law.sway * dt;
-      p.vy = p.vy * slow + law.gravity * dt;
+      if (p.kind === 'mote') {
+        const [wx, wy] = wind(p.x / scale, p.y / scale, this.time);
+        // Let go of slowly: together first, then each its own way.
+        const free = Math.min(1, p.age * 1.6);
+        p.vx = p.vx * keep + (wx * free * scale) * (1 - keep);
+        p.vy = p.vy * keep + ((wy * free - RISE) * scale) * (1 - keep);
+      } else {
+        p.vx += Math.cos(p.seed) * 260 * scale * dt;
+        p.vy *= Math.exp(-0.8 * dt);
+      }
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.size += law.grow * dt;
-      p.turn += (p.seed % 4 - 2) * dt;
-      // Drops bounce off the keyboard, once or twice.
-      if (p.kind === 'drop' && p.y > floor && p.vy > 0) {
-        p.y = floor;
-        p.vy *= -0.32;
-        p.vx *= 0.6;
-      }
       this.all[kept++] = p;
     }
     this.all.length = kept;
   }
-
-  clear() {
-    this.all.length = 0;
-  }
 }
 
-// How much of it is left to see, 0 to 1: comes quickly, goes slowly.
+// How much of it is left to see, 0 to 1: comes at once, goes slowly, twinkling.
 export function presence(p: Particle): number {
   const t = p.age / p.life;
-  return Math.min(1, t * 12) * (1 - t) ** (p.kind === 'smoke' ? 1 : 0.8);
+  if (p.kind === 'flash') return Math.sin(Math.PI * Math.min(1, t)) ** 1.5;
+  return Math.min(1, p.age * 30) * (1 - t) ** 1.3 * (0.72 + 0.28 * Math.sin(p.seed * 7 + p.age * (9 + (p.seed % 7))));
 }
