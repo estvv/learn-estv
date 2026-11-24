@@ -207,6 +207,27 @@ describe('auth and progress', () => {
     expect((await me.get(`/api/pieces/${lateId}`).expect(200)).body.data.notes.map((n: { time: number }) => n.time)).toEqual([0, 0.5]);
     await me.delete(`/api/pieces/${lateId}`).expect(200);
 
+    // Copied from elsewhere: as its owner had set it.
+    const copied = {
+      subject: 'piano', piece: { ...piece, title: 'Copie' }, level: 'simplified', sections: [{ start: 0, label: 'A' }], cover: 'https://cdn-images.dzcdn.net/images/cover/x.jpg',
+      edits: { simplified: { removed: [], added: [{ ...piece.notes[0], time: 0.25 }] } }, numbers: [{ label: 'A', hand: 'right', midi: 62, number: 3 }], difficulty: 'hard', description: 'boucle',
+    };
+    const copyId = (await me.post('/api/pieces').send(copied).expect(201)).body.data.id;
+    const { level, sections, cover, edits: copiedEdits, numbers: copiedNumbers, difficulty, description } = (await me.get(`/api/pieces/${copyId}`).expect(200)).body.data;
+    expect({ level, sections, cover, edits: copiedEdits, numbers: copiedNumbers, difficulty, description }).toEqual({
+      level: copied.level, sections: copied.sections, cover: copied.cover, edits: copied.edits, numbers: copied.numbers, difficulty: 'hard', description: 'boucle',
+    });
+    await me.post('/api/pieces').send({ ...copied, cover: 'https://evil.test/x.jpg' }).expect(400);
+    await me.delete(`/api/pieces/${copyId}`).expect(200);
+
+    // Numbers of one's own.
+    const numbers = [{ label: 'A', hand: 'right', midi: 62, number: 0 }];
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.numbers).toBeNull();
+    await me.patch(`/api/pieces/${id}`).send({ numbers }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.numbers).toEqual(numbers);
+    await me.patch(`/api/pieces/${id}`).send({ numbers: [{ ...numbers[0], number: 100 }] }).expect(400);
+    await me.patch(`/api/pieces/${id}`).send({ numbers: null }).expect(200);
+
     // Changes to an easier level: the piece's notes stay.
     const edits = { simplified: { removed: [{ midi: 60, time: 0 }], added: [{ midi: 64, time: 1, duration: 0.5, velocity: 0.7, hand: 'left' }] } };
     await me.patch(`/api/pieces/${id}`).send({ edits }).expect(200);

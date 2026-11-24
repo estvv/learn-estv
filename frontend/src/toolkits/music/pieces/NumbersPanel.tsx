@@ -8,7 +8,7 @@ import { compactLines, compactText, handLetter, pieceText, type Part } from './n
 
 const LINE = 26; // characters
 
-export function NumbersPanel({ title, parts, part: current, position, loop, open, over, onSeek, onLoop, onDetail, onOpen }: {
+export function NumbersPanel({ title, parts, part: current, position, loop, open, over, onSeek, onLoop, onDetail, onOwn, onOpen }: {
   title: string;
   parts: Part[];
   // Where the piece is.
@@ -22,6 +22,8 @@ export function NumbersPanel({ title, parts, part: current, position, loop, open
   // Null: stop looping.
   onLoop(part: number | null): void;
   onDetail(): void;
+  // Which key each number is; left out where the numbers are the owner's already.
+  onOwn?(): void;
   onOpen(open: boolean): void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -58,6 +60,7 @@ export function NumbersPanel({ title, parts, part: current, position, loop, open
       <div className="flex h-full flex-col">
         <div className="flex shrink-0 items-center gap-1 px-2 py-2">
           <CopyButton text={() => pieceText(title, parts, compactText)} />
+          {onOwn && <Small onClick={onOwn} title="Choisir le numéro de chaque touche">Numéros</Small>}
           <Small onClick={onDetail} title="Les chiffres placés sur les temps, pour lire le rythme ou corriger les parties">Voir le rythme</Small>
         </div>
         <div ref={box} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 [scrollbar-width:thin]">{body}</div>

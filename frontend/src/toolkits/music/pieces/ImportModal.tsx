@@ -1,10 +1,11 @@
 import type { PieceDifficulty } from '@learn/shared';
-import { useRef, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Field, inputClass } from '../../../components/Field';
 import { Modal } from '../../../components/Modal';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
 import { numbersToPlace, readPictures } from './aiImport';
 import { ACCEPT, fileKind, piecesApi, type FileKind } from './api';
+import { canCapture, captureScreen, type Capture } from './captureScreen';
 import { importAudio } from './importAudio';
 import { importMidi } from './importMidi';
 import { importMusicXml } from './importMusicXml';
@@ -46,6 +47,25 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
   const [difficulty, setDifficulty] = useState<PieceDifficulty | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  // A tab being recorded.
+  const [capture, setCapture] = useState<Capture | null>(null);
+  const [seconds, setSeconds] = useState(0);
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!capture) return;
+    setSeconds(0);
+    const id = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => {
+      clearInterval(id);
+      capture.stop();
+    };
+  }, [capture]);
   const file = files[0] ?? null;
   const kind = file ? fileKind(file) : null;
 
@@ -108,6 +128,24 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
     }
   };
 
+  const record = async () => {
+    setError('');
+    try {
+      const started = await captureScreen();
+      // Closed meanwhile: nobody waits for it.
+      if (!open.current) return started.stop();
+      setCapture(started);
+      const recorded = await started.done;
+      if (!open.current) return;
+      setCapture(null);
+      choose([recorded]);
+    } catch (e) {
+      setCapture(null);
+      // Nothing picked in the browser's window: nothing to say.
+      if ((e as Error).name !== 'NotAllowedError') setError((e as Error).message);
+    }
+  };
+
   const save = async () => {
     if (!result) return;
     setSaving(true);
@@ -136,7 +174,7 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
         <button
           type="button"
           onClick={() => input.current?.click()}
-          disabled={busy}
+          disabled={busy || !!capture}
           onDragOver={(e: DragEvent) => {
             e.preventDefault();
             setOver(true);
@@ -145,7 +183,7 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
           onDrop={(e: DragEvent) => {
             e.preventDefault();
             setOver(false);
-            if (!busy) choose([...e.dataTransfer.files]);
+            if (!busy && !capture) choose([...e.dataTransfer.files]);
           }}
           className={`w-full rounded-xl border-2 border-dashed px-4 py-7 text-center text-sm transition-colors ${over ? 'border-neutral-900 bg-neutral-50 text-neutral-900' : 'border-neutral-200 text-neutral-500 hover:border-neutral-400 hover:text-neutral-900'}`}
         >
@@ -167,6 +205,18 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
           }}
         />
 
+        {capture ? (
+          <div className="space-y-3 rounded-lg bg-neutral-50 p-4">
+            <p className="text-sm text-neutral-700">
+              <b className="tabular-nums">{formatDuration(seconds)}</b> · Lance la vidéo depuis le début, sans pause et sans cacher son clavier, puis reviens ici.
+            </p>
+            <button type="button" onClick={() => capture.stop()} className={primaryButton}>Terminer et lire</button>
+          </div>
+        ) : !busy && !file && canCapture() && (
+          <button type="button" onClick={() => void record()} className={`${secondaryButton} w-full`}>
+            Capturer un onglet (YouTube, TikTok…)
+          </button>
+        )}
         {busy && <p className="text-sm text-neutral-500">{progress}</p>}
 
         {!busy && kind === 'image' && !result && (

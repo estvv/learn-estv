@@ -138,7 +138,8 @@ function keyboardOf(p: Picture, y0: number, y1: number, row: Row): FoundKeyboard
   for (const b of blacks) {
     keys.push({ midi: base + blackMidi(b.n), x0: b.x - row.width * 0.25, x1: b.x + row.width * 0.25, y0: y0 + tall * 0.5, y1: y0 + tall * 0.9, above });
   }
-  for (let u = Math.ceil(-mx / unit + mu) - 2; at(u) < p.width; u++) {
+  // Up to two white keys beyond the last black ones: what is further is not the keyboard.
+  for (let u = units(blacks[0].n) - 2; u < units(blacks[blacks.length - 1].n) + 2; u++) {
     const [left, right] = [at(u), at(u + 1)];
     const seen = Math.min(p.width, right) - Math.max(0, left);
     if (seen < unit * 0.6) continue;

@@ -58,11 +58,12 @@ export interface ScoreDraft {
 const placingOf = ([first, ...later]: ScoreDraft['toPlace'] = []): Placing | null =>
   (first ? { ...first, run: null, everywhere: { later } } : null);
 
-export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
+export function ScoreEditor({ subject, piece, from: given, firstStep, onSaved, onClose }: {
   subject: string;
   // Null: a new piece.
   piece: StoredPiece | null;
   from?: ScoreDraft;
+  firstStep?: 'numbers' | 'piece';
   onSaved(id: number): void;
   onClose(): void;
 }) {
@@ -79,7 +80,7 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
     if (changed) writeJson(key, { score });
   }, [key, score, changed]);
 
-  const [step, setStep] = useState<'numbers' | 'piece'>(() => (given || !score.parts.some((p) => p.notes.length) ? 'numbers' : 'piece'));
+  const [step, setStep] = useState<'numbers' | 'piece'>(() => firstStep ?? (given || !score.parts.some((p) => p.notes.length) ? 'numbers' : 'piece'));
   const [label, setLabel] = useState(score.parts[0].label);
   const part = partOf(score, label);
   const [hand, setHand] = useState<Hand>('right');

@@ -50,6 +50,15 @@ export const pieceSectionsSchema = z.array(pieceSectionSchema).min(1).max(200)
   .refine((s) => s[0].start === 0 && s.every((x, i) => i === 0 || x.start > s[i - 1].start), { message: 'Parties invalides' });
 export type PieceSection = z.infer<typeof pieceSectionSchema>;
 
+// Numbers the owner gives keys, per part (by letter) and hand.
+export const pieceNumbersSchema = z.array(z.object({
+  label: z.string().trim().min(1).max(12),
+  hand: z.enum(hands),
+  midi: z.number().int().min(0).max(127),
+  number: z.number().int().min(0).max(99),
+})).max(5000);
+export type PieceNumber = z.infer<typeof pieceNumbersSchema>[number];
+
 // Changes made by hand to an easier level, kept apart from the piece's notes.
 export const pieceLevelEditSchema = z.object({
   removed: z.array(z.object({ midi: z.number().int().min(0).max(127), time: z.number().min(0) })).max(10_000),

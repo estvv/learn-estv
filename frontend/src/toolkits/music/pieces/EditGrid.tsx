@@ -1,6 +1,7 @@
 import type { Hand } from '@learn/shared';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { BEATS_PER_BAR } from './grid';
+import { inRange, rangeOf, type Range } from './gridClip';
 import { breakLines, lineWidth, type Sizing } from './numberLines';
 import { handLetter, stepText, type Part } from './numbers';
 import { HANDS } from './score';
@@ -16,19 +17,29 @@ export interface Cell {
   step: number;
 }
 
-const LOOK: Record<Hand, { text: string; on: string; lit: string }> = {
-  left: { text: 'text-amber-700', on: 'ring-amber-500 bg-amber-50', lit: 'bg-amber-200' },
-  right: { text: 'text-sky-700', on: 'ring-sky-500 bg-sky-50', lit: 'bg-sky-200' },
+const LOOK: Record<Hand, { text: string; on: string; lit: string; range: string }> = {
+  left: { text: 'text-amber-700', on: 'ring-amber-500 bg-amber-50', lit: 'bg-amber-200', range: 'bg-amber-100' },
+  right: { text: 'text-sky-700', on: 'ring-sky-500 bg-sky-50', lit: 'bg-sky-200', range: 'bg-sky-100' },
 };
 
-export function EditGrid({ part, selected, column, small, onSelect }: {
+export function EditGrid({ part, selected, range, column, small, onSelect, onRange }: {
   part: Part;
   selected: Cell | null;
+  // Several cells: dragged over with the mouse, or Shift and a click.
+  range: Range | null;
   // Being played; -1: none.
   column: number;
   small: boolean;
   onSelect(cell: Cell): void;
+  onRange(range: Range | null): void;
 }) {
+  const from = useRef<Cell | null>(null);
+  // The cell under the pointer, whichever line it is on.
+  const under = (e: PointerEvent): Cell | null => {
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-cell]');
+    const found = /^(left|right)(\d+)$/.exec(el?.dataset.cell ?? '');
+    return found ? { hand: found[1] as Hand, step: Number(found[2]) } : null;
+  };
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -50,7 +61,24 @@ export function EditGrid({ part, selected, column, small, onSelect }: {
   const bar = BEATS_PER_BAR * part.division;
 
   return (
-    <div ref={box} style={{ fontSize: sizing.font }}>
+    <div
+      ref={box}
+      style={{ fontSize: sizing.font }}
+      className="select-none"
+      onPointerDown={(e) => {
+        // Fingers scroll.
+        from.current = e.pointerType === 'mouse' && e.button === 0 && !e.shiftKey ? under(e) : null;
+      }}
+      onPointerMove={(e) => {
+        const start = from.current;
+        if (!start || !(e.buttons & 1)) return;
+        const now = under(e);
+        if (now && (range || now.hand !== start.hand || now.step !== start.step)) onRange(rangeOf(start, now));
+      }}
+      onPointerUp={() => {
+        from.current = null;
+      }}
+    >
       {lines.map((line) => (
         <div key={line.from} className="mb-3 flex">
           <div className="grid w-6 shrink-0 font-semibold" style={{ gridTemplateRows: '0.6em repeat(2, 2.3em)' }}>
@@ -86,9 +114,13 @@ export function EditGrid({ part, selected, column, small, onSelect }: {
                   aria-pressed={on}
                   // Already picked: what is being typed keeps the focus.
                   onMouseDown={(e) => on && e.preventDefault()}
-                  onClick={() => onSelect({ hand, step })}
+                  onClick={(e) => {
+                    if (e.shiftKey && selected) return onRange(rangeOf(selected, { hand, step }));
+                    onRange(null);
+                    onSelect({ hand, step });
+                  }}
                   className={`flex items-center justify-center whitespace-nowrap border-y border-l border-y-neutral-200 font-semibold leading-none ${edge} ${LOOK[hand].text} ${
-                    on ? `relative z-10 rounded-sm ring-2 ring-inset ${LOOK[hand].on}` : step === column && text ? LOOK[hand].lit : 'hover:bg-neutral-50'
+                    on ? `relative z-10 rounded-sm ring-2 ring-inset ${LOOK[hand].on}` : inRange(range, hand, step) ? LOOK[hand].range : step === column && text ? LOOK[hand].lit : 'hover:bg-neutral-50'
                   }`}
                   style={{ gridColumn: c + 1, gridRow: r + 2 }}
                 >

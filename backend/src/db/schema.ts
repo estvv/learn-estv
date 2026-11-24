@@ -144,6 +144,8 @@ CREATE TABLE IF NOT EXISTS pieces (
   level TEXT,
   -- Practice parts set by hand, JSON [{ start, label }]; NULL: automatic.
   sections TEXT,
+  -- Numbers given to keys by hand, JSON [{ label, hand, midi, number }].
+  numbers TEXT,
   -- Changes made by hand to the easier levels, JSON { simplified?, melody? }.
   edits TEXT,
   -- Pieces written by hand, JSON (shared/src/score.ts): the notes come from it.

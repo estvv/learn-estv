@@ -1,29 +1,56 @@
-import { pieceDuration, type Hand, type PieceNote } from '@learn/shared';
-import { useMemo, useRef, useState } from 'react';
+import { pieceDuration, type Hand, type PieceNote, type PieceNumber } from '@learn/shared';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ConfirmModal } from '../../../components/Modal';
+import { Segmented } from '../../../components/Segmented';
+import { Switch } from '../../../components/Switch';
 import { ErrorText, primaryButton } from '../../../components/ui';
 import { PHONE, TOUCH, useMedia } from '../../../lib/useMedia';
 import { useNoteInput } from '../input/hooks';
 import { PianoKeyboard, type Sticker } from '../PianoKeyboard';
 import { piecesApi } from './api';
-import { CellPad } from './CellPad';
+import { CellPad, playKey } from './CellPad';
 import { commit, redo, startHistory, undo, type History } from './edit';
 import { EditGrid, type Cell } from './EditGrid';
 import { changeOf, editable, layoutOf, levelNames, levelNotes, levelOf, numbersOf, untouched, visible } from './derive';
+import { clearRange, copyRange, pasteClip, targetOf, type Clip, type Range } from './gridClip';
 import { setStep } from './numberEdit';
 import { Small } from './Numbers';
-import { partAt, stepText, type Key, type Part } from './numbers';
+import { givenByOwner, partAt, stepText, type Part } from './numbers';
+import { isOwn, keysOf, orderNumbers, resetNumbers, setNumber } from './ownNumbers';
+import { OwnNumbers } from './OwnNumbers';
 import { pieceRange } from './player';
 import { parseRun } from './score';
 import { OctaveButton } from './ScoreEditor';
 import type { StoredPiece } from './types';
 import { usePreview } from './usePreview';
 
-// Changes an imported piece through its numbers, at its level: what each hand
-// plays in each column of a part.
-export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; onSaved(id: number): void; onClose(): void }) {
-  const [history, setHistory] = useState<History<PieceNote[]>>(() => startHistory(editable(piece)));
-  const notes = history.present;
+interface Edited {
+  notes: PieceNote[];
+  numbers: PieceNumber[];
+}
+
+// Changes an imported piece, at its level, in the same two steps as writing
+// one: which key each number is, then what each hand plays in each column.
+export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
+  piece: StoredPiece;
+  firstStep?: 'numbers' | 'piece';
+  onSaved(id: number): void;
+  onClose(): void;
+}) {
+  const [history, setHistory] = useState<History<Edited>>(() => startHistory({ notes: editable(piece), numbers: piece.numbers ?? [] }));
+  const { notes, numbers } = history.present;
+  const editNotes = (change: (notes: PieceNote[]) => PieceNote[]) => {
+    setError('');
+    setHistory((h) => {
+      const next = change(h.present.notes);
+      return next === h.present.notes ? h : commit(h, { ...h.present, notes: next });
+    });
+  };
+  const editNumbers = (next: PieceNumber[]) => {
+    setError('');
+    setHistory((h) => commit(h, { ...h.present, numbers: next }));
+  };
+  const [step, setStepShown] = useState(firstStep);
   const changed = history.past.length > 0;
   const level = levelOf(piece);
   const heard = useMemo(() => visible(piece, notes), [piece, notes]);
@@ -34,10 +61,13 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
     const { parts } = numbersOf(levelNotes(piece), layout);
     return parts.some((p) => p.division >= 4 && p.division % 3) ? 4 : parts.some((p) => p.division % 3 === 0) ? 3 : 2;
   });
-  const parts = useMemo(() => numbersOf(heard, layout, division).parts, [heard, layout, division]);
+  const parts = useMemo(() => numbersOf(heard, { ...layout, given: givenByOwner(numbers) }, division).parts, [heard, layout, numbers, division]);
   const [index, setIndex] = useState(0);
   const part: Part = parts[index] ?? parts[0];
   const [cell, setCell] = useState<Cell | null>(null);
+  // Several cells, and what was cut or copied.
+  const [range, setRange] = useState<Range | null>(null);
+  const [clip, setClip] = useState<Clip | null>(null);
   const [chord, setChord] = useState(false);
   // Off: keys played are only heard.
   const [fill, setFill] = useState(false);
@@ -55,14 +85,7 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
     : -1;
 
   // The numbers of the whole letter, not only those this part plays.
-  const keys = useMemo(() => {
-    const list: Key[] = [];
-    for (const p of parts) {
-      if (p.label !== part.label) continue;
-      for (const k of p.keys) if (!list.some((o) => o.hand === k.hand && o.midi === k.midi)) list.push(k);
-    }
-    return list.sort((a, b) => a.number - b.number);
-  }, [parts, part.label]);
+  const keys = useMemo(() => [...keysOf(parts, part.label, 'left'), ...keysOf(parts, part.label, 'right')], [parts, part.label]);
   const stickers = useMemo(() => {
     const out = new Map<number, Sticker[]>();
     for (const k of keys) out.set(k.midi, [...(out.get(k.midi) ?? []), k]);
@@ -73,10 +96,10 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
   const stepAt = (c: Cell) => part.rows.find((r) => r.hand === c.hand)?.steps.find((s) => s.step === c.step);
   const currentStep = current ? stepAt(current) : undefined;
 
+  // New notes go to the first track that is on.
+  const track = piece.tracks ? Math.max(0, piece.tracks.findIndex((t) => t.enabled)) : undefined;
   const put = (c: Cell, midis: number[]) => {
-    setError('');
-    const track = piece.tracks ? Math.max(0, piece.tracks.findIndex((t) => t.enabled)) : undefined;
-    setHistory((h) => commit(h, setStep(h.present, part, layout.grid, c.hand, c.step, midis, track)));
+    editNotes((n) => setStep(n, part, layout.grid, c.hand, c.step, midis, track));
   };
   const move = (to: 'previous' | 'next' | 'hand') => setCell((c) => {
     if (!c) return c;
@@ -96,9 +119,83 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
     return true;
   };
 
+  // --- Numbers ----------------------------------------------------------------------
+  const [hand, setHand] = useState<Hand>(() => (keysOf(parts, part.label, 'right').length ? 'right' : 'left'));
+  const [assign, setAssign] = useState(false);
+  const [everywhere, setEverywhere] = useState(false);
+  // While assigning: the keys played, in order. Another place starts again at 1.
+  const [pressed, setPressed] = useState<number[]>([]);
+  const at = { label: part.label, hand, everywhere };
+  useEffect(() => setPressed([]), [part.label, hand, everywhere, assign, step]);
+  const assignKey = (midi: number) => {
+    if (!assign || pressed.includes(midi)) return;
+    if (!keysOf(parts, part.label, hand).some((k) => k.midi === midi)) {
+      return setError(`Cette touche n’est pas jouée par la main ${hand === 'left' ? 'gauche' : 'droite'} dans la partie ${part.label}.`);
+    }
+    const next = [...pressed, midi];
+    setPressed(next);
+    editNumbers(orderNumbers(numbers, parts, at, next));
+  };
+  const showPart = (i: number) => {
+    preview.stop();
+    setIndex(i);
+    setCell(null);
+    setRange(null);
+    setError('');
+  };
+
+  // --- Several cells ----------------------------------------------------------------
+  // What cutting and copying take: the cells picked, or the only one.
+  const area: Range | null = range ?? (current && { from: current.step, to: current.step, hands: [current.hand] });
+  const copy = () => area && setClip(copyRange(part, layout.grid, area));
+  const clear = () => {
+    if (area) editNotes((n) => clearRange(n, part, area));
+  };
+  const cutOut = () => {
+    copy();
+    clear();
+  };
+  const paste = () => {
+    if (!clip) return;
+    const at = range ? { hand: range.hands[0], step: range.from } : current;
+    if (!at) return setError('Choisis la case où coller.');
+    editNotes((n) => pasteClip(n, part, layout.grid, clip, at, track));
+    const target = targetOf(clip, part, at);
+    setRange(target);
+    setCell({ hand: at.hand, step: target.from });
+  };
+  const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {});
+  shortcuts.current = (e) => {
+    if (leaving) return;
+    const key = e.key.toLowerCase();
+    const mod = e.ctrlKey || e.metaKey;
+    if (step === 'numbers') {
+      if (!mod || (key !== 'z' && key !== 'y')) return;
+      setHistory(key === 'y' || e.shiftKey ? redo : undo);
+    } else if (mod && key === 'c' && area) copy();
+    else if (mod && key === 'x' && area) cutOut();
+    else if (mod && key === 'v' && clip) paste();
+    else if (mod && key === 'a') setRange({ from: 0, to: part.columns - 1, hands: ['left', 'right'] });
+    else if (mod && key === 'z') setHistory(e.shiftKey ? redo : undo);
+    else if (mod && key === 'y') setHistory(redo);
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && range) clear();
+    else if (e.key === 'Escape' && range) setRange(null);
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  // Before the field of the cell, which has the focus.
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => shortcuts.current(e);
+    window.addEventListener('keydown', onDown, true);
+    return () => window.removeEventListener('keydown', onDown, true);
+  }, []);
+
   const onKey = useRef<(midi: number) => void>(() => {});
   onKey.current = (midi) => {
-    if (leaving || preview.playing || !current || !fill) return;
+    if (leaving || preview.playing) return;
+    if (step === 'numbers') return assignKey(midi);
+    if (!current || !fill) return;
     const now = stepAt(current)?.notes.map((n) => n.midi) ?? [];
     put(current, !chord ? [midi] : now.includes(midi) ? now.filter((m) => m !== midi) : [...now, midi]);
     if (!chord) move('next');
@@ -115,7 +212,9 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
     setSaving(true);
     setError('');
     try {
-      await piecesApi.saveChange(piece.id, changeOf(piece, notes));
+      const before = history.past[0] ?? history.present;
+      if (notes !== before.notes) await piecesApi.saveChange(piece.id, changeOf(piece, notes));
+      if (numbers !== before.numbers) await piecesApi.update(piece.id, { numbers: numbers.length ? numbers : null });
       onSaved(piece.id);
     } catch (e) {
       setError((e as Error).message);
@@ -126,30 +225,82 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-17 shrink-0 items-center gap-1 pl-16 pr-3 phone:h-15 phone:pl-14 sm:pr-5">
-        <div className="min-w-0 flex-1 truncate font-semibold text-neutral-900">{piece.title}</div>
-        <Small onClick={() => setHistory(undo)} title="Annuler le dernier changement">↶</Small>
-        <Small onClick={() => setHistory(redo)} title="Rétablir">↷</Small>
-        <Small
-          active={preview.playing}
-          onClick={() => (preview.playing ? preview.stop() : preview.play(part.start, { start: part.start, end: part.end }))}
-        >
-          {preview.playing ? 'Arrêter' : 'Écouter'}
-        </Small>
-        <Small onClick={() => (changed ? setLeaving(true) : onClose())}>Quitter</Small>
-        <button type="button" onClick={() => void save()} disabled={saving || !changed} className={`${primaryButton} ml-1`}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+        <div className="min-w-0 flex-1 truncate font-semibold text-neutral-900 phone:hidden">{piece.title}</div>
+        <Segmented<'numbers' | 'piece'>
+          value={step}
+          onChange={(s) => {
+            preview.stop();
+            setError('');
+            setStepShown(s);
+          }}
+          options={[{ value: 'numbers', label: '1. Numéros' }, { value: 'piece', label: '2. Morceau' }]}
+        />
+        <div className="flex flex-1 items-center justify-end gap-1">
+          <Small onClick={() => setHistory(undo)} title="Annuler le dernier changement (Ctrl+Z)">↶</Small>
+          <span className="phone:hidden"><Small onClick={() => setHistory(redo)} title="Rétablir">↷</Small></span>
+          <Small
+            active={preview.playing}
+            onClick={() => (preview.playing ? preview.stop() : preview.play(part.start, { start: part.start, end: part.end }))}
+          >
+            {preview.playing ? 'Arrêter' : 'Écouter'}
+          </Small>
+          <Small onClick={() => (changed ? setLeaving(true) : onClose())}>Quitter</Small>
+          <button type="button" onClick={() => void save()} disabled={saving || !changed} className={`${primaryButton} ml-1 phone:px-3`}>{saving ? '…' : 'Enregistrer'}</button>
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-200 bg-white px-3 py-4 sm:px-6">
+      {step === 'numbers' && (
+        <>
+          <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-neutral-200 bg-white px-3 py-2 sm:px-5">
+            <Segmented<Hand> value={hand} onChange={setHand} options={[{ value: 'left', label: 'Gauche' }, { value: 'right', label: 'Droite' }]} />
+            <div className="flex flex-wrap items-center gap-0.5">
+              {/* Parts with the same letter have the same numbers: once each. */}
+              {[...new Set(parts.map((p) => p.label))].map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => showPart(parts.findIndex((p) => p.label === l))}
+                  aria-current={l === part.label}
+                  title={`Partie ${l}`}
+                  className={`h-9 min-w-9 rounded-lg px-2.5 text-sm font-semibold transition-colors ${l === part.label ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900'}`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+            <Switch on={assign} label="Assigner" title="Éteint : on écoute. Allumé : joue les touches dans l’ordre, elles deviennent 1, 2, 3…" onChange={setAssign} />
+            <Switch on={everywhere} label="Toutes les parties" title="Changer ces touches dans tout le morceau" onChange={setEverywhere} />
+            {isOwn(numbers, part.label, hand) && (
+              <Small
+                title="Dans l’ordre où les touches sont jouées"
+                onClick={() => {
+                  setPressed([]);
+                  editNumbers(resetNumbers(numbers, parts, at));
+                }}
+              >
+                Automatique
+              </Small>
+            )}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-100 bg-white px-3 py-5 sm:px-5">
+            <OwnNumbers
+              hand={hand}
+              keys={keysOf(parts, part.label, hand)}
+              assign={assign}
+              onNumber={(midi, number) => editNumbers(setNumber(numbers, parts, at, midi, number))}
+              onHear={playKey}
+            />
+            <div className="mt-3"><ErrorText>{error}</ErrorText></div>
+          </div>
+        </>
+      )}
+      {step === 'piece' && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-200 bg-white px-3 py-4 sm:px-6">
         <div className="mb-5 flex flex-wrap items-center gap-1">
           {parts.map((p, i) => (
             <button
               key={i}
               type="button"
-              onClick={() => {
-                preview.stop();
-                setIndex(i);
-                setCell(null);
-              }}
+              onClick={() => showPart(i)}
               aria-current={i === index}
               className={`h-9 min-w-9 rounded-lg px-2.5 text-sm font-semibold ${i === index ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'}`}
             >
@@ -157,9 +308,17 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
             </button>
           ))}
           <span className="flex-1" />
+          {(range || clip) && (
+            <span className="flex items-center">
+              {range && <Small onClick={copy} title="Ctrl+C">Copier</Small>}
+              {range && <Small onClick={cutOut} title="Ctrl+X">Couper</Small>}
+              {clip && <Small onClick={paste} title="Ctrl+V">Coller</Small>}
+              {range && <Small onClick={clear} title="Suppr">Effacer</Small>}
+            </span>
+          )}
           <span className="px-2 text-xs text-neutral-400">Niveau {levelNames[level]}</span>
           {level !== 'original' && piece.edits?.[level] && (
-            <Small onClick={() => setHistory((h) => commit(h, untouched(piece)))} title="Oublier les changements faits à ce niveau">Version automatique</Small>
+            <Small onClick={() => editNotes(() => untouched(piece))} title="Oublier les changements faits à ce niveau">Version automatique</Small>
           )}
           <select
             value={division}
@@ -168,6 +327,7 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
             onChange={(e) => {
               setDivision(Number(e.target.value));
               setCell(null);
+              setRange(null);
             }}
             className="rounded-lg bg-transparent py-1.5 text-xs text-neutral-600 focus:outline-none"
           >
@@ -177,12 +337,12 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
             <option value={4}>Case = ¼ temps</option>
           </select>
         </div>
-        <EditGrid part={part} selected={current} column={column} small={phone} onSelect={setCell} />
+        <EditGrid part={part} selected={current} column={column} small={phone} range={range} onSelect={setCell} onRange={setRange} />
         <ErrorText>{error}</ErrorText>
-      </div>
+      </div>}
 
       <div className="shrink-0 border-t border-neutral-200 bg-white px-3 pb-3 pt-2 sm:px-5">
-        <div className="mb-2 min-h-9">
+        {step === 'piece' && <div className="mb-2 min-h-9">
           {current ? (
             <CellPad
               id={`${index}-${current.hand}-${current.step}`}
@@ -200,7 +360,7 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
           ) : (
             <span className="text-xs text-neutral-400">Choisis une case, vide ou non.</span>
           )}
-        </div>
+        </div>}
         <div className="flex items-stretch gap-1">
           {phone && <OctaveButton label="Octave plus grave" onClick={() => setOctave((o) => Math.max(1, o - 1))}>‹</OctaveButton>}
           <div className="min-w-0 flex-1">

@@ -59,7 +59,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
   // Starts as soon as it is there.
   autoPlay: boolean;
   // The piece is changed on a page of its own.
-  onEditNumbers(): void;
+  onEditNumbers(step?: 'numbers' | 'piece'): void;
   // Already saved, or being saved.
   onChange(change: Partial<StoredPiece>): void;
 }) {
@@ -446,7 +446,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
           onTracks={pickTracks}
           onBigKeys={setBigKeys}
           onEdit={editing || phone || score ? undefined : startEditing}
-          onEditNumbers={editing ? undefined : onEditNumbers}
+          onEditNumbers={editing ? undefined : () => onEditNumbers()}
           onClose={closeOptions}
         />
       )}
@@ -502,7 +502,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
           position={player.position}
           loop={loop}
           compact={compact}
-          onEdit={onEditNumbers}
+          onEdit={() => onEditNumbers()}
           editing={score || isEditing ? null : {
             onCut: (i, beat) => changeParts((p) => cutAt(p, grid.toTime(shownParts[i].beat + beat))),
             onMove: (i, by) => changeParts((p) => moveStart(p, i, grid.toTime(shownParts[i].beat + by))),
@@ -559,6 +559,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
             over={compact}
             onSeek={seek}
             onLoop={(i) => applyLoop(i === null ? null : [i, i])}
+            onOwn={editing ? undefined : () => onEditNumbers('numbers')}
             onDetail={() => {
               if (compact) setPanel(false);
               setBigNumbers(true);

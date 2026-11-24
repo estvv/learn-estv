@@ -1,4 +1,4 @@
-import type { Hand, PieceNote, Score } from '@learn/shared';
+import type { Hand, PieceNote, PieceNumber, Score } from '@learn/shared';
 import { BeatGrid, BEATS_PER_BAR, CHORD_WINDOW } from './grid';
 import type { Section } from './sections';
 import { handOf } from './simplify';
@@ -72,6 +72,13 @@ export const givenByScore = (score: Score): Given => ({
   exact: true,
 });
 
+// Keys the owner has numbered, the others as they come.
+export function givenByOwner(own: PieceNumber[]): Given {
+  const keys = new Map<string, Key[]>();
+  for (const { label, hand, midi, number } of own) keys.set(label, [...(keys.get(label) ?? []), { hand, midi, number }]);
+  return { keys };
+}
+
 export function numberPiece(notes: PieceNote[], sections: Section[], grid: BeatGrid | null, given: Given = {}): NumberedPiece {
   const numbers = new Map<PieceNote, number>();
   if (!notes.length) return { parts: [], numbers };
@@ -134,6 +141,7 @@ export function numberPiece(notes: PieceNote[], sections: Section[], grid: BeatG
       const used = new Set(played.map((n) => n.midi));
       for (const [midi, number] of numbered) if (used.has(midi)) keys.push({ hand, midi, number });
     }
+    if (given.keys) keys.sort((a, b) => (a.hand === b.hand ? a.number - b.number : 0));
     return { label: span.label, start: span.start, end: span.end, division, columns, beat, rows, keys };
   });
   return { parts, numbers };

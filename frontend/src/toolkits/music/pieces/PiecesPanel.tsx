@@ -10,6 +10,8 @@ import { TOUCH, useMedia } from '../../../lib/useMedia';
 import { foldersApi, piecesApi } from './api';
 import { foldersToReveal, type FolderKey } from './folderPath';
 import { ImportModal } from './ImportModal';
+import { CopyModal, PasteModal } from './PasteModal';
+import { copyOf, encodePieces, looksLikePieces, type PieceCopy } from './pieceCopy';
 import { Cover, DifficultyBadge, DifficultyPicker, FolderSelect } from './pieceFields';
 import type { ScoreDraft } from './ScoreEditor';
 import { sourceLabels, type PieceFolder, type PieceMeta, type PieceSummary } from './types';
@@ -49,6 +51,45 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
   const [error, setError] = useState('');
   // Fingers have no hover and do not drag rows: a menu per row.
   const touch = useMedia(TOUCH);
+  // Copying pieces, here or to another site.
+  const [said, setSaid] = useState('');
+  const [copying, setCopying] = useState<string | null>(null);
+  const [pasting, setPasting] = useState<string | null>(null);
+  useEffect(() => {
+    if (!said) return;
+    const id = setTimeout(() => setSaid(''), 4000);
+    return () => clearTimeout(id);
+  }, [said]);
+  const copyPieces = async (list: PieceSummary[]) => {
+    setError('');
+    try {
+      const copies: PieceCopy[] = [];
+      for (const p of list) copies.push(copyOf(await piecesApi.get(p.id)));
+      const text = await encodePieces(copies);
+      try {
+        await navigator.clipboard.writeText(text);
+        setSaid(list.length > 1 ? `${list.length} morceaux copiés.` : `« ${list[0].title} » copié.`);
+      } catch {
+        setCopying(text);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const openPaste = async () => {
+    const text = await navigator.clipboard.readText().catch(() => '');
+    setPasting(looksLikePieces(text) ? text : '');
+  };
+  const dialog = importing || editing || removing || naming || removingFolder || copying !== null || pasting !== null;
+  // Ctrl+V anywhere in the list.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData('text') ?? '';
+      if (!dialog && user && looksLikePieces(text)) setPasting(text);
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [dialog, user]);
   const [menu, setMenu] = useState<{ title: string; actions: Action[] } | null>(null);
 
   // Read at the first load only: later reloads (after an edit) keep what the
@@ -184,6 +225,15 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
               <button type="button" onClick={() => onCreate()} className={`${secondaryButton} min-w-0 flex-1`} title="Écrire un morceau à la main, en chiffres">
                 <PencilIcon className="h-4 w-4" />Créer
               </button>
+              <button
+                type="button"
+                onClick={() => void openPaste()}
+                title="Coller un morceau copié (Ctrl+V)"
+                aria-label="Coller un morceau copié"
+                className="inline-flex shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-white px-3 text-neutral-700 transition-colors hover:bg-neutral-50"
+              >
+                <PasteIcon />
+              </button>
               {pieces && (
                 <button
                   type="button"
@@ -254,6 +304,9 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
 
               <div className="px-3"><ErrorText>{error}</ErrorText></div>
             </div>
+            <div aria-live="polite">
+              {said && <p className="border-t border-neutral-100 px-5 py-3 text-sm text-neutral-700">{said} <span className="text-neutral-400">Colle-le dans Morceaux, ici ou sur l’autre site.</span></p>}
+            </div>
           </>
         )}
       </aside>
@@ -272,6 +325,20 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
             setImporting(false);
             load();
             onPick(id);
+          }}
+        />
+      )}
+      {copying !== null && <CopyModal text={copying} onClose={() => setCopying(null)} />}
+      {pasting !== null && (
+        <PasteModal
+          text={pasting}
+          folders={folders}
+          onClose={() => setPasting(null)}
+          onPaste={async (copy, folder) => void (await piecesApi.paste(subject, copy, folder))}
+          onDone={(folder) => {
+            setPasting(null);
+            if (folder !== null) setOpen((o) => (o.includes(folder) ? o : [...o, folder]));
+            load();
           }}
         />
       )}
@@ -339,6 +406,7 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
     const own = visible.filter((p) => folderOf(p) === f.id);
     const actions: Action[] = [
       ...(inside.length > 0 ? [{ label: 'Écouter ce dossier au hasard, en boucle', icon: <ShuffleIcon className="h-3.5 w-3.5" />, onClick: () => onShuffle(inside.map((p) => p.id)) }] : []),
+      ...(inside.length > 0 ? [{ label: 'Copier les morceaux du dossier', icon: <CopyIcon />, onClick: () => void copyPieces(inside) }] : []),
       { label: 'Monter', icon: '↑', disabled: index === 0, onClick: () => shift(f, -1) },
       { label: 'Descendre', icon: '↓', disabled: index === siblings - 1, onClick: () => shift(f, 1) },
       { label: 'Nouveau sous-dossier', icon: <PlusIcon className="h-3.5 w-3.5" />, onClick: () => setNaming({ folder: null, parent: f.id }) },
@@ -384,6 +452,7 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
     const active = current === p.id;
     const actions: Action[] = [
       { label: 'Modifier (titre, artiste, dossier, difficulté)', icon: <PencilIcon className="h-4 w-4" />, onClick: () => setEditing(p) },
+      { label: 'Copier le morceau', icon: <CopyIcon />, onClick: () => void copyPieces([p]) },
       { label: 'Supprimer', icon: <TrashIcon />, danger: true, onClick: () => setRemoving(p) },
     ];
     return (
@@ -445,6 +514,18 @@ function IconButton({ title, onClick, disabled, danger, big, children }: { title
 const FolderPlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v5M9.5 13.5h5" />
+  </svg>
+);
+
+const CopyIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+    <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+  </svg>
+);
+
+const PasteIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+    <path d="M9 5H7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M12 11v5M9.5 14l2.5 2.5 2.5-2.5" />
   </svg>
 );
 

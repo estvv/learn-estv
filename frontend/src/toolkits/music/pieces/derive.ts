@@ -2,7 +2,7 @@ import { cutStart, pieceDuration, renderScore, soundingSpan, trimSilence, type P
 import { BeatGrid, beatGrid } from './grid';
 import { assignHands, credible, shareHands } from './hands';
 import { applyEdit, editOf } from './levelEdits';
-import { givenByScore, numberPiece, type Given, type NumberedPiece } from './numbers';
+import { givenByOwner, givenByScore, numberPiece, type Given, type NumberedPiece } from './numbers';
 import { fromSaved } from './parts';
 import { detectSections, type Section } from './sections';
 import { simplify } from './simplify';
@@ -85,9 +85,10 @@ export function layoutOf(piece: StoredPiece): Layout {
   const duration = pieceDuration(piece.notes);
   const found = beatGrid(base, piece.bpm);
   const grid = found ?? BeatGrid.regular(base[0]?.time ?? 0, 0.5);
-  if (piece.sections) return { grid, sections: fromSaved(piece.sections, duration), duration, given: {} };
+  const given = givenByOwner(piece.numbers ?? []);
+  if (piece.sections) return { grid, sections: fromSaved(piece.sections, duration), duration, given };
   const auto = detectSections(base, piece.bpm, found);
-  return { grid, sections: auto.length ? auto : [{ start: 0, end: duration, label: 'A' }], duration, given: {} };
+  return { grid, sections: auto.length ? auto : [{ start: 0, end: duration, label: 'A' }], duration, given };
 }
 
 export const numbersOf = (notes: PieceNote[], { grid, sections, given }: Layout, division?: number): NumberedPiece =>

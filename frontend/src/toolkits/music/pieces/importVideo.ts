@@ -6,7 +6,7 @@ import { findKeyboard, NoLitKeys, notesOf, sample, usualPicture, type FoundKeybo
 // by picture in the browser. Nothing is sent to the server.
 
 const RATE = 24; // pictures read per second
-const WIDTH = 640;
+const WIDTH = 960;
 const MAX_SECONDS = 8 * 60;
 const LOOKED_AT = 21; // pictures the keyboard is searched on
 
@@ -25,6 +25,12 @@ export async function importVideo(file: File, onProgress: (percent: number) => v
       video.onerror = () => reject(new NoKeyboard('Vidéo illisible par ce navigateur'));
       video.src = url;
     });
+    // Recordings made in the browser do not say how long they are: looking for
+    // their end tells.
+    if (video.duration === Infinity) {
+      await seek(video, Number.MAX_SAFE_INTEGER);
+      await seek(video, 0);
+    }
     if (!video.videoWidth || !Number.isFinite(video.duration)) throw new NoKeyboard('Ce fichier n’a pas d’image');
     if (video.duration > MAX_SECONDS) throw new Error('Vidéo trop longue (8 minutes maximum)');
 
@@ -87,6 +93,6 @@ function seek(video: HTMLVideoElement, time: number): Promise<void> {
       then();
     };
     video.addEventListener('seeked', onSeeked);
-    video.currentTime = Math.min(time, Math.max(0, video.duration - 0.01));
+    video.currentTime = Number.isFinite(video.duration) ? Math.min(time, Math.max(0, video.duration - 0.01)) : time;
   });
 }
