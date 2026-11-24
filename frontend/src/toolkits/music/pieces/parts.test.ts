@@ -1,5 +1,6 @@
+import { shiftSections } from '@learn/shared';
 import { describe, expect, it } from 'vitest';
-import { cutAt, fromSaved, joinPrevious, moveStart, rename, shiftParts } from './parts';
+import { cutAt, fromSaved, joinPrevious, moveStart, rename } from './parts';
 
 const ABA = [{ start: 0, label: 'A' }, { start: 4, label: 'B' }, { start: 8, label: 'A' }];
 const text = (p: { start: number; label: string }[]) => p.map((x) => `${x.label}${x.start}`).join(' ');
@@ -28,10 +29,10 @@ describe('parts corrected by hand', () => {
   });
 
   it('follows a piece cut at its start', () => {
-    expect(text(shiftParts(ABA, 5))).toBe('B0 A3');
-    expect(text(shiftParts(ABA, 4))).toBe('B0 A4');
-    expect(text(shiftParts(ABA, 20))).toBe('A0');
-    expect(shiftParts(ABA, 0)).toEqual(ABA);
+    expect(text(shiftSections(ABA, 5))).toBe('B0 A3');
+    expect(text(shiftSections(ABA, 4))).toBe('B0 A4');
+    expect(text(shiftSections(ABA, 20))).toBe('A0');
+    expect(shiftSections(ABA, 0)).toEqual(ABA);
   });
 
   it('gives each part its end, within the piece', () => {

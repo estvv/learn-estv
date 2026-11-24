@@ -7,7 +7,7 @@ import { handName, type Key } from './numbers';
 // Fills the cell picked: type its numbers, or touch the numbers already known
 // (as on the keyboard, the sound comes with it).
 
-const COLOR: Record<Hand, string> = { left: 'bg-amber-100 text-amber-800 hover:bg-amber-200', right: 'bg-sky-100 text-sky-800 hover:bg-sky-200' };
+const COLOR: Record<Hand, string> = { left: 'text-amber-700 hover:bg-amber-50', right: 'text-sky-700 hover:bg-sky-50' };
 
 export function playKey(midi: number) {
   inputBus.noteOn(midi, 'virtual');
@@ -22,6 +22,7 @@ export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping,
   keys: Key[];
   // Keys add up in the cell instead of going to the next one.
   chord: boolean;
+  // Typed on a computer: its own keys move and empty.
   focus: boolean;
   onChord(on: boolean): void;
   // What is typed, before it is entered; empty once it is.
@@ -95,19 +96,19 @@ export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping,
         ))}
         {!keys.length && <span className="text-xs text-neutral-400">Tape un numéro, ou joue une touche du clavier.</span>}
         {onMoveKey && keys.length > 0 && (
-          <button type="button" onClick={() => setMoving(!moving)} className="px-2 text-xs text-neutral-500 underline">
-            {moving ? 'Annuler' : 'Changer la touche d’un numéro'}
+          <button type="button" onClick={() => setMoving(!moving)} className="px-2 text-xs text-neutral-400 hover:text-neutral-900">
+            {moving ? 'Annuler' : 'Déplacer un numéro'}
           </button>
         )}
       </div>
       <label className="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-600" title="Les touches jouées s’ajoutent dans la même case">
         <input type="checkbox" checked={chord} onChange={(e) => onChord(e.target.checked)} className="h-4 w-4 accent-neutral-900" />Accord
       </label>
-      <button type="button" onClick={() => onText('')} disabled={!text} className="h-9 rounded-lg px-2 text-xs font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-35">Vider</button>
-      <div className="flex">
+      {!focus && <button type="button" onClick={() => onText('')} disabled={!text} className="h-9 rounded-lg px-2 text-xs font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-35">Vider</button>}
+      {!focus && <div className="flex">
         <button type="button" onClick={() => onMove('previous')} aria-label="Case précédente" className="h-9 w-9 rounded-lg text-neutral-600 hover:bg-neutral-100">←</button>
         <button type="button" onClick={() => onMove('next')} aria-label="Case suivante" className="h-9 w-9 rounded-lg text-neutral-600 hover:bg-neutral-100">→</button>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { pieceDifficulties, pieceDuration, pieceLevels, pieceNoteSchema, pieceSchema, pieceSectionsSchema, renderScore, scoreSchema, type Score } from '@learn/shared';
+import { pieceDifficulties, pieceDuration, pieceEditsSchema, pieceLevels, pieceNoteSchema, pieceSchema, pieceSectionsSchema, renderScore, scoreSchema, trimSilence, type Score } from '@learn/shared';
 import { z } from 'zod';
 import { requireUser } from '../auth/session.js';
 import { coverFromLink, isCatalogImage, type CoverFinder } from '../covers.js';
@@ -31,6 +31,8 @@ const updateBody = z.object({
   level: z.enum(pieceLevels).optional(),
   // Parts set by hand; null: found automatically.
   sections: pieceSectionsSchema.nullable().optional(),
+  // Changes made by hand to the easier levels; null: none.
+  edits: pieceEditsSchema.nullable().optional(),
   // Which tracks are on, one flag per track of the piece.
   tracks_enabled: z.array(z.boolean()).max(64).optional(),
   // Cover picked by hand (from a link): a catalogue image, or null for none.
@@ -177,11 +179,11 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
   });
 
   router.get('/:id', (req, res) => {
-    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, sections, score, COALESCE(level, 'original') AS level, data FROM pieces WHERE id = ? AND user_id = ?`)
+    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, sections, score, edits, COALESCE(level, 'original') AS level, data FROM pieces WHERE id = ? AND user_id = ?`)
       .get(Number(req.params.id), req.user!.id) as { data: string } & Record<string, unknown> | undefined;
     if (!row) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
-    const { data, tracks, sections, score, ...meta } = row;
-    res.json({ success: true, data: { ...meta, tracks: tracks ? JSON.parse(tracks as string) : undefined, sections: sections ? JSON.parse(sections as string) : null, score: score ? JSON.parse(score as string) : null, notes: JSON.parse(data) } });
+    const { data, tracks, sections, score, edits, ...meta } = row;
+    res.json({ success: true, data: { ...meta, tracks: tracks ? JSON.parse(tracks as string) : undefined, sections: sections ? JSON.parse(sections as string) : null, score: score ? JSON.parse(score as string) : null, edits: edits ? JSON.parse(edits as string) : null, notes: JSON.parse(data) } });
   });
 
   // Large pieces exceed the global JSON limit.
@@ -190,7 +192,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     if (!parsed.success) return void res.status(400).json({ success: false, error: firstIssue(parsed.error, 'Morceau invalide') });
     const { subject, piece, score } = parsed.data;
     if (!ownsFolder(parsed.data.folder_id, req.user!.id)) return void res.status(400).json({ success: false, error: 'Dossier introuvable' });
-    const notes = score ? notesOf(score) : [...piece.notes].sort((a, b) => a.time - b.time || a.midi - b.midi);
+    const notes = score ? notesOf(score) : trimSilence({ notes: piece.notes }).notes.sort((a, b) => a.time - b.time || a.midi - b.midi);
     const now = Date.now();
     const artist = artistOrNull(piece.artist);
     const cover = (await findCover(piece.title, artist)) ?? '';
@@ -222,6 +224,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     if (b.difficulty !== undefined) { sets.push('difficulty = ?'); values.push(b.difficulty); }
     if (b.level !== undefined) { sets.push('level = ?'); values.push(b.level); }
     if (b.sections !== undefined) { sets.push('sections = ?'); values.push(b.sections && JSON.stringify(b.sections)); }
+    if (b.edits !== undefined) { sets.push('edits = ?'); values.push(b.edits && JSON.stringify(b.edits)); }
     if (b.description !== undefined) { sets.push('description = ?'); values.push(textOrNull(b.description)); }
     if (b.tracks_enabled !== undefined) {
       const tracks = old.tracks ? (JSON.parse(old.tracks) as { enabled: boolean }[]) : [];
@@ -246,9 +249,9 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
   });
 
   // Notes corrected in the player's editor: they replace the piece's. Cutting
-  // the start moves the parts too.
+  // the start moves the parts and the changes to the easier levels too.
   router.put('/:id/notes', express.json({ limit: '8mb' }), (req, res) => {
-    const parsed = z.object({ notes: z.array(pieceNoteSchema).min(1).max(50_000), sections: pieceSectionsSchema.nullable().optional() }).safeParse(req.body);
+    const parsed = z.object({ notes: z.array(pieceNoteSchema).min(1).max(50_000), sections: pieceSectionsSchema.nullable().optional(), edits: pieceEditsSchema.nullable().optional() }).safeParse(req.body);
     if (!parsed.success) return void res.status(400).json({ success: false, error: 'Notes invalides' });
     const row = db.prepare('SELECT tracks, score FROM pieces WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user!.id) as { tracks: string | null; score: string | null } | undefined;
     if (!row) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
@@ -256,9 +259,15 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     const trackCount = row.tracks ? (JSON.parse(row.tracks) as unknown[]).length : 0;
     if (parsed.data.notes.some((n) => n.track !== undefined && n.track >= trackCount)) return void res.status(400).json({ success: false, error: 'Piste inconnue' });
     const notes = [...parsed.data.notes].sort((a, b) => a.time - b.time || a.midi - b.midi);
-    const { sections } = parsed.data;
-    db.prepare(`UPDATE pieces SET data = ?, note_count = ?, duration = ?${sections === undefined ? '' : ', sections = ?'} WHERE id = ?`)
-      .run(JSON.stringify(notes), notes.length, pieceDuration(notes), ...(sections === undefined ? [] : [sections && JSON.stringify(sections)]), Number(req.params.id));
+    const sets = ['data = ?', 'note_count = ?', 'duration = ?'];
+    const values: unknown[] = [JSON.stringify(notes), notes.length, pieceDuration(notes)];
+    for (const key of ['sections', 'edits'] as const) {
+      const value = parsed.data[key];
+      if (value === undefined) continue;
+      sets.push(`${key} = ?`);
+      values.push(value && JSON.stringify(value));
+    }
+    db.prepare(`UPDATE pieces SET ${sets.join(', ')} WHERE id = ?`).run(...values, Number(req.params.id));
     res.json({ success: true });
   });
 

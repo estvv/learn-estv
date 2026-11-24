@@ -1,4 +1,4 @@
-import type { Piece, PieceDifficulty, PieceLevel, PieceSection, Score } from '@learn/shared';
+import type { Piece, PieceDifficulty, PieceEdits, PieceLevel, PieceSection, Score } from '@learn/shared';
 
 export interface ImportResult extends Piece {
   // Things the user should know about the conversion.
@@ -32,6 +32,8 @@ export interface StoredPiece extends Piece {
   level?: PieceLevel;
   // Parts set by hand; null: found automatically.
   sections?: PieceSection[] | null;
+  // Changes made by hand to the easier levels (see levelEdits.ts).
+  edits?: PieceEdits | null;
   // Pieces written by hand; null: imported.
   score?: Score | null;
 }

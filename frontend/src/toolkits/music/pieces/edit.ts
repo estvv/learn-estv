@@ -1,7 +1,7 @@
-import type { PieceNote } from '@learn/shared';
+import type { Hand, PieceNote } from '@learn/shared';
 
 // The corrections the player's editor can make: small fixes to imported notes
-// (wrong pitch, stray note, wrong hand, silence to cut), not composing.
+// (wrong pitch, missing or stray note, wrong hand, silence to cut).
 // Every function returns new notes and leaves its input untouched.
 
 // Notes get an id while being edited, to keep track of the selection.
@@ -10,12 +10,33 @@ export type EditNote = PieceNote & { id: number };
 const LOWEST = 21; // A0
 const HIGHEST = 108; // C8
 const MIN_DURATION = 0.05;
+const AROUND = 2; // seconds
+// Ids below are places in the piece: new notes get higher ones.
+const NEW_IDS = 1_000_000;
 
 export const withIds = (notes: PieceNote[]): EditNote[] => notes.map((n, id) => ({ ...n, id }));
 export const withoutIds = (notes: EditNote[]): PieceNote[] => notes.map(({ id: _id, ...n }) => n);
 
 export function removeNotes(notes: EditNote[], ids: Set<number>): EditNote[] {
   return notes.filter((n) => !ids.has(n.id));
+}
+
+// A new note, in the hand that plays closest to it around that time.
+export function addNote(notes: EditNote[], midi: number, time: number, duration: number, track?: number): EditNote[] {
+  if (midi < LOWEST || midi > HIGHEST) return notes;
+  if (notes.some((n) => n.midi === midi && Math.abs(n.time - time) < MIN_DURATION)) return notes;
+  let hand: Hand = midi >= 60 ? 'right' : 'left';
+  let closest = Infinity;
+  for (const n of notes) {
+    const far = Math.abs(n.midi - midi);
+    if (n.hand && Math.abs(n.time - time) <= AROUND && far < closest) {
+      closest = far;
+      hand = n.hand;
+    }
+  }
+  const id = notes.reduce((max, n) => Math.max(max, n.id), NEW_IDS) + 1;
+  return [...notes, { id, midi, time, duration: Math.max(MIN_DURATION, duration), velocity: 0.7, hand, ...(track === undefined ? {} : { track }) }]
+    .sort((a, b) => a.time - b.time || a.midi - b.midi);
 }
 
 // Semitones up (+) or down (-). The selection moves as a whole: if one note

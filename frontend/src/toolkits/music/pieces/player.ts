@@ -39,6 +39,8 @@ export class PiecePlayer {
   // Of the whole piece: turning tracks off does not change the timeline
   // (cutting the piece in the editor does).
   duration: number;
+  // Nothing is played before: silence, or the notes of other tracks.
+  start = 0;
   readonly state = new Observable<PlayerState>({ playing: false, expected: [], played: [], wrong: null, finished: false });
   position = 0;
   rate = 1;
@@ -64,9 +66,10 @@ export class PiecePlayer {
   }
 
   // Other notes (tracks turned on or off, corrections), same place in the piece.
-  setNotes(notes: PieceNote[], duration = this.duration) {
+  setNotes(notes: PieceNote[], duration = this.duration, start = 0) {
     this.load(notes);
     this.duration = duration;
+    this.start = start;
     this.seek(this.position);
   }
 
@@ -90,7 +93,7 @@ export class PiecePlayer {
     const start = ++this.starts;
     await ensureAudio().catch(() => {});
     if (start !== this.starts) return;
-    if (this.state.get().finished) this.seek(0);
+    if (this.state.get().finished) this.seek(this.start);
     this.lastFrame = performance.now();
     this.state.set((s) => ({ ...s, playing: true }));
     cancelAnimationFrame(this.raf);
@@ -115,7 +118,7 @@ export class PiecePlayer {
 
   seek(seconds: number) {
     releaseAll();
-    this.position = Math.max(0, Math.min(this.duration, seconds));
+    this.position = Math.max(this.start, Math.min(this.duration, seconds));
     this.nextNote = this.notes.findIndex((n) => n.time >= this.position);
     if (this.nextNote < 0) this.nextNote = this.notes.length;
     this.nextGroup = this.groups.findIndex((g) => g.time >= this.position - 1e-6);

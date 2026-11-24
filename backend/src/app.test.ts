@@ -194,6 +194,20 @@ describe('auth and progress', () => {
     await me.delete(`/api/pieces/${withDesc}`).expect(200);
     expect(list[0].cover).toBe('https://img.test/-/Gamme');
 
+    // Silence at the start is not imported.
+    const late = { ...piece, title: 'Tard', notes: piece.notes.map((n) => ({ ...n, time: n.time + 3 })) };
+    const lateId = (await me.post('/api/pieces').send({ subject: 'piano', piece: late }).expect(201)).body.data.id;
+    expect((await me.get(`/api/pieces/${lateId}`).expect(200)).body.data.notes.map((n: { time: number }) => n.time)).toEqual([0, 0.5]);
+    await me.delete(`/api/pieces/${lateId}`).expect(200);
+
+    // Changes to an easier level: the piece's notes stay.
+    const edits = { simplified: { removed: [{ midi: 60, time: 0 }], added: [{ midi: 64, time: 1, duration: 0.5, velocity: 0.7, hand: 'left' }] } };
+    await me.patch(`/api/pieces/${id}`).send({ edits }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data).toMatchObject({ edits, notes: [{ midi: 60 }, { midi: 62 }] });
+    await me.patch(`/api/pieces/${id}`).send({ edits: { original: edits.simplified, simplified: { removed: 3 } } }).expect(400);
+    await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, edits: null }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.edits).toBeNull();
+
     // Written by hand: the notes come from the score.
     const score = {
       bpm: 120, division: 2,

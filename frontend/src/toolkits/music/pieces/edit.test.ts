@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commit, cutAfter, cutBefore, redo, removeNotes, startHistory, switchHand, transpose, undo, withIds, withoutIds, type EditNote } from './edit';
+import { addNote, commit, cutAfter, cutBefore, redo, removeNotes, startHistory, switchHand, transpose, undo, withIds, withoutIds, type EditNote } from './edit';
 
 const notes = (): EditNote[] => withIds([
   { midi: 60, time: 0, duration: 1, velocity: 0.8, hand: 'right' },
@@ -70,5 +70,19 @@ describe('undo / redo', () => {
   it('ignores a change that changed nothing', () => {
     const h = startHistory(notes());
     expect(commit(h, h.present)).toBe(h);
+  });
+
+  it('adds a note in the hand playing around it, once', () => {
+    const notes = withIds([
+      { midi: 50, time: 1, duration: 0.5, velocity: 0.7, hand: 'left' },
+      { midi: 72, time: 1, duration: 0.5, velocity: 0.7, hand: 'right' },
+    ]);
+    const more = addNote(notes, 59, 1.5, 0.2);
+    expect(more.map((n) => [n.midi, n.hand])).toEqual([[50, 'left'], [72, 'right'], [59, 'left']]);
+    expect(addNote(more, 59, 1.51, 0.2)).toBe(more);
+    expect(new Set(addNote(more, 64, 0, 0.2, 1).map((n) => n.id)).size).toBe(4);
+    // Nobody plays there: by pitch.
+    expect(addNote(notes, 48, 30, 0.2)[2].hand).toBe('left');
+    expect(addNote(notes, 110, 1, 0.2)).toBe(notes);
   });
 });

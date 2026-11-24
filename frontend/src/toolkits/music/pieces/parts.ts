@@ -41,10 +41,3 @@ export function rename(parts: PieceSection[], i: number, label: string): PieceSe
   const clean = label.trim().slice(0, 12);
   return clean ? parts.map((p, k) => (k === i ? { ...p, label: clean } : p)) : parts;
 }
-
-// The piece lost `by` seconds at its start.
-export function shiftParts(parts: PieceSection[], by: number): PieceSection[] {
-  const moved = parts.map((p) => ({ ...p, start: Math.max(0, p.start - by) }));
-  // Of the parts now before the start, the last one opens the piece.
-  return moved.filter((p, i) => p.start > 0 || i + 1 === moved.length || moved[i + 1].start > 0);
-}

@@ -81,7 +81,7 @@ export function MusicPractice({ subject }: { subject: string }) {
         type="button"
         onClick={() => setPanel(true)}
         aria-label="Morceaux"
-        className="absolute right-4 top-4 z-10 phone:right-2.5 phone:top-2.5 phone:p-2.5 inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm transition-colors hover:text-neutral-900"
+        className="absolute right-4 top-4 z-10 phone:right-2.5 phone:top-2.5 phone:p-2.5 inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-neutral-700 ring-1 ring-neutral-200 transition-colors hover:text-neutral-900"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
           <path d="M9 18V5.5l11-2V16" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="17.5" cy="16" r="2.5" />
@@ -104,7 +104,7 @@ export function MusicPractice({ subject }: { subject: string }) {
               setQueue(null);
               setParams({ morceau: String(pieceId), modifier: '1' });
             }}
-            onNotesSaved={(notes) => setPiece((p) => (p && p.id === piece.id ? { ...p, notes } : p))}
+            onChange={(change) => setPiece((p) => (p && p.id === piece.id ? { ...p, ...change } : p))}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-neutral-400">{error || 'Chargement du morceau…'}</div>

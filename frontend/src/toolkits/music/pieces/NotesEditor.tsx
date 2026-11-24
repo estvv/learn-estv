@@ -9,51 +9,32 @@ import { piecesApi } from './api';
 import { CellPad } from './CellPad';
 import { commit, redo, startHistory, undo, type History } from './edit';
 import { EditGrid, type Cell } from './EditGrid';
-import { BeatGrid, beatGrid } from './grid';
+import { changeOf, editable, layoutOf, levelNames, levelNotes, levelOf, numbersOf, untouched, visible } from './derive';
 import { setStep } from './numberEdit';
 import { Small } from './Numbers';
-import { numberPiece, partAt, stepText, type Key, type Part } from './numbers';
-import { fromSaved } from './parts';
+import { partAt, stepText, type Key, type Part } from './numbers';
 import { pieceRange } from './player';
 import { parseRun } from './score';
-import { detectSections, type Section } from './sections';
+import { OctaveButton } from './ScoreEditor';
 import type { StoredPiece } from './types';
 import { usePreview } from './usePreview';
 
-// Changes an imported piece through its numbers: what each hand plays in each
-// column of a part. Numbers stay put while editing.
+// Changes an imported piece through its numbers, at its level: what each hand
+// plays in each column of a part.
 export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; onSaved(id: number): void; onClose(): void }) {
-  const [history, setHistory] = useState<History<PieceNote[]>>(() => startHistory(piece.notes));
+  const [history, setHistory] = useState<History<PieceNote[]>>(() => startHistory(editable(piece)));
   const notes = history.present;
   const changed = history.past.length > 0;
-  const shown = (list: PieceNote[]) => list.filter((n) => n.track === undefined || !piece.tracks || piece.tracks[n.track]?.enabled);
+  const level = levelOf(piece);
+  const heard = useMemo(() => visible(piece, notes), [piece, notes]);
 
-  // Beats, parts and numbers come from the piece as it was.
-  const base = useMemo(() => {
-    const own = shown(piece.notes);
-    const duration = pieceDuration(piece.notes);
-    const found = beatGrid(own, piece.bpm);
-    const grid = found ?? BeatGrid.regular(own[0]?.time ?? 0, 0.5);
-    const auto = detectSections(own, piece.bpm, found);
-    const sections: Section[] = piece.sections ? fromSaved(piece.sections, duration) : auto.length ? auto : [{ start: 0, end: duration, label: 'A' }];
-    const { parts } = numberPiece(own, sections, grid);
-    const keys = new Map<string, Key[]>();
-    for (const p of parts) {
-      const list = keys.get(p.label) ?? [];
-      for (const k of p.keys) if (!list.some((o) => o.hand === k.hand && o.midi === k.midi)) list.push(k);
-      keys.set(p.label, list);
-    }
-    const fine = parts.some((p) => p.division >= 4 && p.division % 3) ? 4 : parts.some((p) => p.division % 3 === 0) ? 3 : 2;
-    return { duration, grid, sections, keys, fine };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [piece]);
-
-  const [division, setDivision] = useState(base.fine);
-  const parts = useMemo(
-    () => numberPiece(shown(notes), base.sections, base.grid, { division, keys: base.keys }).parts,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [notes, base, division],
-  );
+  // Beats and parts stay put; numbers follow every change.
+  const layout = useMemo(() => layoutOf(piece), [piece]);
+  const [division, setDivision] = useState(() => {
+    const { parts } = numbersOf(levelNotes(piece), layout);
+    return parts.some((p) => p.division >= 4 && p.division % 3) ? 4 : parts.some((p) => p.division % 3 === 0) ? 3 : 2;
+  });
+  const parts = useMemo(() => numbersOf(heard, layout, division).parts, [heard, layout, division]);
   const [index, setIndex] = useState(0);
   const part: Part = parts[index] ?? parts[0];
   const [cell, setCell] = useState<Cell | null>(null);
@@ -64,23 +45,22 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
   const phone = useMedia(PHONE);
   const touch = useMedia(TOUCH);
 
-  const duration = useMemo(() => Math.max(base.duration, pieceDuration(notes)), [base, notes]);
-  const heard = useMemo(() => shown(notes), [notes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const duration = useMemo(() => Math.max(layout.duration, pieceDuration(notes)), [layout, notes]);
   const preview = usePreview(heard, duration);
   const playingPart = partAt(parts, preview.position);
   const column = preview.playing && playingPart === index
-    ? Math.floor((base.grid.toBeats(preview.position) - part.beat) * part.division + 0.3)
+    ? Math.floor((layout.grid.toBeats(preview.position) - part.beat) * part.division + 0.3)
     : -1;
 
   // The numbers of the whole letter, not only those this part plays.
   const keys = useMemo(() => {
-    const list = [...(base.keys.get(part.label) ?? [])];
+    const list: Key[] = [];
     for (const p of parts) {
       if (p.label !== part.label) continue;
       for (const k of p.keys) if (!list.some((o) => o.hand === k.hand && o.midi === k.midi)) list.push(k);
     }
-    return list;
-  }, [base, parts, part.label]);
+    return list.sort((a, b) => a.number - b.number);
+  }, [parts, part.label]);
   const stickers = useMemo(() => {
     const out = new Map<number, Sticker[]>();
     for (const k of keys) out.set(k.midi, [...(out.get(k.midi) ?? []), k]);
@@ -94,7 +74,7 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
   const put = (c: Cell, midis: number[]) => {
     setError('');
     const track = piece.tracks ? Math.max(0, piece.tracks.findIndex((t) => t.enabled)) : undefined;
-    setHistory((h) => commit(h, setStep(h.present, part, base.grid, c.hand, c.step, midis, track)));
+    setHistory((h) => commit(h, setStep(h.present, part, layout.grid, c.hand, c.step, midis, track)));
   };
   const move = (to: 'previous' | 'next' | 'hand') => setCell((c) => {
     if (!c) return c;
@@ -133,7 +113,7 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
     setSaving(true);
     setError('');
     try {
-      await piecesApi.saveNotes(piece.id, notes);
+      await piecesApi.saveChange(piece.id, changeOf(piece, notes));
       onSaved(piece.id);
     } catch (e) {
       setError((e as Error).message);
@@ -143,7 +123,7 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex min-h-15 shrink-0 flex-wrap items-center gap-2 py-2 pl-16 pr-3 sm:pr-4">
+      <div className="flex h-17 shrink-0 items-center gap-1 pl-16 pr-3 phone:h-15 phone:pl-14 sm:pr-5">
         <div className="min-w-0 flex-1 truncate font-semibold text-neutral-900">{piece.title}</div>
         <Small onClick={() => setHistory(undo)} title="Annuler le dernier changement">↶</Small>
         <Small onClick={() => setHistory(redo)} title="Rétablir">↷</Small>
@@ -151,14 +131,14 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
           active={preview.playing}
           onClick={() => (preview.playing ? preview.stop() : preview.play(part.start, { start: part.start, end: part.end }))}
         >
-          {preview.playing ? 'Arrêter' : 'Écouter la partie'}
+          {preview.playing ? 'Arrêter' : 'Écouter'}
         </Small>
         <Small onClick={() => (changed ? setLeaving(true) : onClose())}>Quitter</Small>
-        <button type="button" onClick={() => void save()} disabled={saving || !changed} className={primaryButton}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+        <button type="button" onClick={() => void save()} disabled={saving || !changed} className={`${primaryButton} ml-1`}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-200 bg-white px-3 py-3 sm:px-5">
-        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-200 bg-white px-3 py-4 sm:px-6">
+        <div className="mb-5 flex flex-wrap items-center gap-1">
           {parts.map((p, i) => (
             <button
               key={i}
@@ -169,31 +149,32 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
                 setCell(null);
               }}
               aria-current={i === index}
-              className={`h-9 min-w-9 rounded-lg px-2.5 text-sm font-semibold ${i === index ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'}`}
+              className={`h-9 min-w-9 rounded-lg px-2.5 text-sm font-semibold ${i === index ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'}`}
             >
               {p.label}
             </button>
           ))}
-          <label className="ml-2 flex items-center gap-2 text-xs text-neutral-600">
-            Une case =
-            <select
-              value={division}
-              onChange={(e) => {
-                setDivision(Number(e.target.value));
-                setCell(null);
-              }}
-              className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5"
-            >
-              <option value={1}>1 temps</option>
-              <option value={2}>½ temps</option>
-              <option value={3}>⅓ (triolets)</option>
-              <option value={4}>¼ de temps</option>
-            </select>
-          </label>
+          <span className="flex-1" />
+          <span className="px-2 text-xs text-neutral-400">Niveau {levelNames[level]}</span>
+          {level !== 'original' && piece.edits?.[level] && (
+            <Small onClick={() => setHistory((h) => commit(h, untouched(piece)))} title="Oublier les changements faits à ce niveau">Version automatique</Small>
+          )}
+          <select
+            value={division}
+            title="Durée d’une case"
+            aria-label="Durée d’une case"
+            onChange={(e) => {
+              setDivision(Number(e.target.value));
+              setCell(null);
+            }}
+            className="rounded-lg bg-transparent py-1.5 text-xs text-neutral-600 focus:outline-none"
+          >
+            <option value={1}>Case = 1 temps</option>
+            <option value={2}>Case = ½ temps</option>
+            <option value={3}>Case = ⅓ temps</option>
+            <option value={4}>Case = ¼ temps</option>
+          </select>
         </div>
-        <p className="mb-3 text-xs text-neutral-400">
-          Toutes les notes du morceau, au niveau Original. Change une case, ou remplis une case vide. Les numéros sont refaits dans l’ordre d’appui après l’enregistrement.
-        </p>
         <EditGrid part={part} selected={current} column={column} small={phone} onSelect={setCell} />
         <ErrorText>{error}</ErrorText>
       </div>
@@ -213,17 +194,16 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
               onMove={move}
             />
           ) : (
-            <span className="text-xs text-neutral-400">Choisis une case de la grille.</span>
+            <span className="text-xs text-neutral-400">Choisis une case, vide ou non.</span>
           )}
         </div>
-        {phone && (
-          <div className="mb-2 flex items-center justify-center gap-1 text-xs text-neutral-500">
-            <button type="button" onClick={() => setOctave((o) => Math.max(1, o - 1))} aria-label="Octave plus grave" className="h-8 w-8 rounded-lg bg-neutral-100">−</button>
-            <span className="px-2">Octave</span>
-            <button type="button" onClick={() => setOctave((o) => Math.min(6, o + 1))} aria-label="Octave plus aiguë" className="h-8 w-8 rounded-lg bg-neutral-100">+</button>
+        <div className="flex items-stretch gap-1">
+          {phone && <OctaveButton label="Octave plus grave" onClick={() => setOctave((o) => Math.max(1, o - 1))}>‹</OctaveButton>}
+          <div className="min-w-0 flex-1">
+            <PianoKeyboard from={from} to={to} labels="names" stickers={stickers} height="clamp(80px, 18dvh, 170px)" />
           </div>
-        )}
-        <PianoKeyboard from={from} to={to} labels="names" stickers={stickers} height="clamp(80px, 18dvh, 170px)" />
+          {phone && <OctaveButton label="Octave plus aiguë" onClick={() => setOctave((o) => Math.min(6, o + 1))}>›</OctaveButton>}
+        </div>
       </div>
 
       {leaving && (

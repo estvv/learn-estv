@@ -1,31 +1,30 @@
-import { isBlack, pieceDuration, renderScore, type Hand, type PieceLevel, type PieceNote, type PieceSection } from '@learn/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { PencilIcon, RepeatIcon, ShuffleIcon } from '../../../components/icons';
+import { isBlack, pieceDuration, type Hand, type PieceLevel, type PieceSection } from '@learn/shared';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RepeatIcon, ShuffleIcon } from '../../../components/icons';
 import { ConfirmModal } from '../../../components/Modal';
-import { Segmented } from '../../../components/Segmented';
 import { readJson, writeJson } from '../../../lib/storage';
 import { useObservable } from '../../../lib/store';
 import { COMPACT, PHONE, SHORT, TOUCH, useMedia } from '../../../lib/useMedia';
 import { useWakeLock } from '../../../lib/useWakeLock';
+import { ensureAudio, playNote } from '../audio';
 import { useNoteInput } from '../input/hooks';
 import { PianoKeyboard, type KeyLabels, type KeyMark, type Sticker } from '../PianoKeyboard';
 import { piecesApi } from './api';
+import { changeOf, editable, layoutOf, levelNames, levelNotes, levelOf, playedSpan, visible } from './derive';
 import {
-  commit, cutAfter, cutBefore, redo, removeNotes, startHistory, switchHand, transpose, undo, withIds, withoutIds,
+  addNote, commit, cutAfter, cutBefore, redo, removeNotes, startHistory, switchHand, transpose, undo, withIds, withoutIds,
   type EditNote, type History,
 } from './edit';
 import { FallingNotes } from './FallingNotes';
-import { BeatGrid, beatGrid } from './grid';
 import { FINGER_KEY, scrollToKeys } from './keyScroll';
-import { givenByScore, handName, numberPiece, partAt } from './numbers';
+import { handName, numberPiece, partAt } from './numbers';
 import { Numbers } from './Numbers';
-import { cutAt, fromSaved, joinPrevious, moveStart, rename, shiftParts, toSaved } from './parts';
+import { cutAt, joinPrevious, moveStart, rename, toSaved } from './parts';
 import { Cover } from './pieceFields';
 import { PieceOptions, RATES, type HandChoice } from './PieceOptions';
 import { PiecePlayer, pieceRange, type PlayMode } from './player';
-import { clock, ControlButton, controlIcon, PlayButton, SkipButton, SlidersIcon, Timeline, TracksMenu, type ControlSize } from './PlayerControls';
-import { detectSections, type Section } from './sections';
-import { handOf, simplify } from './simplify';
+import { clock, ControlButton, controlIcon, PlayButton, SkipButton, SlidersIcon, Timeline, type ControlSize } from './PlayerControls';
+import { handOf } from './simplify';
 import type { StoredPiece } from './types';
 
 // Shuffled listening: the pieces follow one another (see shuffle.ts).
@@ -47,19 +46,18 @@ const HANDS: Hand[] = ['left', 'right'];
 
 // A piece with falling notes above the keyboard: listen to it, or let it wait
 // for the right notes, with the piece as numbers above (see numbers.ts).
-// "Corriger" turns the notes into an editor for small
-// fixes (see edit.ts).
+// The notes can be changed right there: added, deleted, moved (see edit.ts).
 //
-// One toolbar on a computer. On a phone or a tablet: the title on top, the
-// player under the keyboard, the rest in a sheet; on a phone on its side,
-// one thin bar.
-export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSaved }: {
+// The title on top, the player under the keyboard, the rest in "Réglages"; on
+// a phone on its side, one thin bar.
+export function PlayAlong({ piece, labels, listening, onEditNumbers, onChange }: {
   piece: StoredPiece;
   labels: KeyLabels;
   listening?: Listening;
   // The piece is changed on a page of its own.
   onEditNumbers(): void;
-  onNotesSaved(notes: PieceNote[]): void;
+  // Already saved, or being saved.
+  onChange(change: Partial<StoredPiece>): void;
 }) {
   // Editing: the notes being corrected, with undo; null when not editing.
   const [history, setHistory] = useState<History | null>(null);
@@ -67,24 +65,26 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
   const [leaving, setLeaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState('');
-  const source: PieceNote[] = history ? history.present : piece.notes;
-
-  // Multi-track files: the notes of the tracks turned on. The player stays the
-  // same when tracks change, so does the place in the piece.
-  const [enabled, setEnabled] = useState<boolean[]>(() => piece.tracks?.map((t) => t.enabled) ?? []);
-  const trackNotes = useMemo(
-    () => (piece.tracks ? source.filter((n) => n.track === undefined || enabled[n.track]) : source),
-    [source, piece.tracks, enabled],
-  );
-  // Level: the whole piece, or an easier version (see simplify.ts). The
-  // editor always works on the real notes.
-  const [level, setLevel] = useState<PieceLevel>(piece.level ?? 'original');
+  // Clicks add notes instead of picking them.
+  const [adding, setAdding] = useState(false);
   const isEditing = history !== null;
-  const notes = useMemo(() => (isEditing ? trackNotes : simplify(trackNotes, level)), [trackNotes, level, isEditing]);
-  // Written by hand: its tempo, parts and numbers are known, silences included.
+
+  // Everything shown comes from the piece, step by step (see derive.ts): its
+  // tracks and level, the changes made to it, then its numbers.
   const score = piece.score ?? null;
-  const written = useMemo(() => score && renderScore(score), [score]);
-  const duration = useMemo(() => written?.duration ?? pieceDuration(source), [written, source]);
+  const level = levelOf(piece);
+  const enabled = useMemo(() => piece.tracks?.map((t) => t.enabled) ?? [], [piece.tracks]);
+  const layout = useMemo(() => layoutOf(piece), [piece]);
+  const playable = useMemo(() => levelNotes(piece), [piece]);
+  const notes = useMemo(() => (history ? visible(piece, history.present) : playable), [history, piece, playable]);
+  // Beats and parts stay put while editing, unless the start of the piece is cut.
+  const kept = level === 'original' ? history?.present.find((n) => n.id < piece.notes.length) : undefined;
+  const cut = kept ? piece.notes[kept.id].time - kept.time : 0;
+  const { grid, sections, given } = useMemo(
+    () => (cut && history ? layoutOf({ ...piece, ...changeOf(piece, history.present, cut) }) : layout),
+    [cut, history, piece, layout],
+  );
+  const duration = useMemo(() => (history ? pieceDuration(history.present) : layout.duration), [history, layout]);
   const player = useMemo(() => new PiecePlayer(piece.notes, pieceDuration(piece.notes)), [piece.notes]);
   useEffect(() => () => player.dispose(), [player]);
   // One hand at a time: the other is neither heard nor shown.
@@ -92,7 +92,9 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
   const bothHands = useMemo(() => notes.some((n) => handOf(n) === 'left') && notes.some((n) => handOf(n) === 'right'), [notes]);
   const hand = bothHands && !isEditing ? handChoice : 'both';
   const heard = useMemo(() => (hand === 'both' ? notes : notes.filter((n) => handOf(n) === hand)), [notes, hand]);
-  useEffect(() => player.setNotes(heard, duration), [player, heard, duration]);
+  // The silences around are skipped, but not while editing: notes may go there.
+  const [start, end] = useMemo(() => (isEditing ? [0, duration] : playedSpan(piece, notes, duration)), [isEditing, piece, notes, duration]);
+  useEffect(() => player.setNotes(heard, end, start), [player, heard, end, start]);
   const state = useObservable(player.state);
   const [mode, setMode] = useState<PlayMode>('listen');
   const [rate, setRate] = useState(1);
@@ -102,27 +104,16 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
   const short = useMedia(SHORT);
   const touch = useMedia(TOUCH);
   const [options, setOptions] = useState(false);
+  const closeOptions = useCallback(() => setOptions(false), []);
   useWakeLock(state.playing);
   // The keyboard keeps the original range while editing (no jumping when a note moves).
   const [from, to] = useMemo(() => pieceRange(notes.length && !history ? notes : piece.notes), [notes, piece.notes, history]);
-  // The piece cut into sections (A B A C…) that can be looped: the owner's,
-  // else found from the notes. The same at every level.
-  const [ownParts, setOwnParts] = useState<PieceSection[] | null>(piece.sections ?? null);
   const [partsError, setPartsError] = useState('');
-  const grid = useMemo(() => (isEditing ? null : score ? BeatGrid.regular(0, 60 / score.bpm) : beatGrid(trackNotes, piece.bpm)), [trackNotes, piece.bpm, score, isEditing]);
-  const sections = useMemo((): Section[] => {
-    if (isEditing) return [];
-    if (written) return fromSaved(written.sections, duration);
-    if (ownParts) return fromSaved(ownParts, duration);
-    const found = detectSections(trackNotes, piece.bpm, grid);
-    return found.length ? found : [{ start: 0, end: duration, label: 'A' }];
-  }, [isEditing, written, ownParts, duration, trackNotes, piece.bpm, grid]);
 
   const [numbersOn, setNumbersOn] = useState(() => readJson(NUMBERS_KEY, { on: true }).on);
   const [bigNumbers, setBigNumbers] = useState(false);
-  const showNumbers = numbersOn && !isEditing;
-  const big = showNumbers && bigNumbers;
-  const numbered = useMemo(() => (showNumbers ? numberPiece(notes, sections, grid, score ? givenByScore(score) : {}) : null), [showNumbers, notes, sections, grid, score]);
+  const big = numbersOn && bigNumbers && !isEditing;
+  const numbered = useMemo(() => (numbersOn ? numberPiece(notes, sections, grid, given) : null), [numbersOn, notes, sections, grid, given]);
   const shownParts = useMemo(() => {
     const own = <T extends { hand: Hand }>(list: T[]) => (hand === 'both' ? list : list.filter((x) => x.hand === hand));
     return numbered?.parts.map((p) => ({ ...p, rows: own(p.rows), keys: own(p.keys) })) ?? [];
@@ -132,7 +123,7 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
 
   const applyLoop = (next: [number, number] | null) => {
     setLoop(next);
-    player.setLoop(next ? { start: sections[next[0]].start, end: sections[next[1]].end } : null);
+    player.setLoop(next ? { start: sections[next[0]].start, end: Math.min(end, sections[next[1]].end) } : null);
     setFrame((f) => f + 1);
   };
   useNoteInput();
@@ -147,15 +138,27 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
   const apply = (change: (notes: EditNote[], ids: Set<number>) => EditNote[]) =>
     setHistory((h) => h && commit(h, change(h.present, selectedRef.current)));
   const startEditing = () => {
+    setOptions(false);
     player.pause();
     setMode('listen');
     player.setMode('listen');
     applyLoop(null);
     setSelected(new Set());
     setEditError('');
-    setHistory(startHistory(withIds(piece.notes)));
+    setAdding(false);
+    setHistory(startHistory(withIds(editable(piece))));
+  };
+  // On the beat's nearest quarter, in the hand that plays around there.
+  const add = (midi: number, time: number) => {
+    const beat = Math.round(grid.toBeats(time) * 4) / 4;
+    const at = Math.max(0, grid.toTime(beat));
+    const length = (grid.toTime(beat + 0.5) - grid.toTime(beat)) * 0.95;
+    const track = piece.tracks ? Math.max(0, enabled.indexOf(true)) : undefined;
+    void ensureAudio().then(() => playNote(midi, 0.4)).catch(() => {});
+    apply((n) => addNote(n, midi, at, length, track));
   };
   const stopEditing = () => {
+    applyLoop(null);
     setHistory(null);
     setSelected(new Set());
     setLeaving(false);
@@ -166,14 +169,10 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
     setSaving(true);
     setEditError('');
     try {
-      const corrected = withoutIds(history.present);
-      // Cutting the start moved every note, so the parts follow.
-      const kept = history.present[0];
-      const moved = ownParts && shiftParts(ownParts, piece.notes[kept.id].time - kept.time);
-      await piecesApi.saveNotes(piece.id, corrected, moved ?? undefined);
-      setOwnParts(moved);
+      const change = changeOf(piece, withoutIds(history.present), cut);
+      await piecesApi.saveChange(piece.id, change);
       stopEditing();
-      onNotesSaved(corrected);
+      onChange(change);
     } catch (e) {
       setEditError((e as Error).message);
     } finally {
@@ -195,6 +194,7 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
       else if (e.key === 'Delete' || e.key === 'Backspace') apply(removeNotes);
       else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') apply((n, ids) => transpose(n, ids, (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 12 : 1)));
       else if (e.code === 'KeyH') apply(switchHand);
+      else if (key === 'a') setAdding((on) => !on);
       else if (e.key === 'Escape') setSelected(new Set());
       else return;
       e.preventDefault();
@@ -243,7 +243,7 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
 
   const current = partAt(shownParts, player.position);
   const part = shownParts[current];
-  const column = part ? Math.floor(((grid?.toBeats(player.position) ?? 0) - part.beat) * part.division + 0.3) : 0;
+  const column = part ? Math.floor((grid.toBeats(player.position) - part.beat) * part.division + 0.3) : 0;
   const stickers = useMemo(() => {
     const out = new Map<number, Sticker[]>();
     for (const k of part?.keys ?? []) out.set(k.midi, [...(out.get(k.midi) ?? []), k]);
@@ -260,7 +260,7 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
 
   // Seeking out of the loop ends it.
   const seek = (t: number) => {
-    if (loop && (t < sections[loop[0]].start - 0.05 || t >= sections[loop[1]].end)) applyLoop(null);
+    if (loop && (!sections[loop[1]] || t < sections[loop[0]].start - 0.05 || t >= sections[loop[1]].end)) applyLoop(null);
     player.seek(t);
     setFrame((f) => f + 1);
   };
@@ -289,7 +289,7 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
     if (target !== null) el.scrollTo({ left: target, behavior: 'smooth' });
   }, [fingers, state.expected, state.played, from, to, player]);
   const named = fingers || !compact || window.innerWidth / whites >= NAMED_KEY;
-  const keyboardHeight = !compact ? 'clamp(140px, 24dvh, 320px)' : fingers ? 'clamp(110px, 26dvh, 260px)' : 'clamp(80px, 17dvh, 200px)';
+  const keyboardHeight = !compact ? 'clamp(130px, 20dvh, 260px)' : fingers ? 'clamp(110px, 26dvh, 260px)' : 'clamp(80px, 17dvh, 200px)';
 
   const pickMode = (m: PlayMode) => {
     setMode(m);
@@ -302,13 +302,13 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
   // Other notes, other sections: a running loop would no longer fit.
   const pickLevel = (next: PieceLevel) => {
     applyLoop(null);
-    setLevel(next);
+    onChange({ level: next });
     void piecesApi.update(piece.id, { level: next }).catch(() => {});
   };
   const pickTracks = (next: boolean[]) => {
     applyLoop(null);
     setSelected(new Set());
-    setEnabled(next);
+    onChange({ tracks: piece.tracks?.map((t, i) => ({ ...t, enabled: next[i] })) });
     void piecesApi.update(piece.id, { tracks_enabled: next }).catch(() => {});
   };
   const toggleNumbers = (on: boolean) => {
@@ -317,11 +317,10 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
   };
   const saveParts = (next: PieceSection[] | null) => {
     applyLoop(null);
-    setOwnParts(next);
+    onChange({ sections: next });
     setPartsError('');
     piecesApi.update(piece.id, { sections: next }).catch((e: Error) => setPartsError(`Parties non enregistrées : ${e.message}`));
   };
-  const beatTime = (beat: number) => grid?.toTime(beat) ?? 0;
   const changeParts = (change: (parts: PieceSection[]) => PieceSection[]) => {
     const before = toSaved(sections);
     const after = change(before);
@@ -350,7 +349,7 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
   );
   const transport = (size: ControlSize) => (
     <>
-      {listening && <SkipButton size={size} title="Morceau précédent" flip onClick={() => (player.position > RESTART_AFTER ? seek(0) : listening.previous())} />}
+      {listening && <SkipButton size={size} title="Morceau précédent" flip onClick={() => (player.position > start + RESTART_AFTER ? seek(0) : listening.previous())} />}
       <PlayButton size={size} playing={state.playing} onClick={() => player.toggle()} />
       {listening && <SkipButton size={size} title="Morceau suivant" onClick={listening.next} />}
     </>
@@ -366,15 +365,25 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
       <RepeatIcon className={controlIcon(size)} />
     </ControlButton>
   );
-  const optionsButton = (size: ControlSize) => (
-    <ControlButton title="Réglages du morceau" size={size} onClick={() => setOptions(true)}>
-      <SlidersIcon className={controlIcon(size)} />
-    </ControlButton>
-  );
+  const optionsButton = !editing || compact || (piece.tracks?.length ?? 0) > 1 ? (
+    <button
+      type="button"
+      data-options
+      onClick={() => setOptions(!options)}
+      aria-expanded={options}
+      title="Réglages"
+      aria-label="Réglages"
+      className={`flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors phone:px-2.5 ${options ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'}`}
+    >
+      <SlidersIcon className="h-4 w-4" /><span className="phone:hidden">Réglages</span>
+    </button>
+  ) : null;
+  const hands = bothHands && !editing && <HandButtons value={hand} onChange={setHand} />;
   const timeline = (
     <Timeline
       sections={sections}
-      duration={player.duration}
+      start={start}
+      end={end}
       position={player.position}
       loop={loop}
       onSeek={seek}
@@ -382,97 +391,32 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
       sectionAt={sectionAt}
     />
   );
-  const time = <span className="w-[5.5rem] shrink-0 text-xs tabular-nums text-neutral-400">{clock(player.position)} / {clock(player.duration)}</span>;
 
-  // Left and right padding of the top bars: room for the page's "back" and
-  // "Morceaux" buttons, drawn over them.
+  // The top bar leaves room for the page's "back" and "Morceaux" buttons,
+  // drawn over it. What plays the piece is under the keyboard, but on a phone
+  // on its side: no height for it.
   return (
-    <div className="flex h-full flex-col">
-      {short ? (
-        <div className="flex h-14 shrink-0 items-center gap-2 px-14 text-sm text-neutral-600">
-          <div className="w-28 shrink-0 md:w-44">{heading}</div>
-          {transport('md')}
-          {timeline}
-          {time}
-          {loopButton('md')}
-          {shuffleButton('md')}
-          {optionsButton('md')}
-        </div>
-      ) : compact ? (
-        <div className="flex h-15 shrink-0 items-center pl-15 pr-15 text-sm md:h-18 md:pl-18 md:pr-44">{heading}</div>
-      ) : (
-        <div className="flex items-center gap-4 py-3 pl-16 pr-44 text-sm text-neutral-600">
-          <div className="w-48 shrink-0">{heading}</div>
-
-          <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
-            {shuffleButton('md')}
+    <div className="relative flex h-full flex-col">
+      <div className="flex h-17 shrink-0 items-center gap-3 pl-16 pr-36 text-sm phone:h-15 phone:gap-1 phone:pl-14 phone:pr-14 short:h-13">
+        <div className={short ? 'w-28 shrink-0 md:w-40' : 'min-w-0 flex-1'}>{heading}</div>
+        {short && (
+          <>
             {transport('md')}
-            {loopButton('md')}
             {timeline}
-            {time}
-            {!editing && (
-              <button
-                type="button"
-                onClick={() => toggleNumbers(!numbersOn)}
-                aria-pressed={numbersOn}
-                title={numbersOn ? 'Cacher les chiffres' : 'Voir le morceau en chiffres'}
-                className={`h-8 shrink-0 rounded-lg px-2 text-xs font-bold tabular-nums transition-colors ${numbersOn ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'}`}
-              >
-                123
-              </button>
-            )}
-            {bothHands && !editing && <HandButtons value={hand} onChange={setHand} />}
-          </div>
+            {loopButton('md')}
+            {shuffleButton('md')}
+          </>
+        )}
+        {optionsButton}
+      </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            {piece.tracks && piece.tracks.length > 1 && (
-              <TracksMenu tracks={piece.tracks} notes={piece.notes} enabled={enabled} onChange={pickTracks} />
-            )}
-            {!editing && (
-              <>
-                <button
-                  type="button"
-                  onClick={score ? onEditNumbers : startEditing}
-                  title={score ? 'Modifier le morceau, en chiffres' : 'Corriger les notes : supprimer, transposer, changer de main, couper le début ou la fin'}
-                  className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
-                >
-                  <PencilIcon className="h-4 w-4" />{score ? 'Modifier' : 'Corriger'}
-                </button>
-                <select
-                  value={level}
-                  onChange={(e) => pickLevel(e.target.value as PieceLevel)}
-                  title="Niveau : le morceau complet, la mélodie sur la basse, ou la mélodie seule"
-                  className="rounded-lg border border-neutral-200 bg-white py-1.5 pl-2 pr-1 text-sm text-neutral-700 hover:border-neutral-300 focus:outline-none"
-                >
-                  <option value="original">Original</option>
-                  <option value="simplified">Simplifié</option>
-                  <option value="melody">Mélodie seule</option>
-                </select>
-                <Segmented<PlayMode>
-                  value={mode}
-                  onChange={pickMode}
-                  options={[{ value: 'listen', label: 'Écouter' }, { value: 'wait', label: 'Attente' }]}
-                />
-              </>
-            )}
-            <select
-              value={rate}
-              onChange={(e) => pickRate(Number(e.target.value))}
-              title="Vitesse"
-              className="rounded-lg border border-neutral-200 bg-white py-1.5 pl-2 pr-1 text-sm text-neutral-700 hover:border-neutral-300 focus:outline-none"
-            >
-              {RATES.map((r) => <option key={r} value={r}>{Math.round(r * 100)} %</option>)}
-            </select>
-          </div>
-        </div>
-      )}
-
-      {compact && options && (
+      {options && (
         <PieceOptions
+          floating={!phone}
           mode={editing ? null : mode}
           level={level}
-          rate={rate}
-          hand={bothHands && !editing ? hand : null}
+          rate={compact ? rate : null}
+          hand={short && bothHands && !editing ? hand : null}
           numbered={editing ? null : numbersOn}
           tracks={piece.tracks ?? []}
           notes={piece.notes}
@@ -487,7 +431,7 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
           onBigKeys={setBigKeys}
           onEdit={editing || phone || score ? undefined : startEditing}
           onEditNumbers={editing ? undefined : onEditNumbers}
-          onClose={() => setOptions(false)}
+          onClose={closeOptions}
         />
       )}
 
@@ -498,11 +442,18 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
           canRedo={history.future.length > 0}
           saving={saving}
           touch={touch}
+          level={levelNames[level]}
+          adding={adding}
+          canCut={level === 'original'}
           error={editError}
+          onAdding={() => setAdding(!adding)}
           onRemove={() => apply(removeNotes)}
           onTranspose={(by) => apply((n, ids) => transpose(n, ids, by))}
           onHand={() => apply(switchHand)}
-          onCutBefore={() => apply((n) => cutBefore(n, player.position))}
+          onCutBefore={() => {
+            applyLoop(null);
+            apply((n) => cutBefore(n, player.position));
+          }}
           onCutAfter={() => apply((n) => cutAfter(n, player.position))}
           onUndo={() => setHistory((h) => h && undo(h))}
           onRedo={() => setHistory((h) => h && redo(h))}
@@ -512,8 +463,8 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
       )}
       {leaving && (
         <ConfirmModal
-          title="Abandonner les corrections ?"
-          message="Les changements faits depuis « Corriger » seront perdus."
+          title="Abandonner les changements ?"
+          message="Les changements non enregistrés seront perdus."
           confirmLabel="Abandonner"
           danger
           onConfirm={stopEditing}
@@ -538,12 +489,12 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
           compact={compact}
           short={short}
           onEdit={onEditNumbers}
-          editing={score ? null : {
-            onCut: (i, beat) => changeParts((p) => cutAt(p, beatTime(shownParts[i].beat + beat))),
-            onMove: (i, by) => changeParts((p) => moveStart(p, i, beatTime(shownParts[i].beat + by))),
+          editing={score || isEditing ? null : {
+            onCut: (i, beat) => changeParts((p) => cutAt(p, grid.toTime(shownParts[i].beat + beat))),
+            onMove: (i, by) => changeParts((p) => moveStart(p, i, grid.toTime(shownParts[i].beat + by))),
             onJoin: (i) => changeParts((p) => joinPrevious(p, i)),
             onRename: (i, label) => changeParts((p) => rename(p, i, label)),
-            onReset: ownParts ? () => saveParts(null) : null,
+            onReset: piece.sections ? () => saveParts(null) : null,
             error: partsError,
           }}
           onSeek={seek}
@@ -552,7 +503,7 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
         />
       )}
 
-      <div ref={scroller} className={`${big ? 'shrink-0' : 'min-h-0 flex-1'} overflow-x-auto overflow-y-hidden overscroll-contain border-t border-neutral-200 bg-white`}>
+      <div ref={scroller} className={`${big ? 'shrink-0' : 'min-h-0 flex-1'} overflow-x-auto overflow-y-hidden overscroll-contain bg-white ${big ? '' : 'border-t border-neutral-100'}`}>
         <div className="flex h-full flex-col" style={{ minWidth: fingers ? whites * FINGER_KEY : undefined }}>
           {!big && <div className="relative min-h-0 flex-1 px-2 sm:px-4">
             <FallingNotes
@@ -572,28 +523,56 @@ export function PlayAlong({ piece, labels, listening, onEditNumbers, onNotesSave
                   return next;
                 }),
                 onScroll: () => setFrame((f) => f + 1),
+                adding,
+                onAdd: add,
               } : undefined}
             />
           </div>}
-          <div className={`px-2 sm:px-4 ${big ? 'pt-2' : ''} ${compact && !short ? '' : 'pb-3'}`}>
-            <PianoKeyboard from={from} to={to} labels={named ? labels : 'none'} marks={marks} stickers={numbered ? stickers : undefined} height={keyboardHeight} />
+          <div className={`px-2 sm:px-4 ${big ? 'border-t border-neutral-100 pt-2' : ''} ${short ? 'pb-2' : ''}`}>
+            <PianoKeyboard from={from} to={to} labels={named && !numbered ? labels : 'none'} marks={marks} stickers={numbered ? stickers : undefined} height={keyboardHeight} />
           </div>
         </div>
       </div>
 
+      {!short && !compact && (
+        <div className="grid h-16 shrink-0 grid-cols-[1fr_minmax(0,46rem)_1fr] items-center gap-6 border-t border-neutral-200 bg-white px-5">
+          <div className="flex items-center gap-4">
+            {hands}
+            <select
+              value={rate}
+              onChange={(e) => pickRate(Number(e.target.value))}
+              title="Vitesse"
+              aria-label="Vitesse"
+              className="rounded-lg bg-transparent py-1.5 text-sm tabular-nums text-neutral-600 hover:text-neutral-900 focus:outline-none"
+            >
+              {RATES.map((r) => <option key={r} value={r}>{Math.round(r * 100)} %</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            {transport('md')}
+            <span className="w-9 shrink-0 text-right text-xs tabular-nums text-neutral-500">{clock(Math.max(0, player.position - start))}</span>
+            {timeline}
+            <span className="w-9 shrink-0 text-xs tabular-nums text-neutral-400">{clock(end - start)}</span>
+          </div>
+          <div className="flex items-center justify-end gap-1">
+            {shuffleButton('md')}
+            {loopButton('md')}
+          </div>
+        </div>
+      )}
       {compact && !short && (
         <div className="shrink-0 border-t border-neutral-200 bg-white px-3 pb-3 pt-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <span className="w-9 shrink-0 text-xs tabular-nums text-neutral-500">{clock(player.position)}</span>
+            <span className="w-9 shrink-0 text-xs tabular-nums text-neutral-500">{clock(Math.max(0, player.position - start))}</span>
             {timeline}
-            <span className="w-9 shrink-0 text-right text-xs tabular-nums text-neutral-400">{clock(player.duration)}</span>
+            <span className="w-9 shrink-0 text-right text-xs tabular-nums text-neutral-400">{clock(end - start)}</span>
           </div>
           <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center">
-            <div className="flex">{optionsButton('lg')}</div>
+            <div className="flex">{hands}</div>
             <div className="flex items-center gap-2 sm:gap-4">{transport('lg')}</div>
             <div className="flex justify-end">
-              {loopButton('lg')}
               {shuffleButton('lg')}
+              {loopButton('lg')}
             </div>
           </div>
         </div>
@@ -618,8 +597,8 @@ function HandButtons({ value, onChange }: { value: HandChoice; onChange(hand: Ha
             aria-label={title}
             aria-pressed={on}
             onClick={() => onChange(value === 'both' ? other : 'both')}
-            className={`h-8 w-7 rounded-lg text-xs font-bold transition-colors ${
-              !on ? 'text-neutral-300 hover:bg-neutral-100' : h === 'left' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
+            className={`h-9 w-9 rounded-lg text-sm font-bold transition-colors ${
+              !on ? 'text-neutral-300 hover:bg-neutral-100' : h === 'left' ? 'text-amber-700 hover:bg-amber-50' : 'text-sky-700 hover:bg-sky-50'
             }`}
           >
             {h === 'left' ? 'G' : 'D'}
@@ -630,14 +609,19 @@ function HandButtons({ value, onChange }: { value: HandChoice; onChange(hand: Ha
   );
 }
 
-// The editor's toolbar, under the player's bar.
-function EditBar({ count, canUndo, canRedo, saving, touch, error, onRemove, onTranspose, onHand, onCutBefore, onCutAfter, onUndo, onRedo, onCancel, onSave }: {
+// The editor's toolbar, under the title.
+function EditBar({ count, canUndo, canRedo, saving, touch, level, adding, canCut, error, onAdding, onRemove, onTranspose, onHand, onCutBefore, onCutAfter, onUndo, onRedo, onCancel, onSave }: {
   count: number;
   canUndo: boolean;
   canRedo: boolean;
   saving: boolean;
   touch: boolean;
+  level: string;
+  adding: boolean;
+  // Only the piece itself has a start and an end to cut.
+  canCut: boolean;
   error: string;
+  onAdding(): void;
   onRemove(): void;
   onTranspose(by: number): void;
   onHand(): void;
@@ -649,31 +633,32 @@ function EditBar({ count, canUndo, canRedo, saving, touch, error, onRemove, onTr
   onSave(): void;
 }) {
   const none = count === 0;
-  const tool = 'flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-neutral-600 transition-colors hover:bg-white hover:text-neutral-900 disabled:pointer-events-none disabled:opacity-35';
+  const tool = 'h-9 rounded-lg px-2.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:pointer-events-none disabled:opacity-30';
+  const help = adding
+    ? `${touch ? 'Touche' : 'Clique'} à l’endroit de la note à ajouter. Elle se cale sur le quart de temps.`
+    : touch
+      ? 'Touche une note pour la choisir, ou glisse pour en choisir plusieurs. Avance avec la barre de lecture.'
+      : 'Clic : choisir · glisser : en choisir plusieurs · double-clic dans le vide : ajouter · molette : avancer · Suppr, ↑ ↓, H (main), A (ajouter)';
   return (
-    <div className="border-t border-amber-200 bg-amber-50 px-3 py-2 md:px-16">
-      <div className="flex flex-wrap items-center justify-center gap-1">
-        <span className="mr-2 text-xs font-semibold text-amber-900">
-          Correction · {none ? 'aucune note choisie' : `${count} note${count > 1 ? 's' : ''} choisie${count > 1 ? 's' : ''}`}
-        </span>
+    <div className="shrink-0 border-t border-neutral-200 bg-white px-3 py-2 sm:px-5">
+      <div className="flex flex-wrap items-center gap-0.5">
+        <button type="button" aria-pressed={adding} onClick={onAdding} title="Ajouter des notes (A)" className={adding ? 'h-9 rounded-lg bg-neutral-900 px-2.5 text-xs font-medium text-white' : tool}>+ Ajouter</button>
         <button type="button" className={tool} disabled={none} onClick={onRemove} title="Supprimer (Suppr)">Supprimer</button>
-        <button type="button" className={tool} disabled={none} onClick={() => onTranspose(-1)} title="Un demi-ton plus bas (↓) · une octave : Maj+↓">↓ ½ ton</button>
-        <button type="button" className={tool} disabled={none} onClick={() => onTranspose(1)} title="Un demi-ton plus haut (↑) · une octave : Maj+↑">↑ ½ ton</button>
-        <button type="button" className={tool} disabled={none} onClick={onHand} title="Changer de main (H)">Main G/D</button>
-        <span className="mx-1 h-5 w-px bg-amber-200" />
-        <button type="button" className={tool} onClick={onCutBefore} title="Supprimer tout ce qui commence avant la position actuelle">Couper avant</button>
-        <button type="button" className={tool} onClick={onCutAfter} title="Supprimer tout ce qui commence après la position actuelle">Couper après</button>
-        <span className="mx-1 h-5 w-px bg-amber-200" />
+        <button type="button" className={tool} disabled={none} onClick={() => onTranspose(-1)} title="Un demi-ton plus bas (↓) · une octave : Maj+↓">↓</button>
+        <button type="button" className={tool} disabled={none} onClick={() => onTranspose(1)} title="Un demi-ton plus haut (↑) · une octave : Maj+↑">↑</button>
+        <button type="button" className={tool} disabled={none} onClick={onHand} title="Changer de main (H)">Main</button>
+        {canCut && <button type="button" className={tool} onClick={onCutBefore} title="Supprimer tout ce qui commence avant la position actuelle">Couper avant</button>}
+        {canCut && <button type="button" className={tool} onClick={onCutAfter} title="Supprimer tout ce qui commence après la position actuelle">Couper après</button>}
+        <span className="flex-1" />
         <button type="button" className={tool} disabled={!canUndo} onClick={onUndo} title="Annuler (Ctrl+Z)">↶</button>
         <button type="button" className={tool} disabled={!canRedo} onClick={onRedo} title="Rétablir (Ctrl+Maj+Z)">↷</button>
-        <span className="mx-1 h-5 w-px bg-amber-200" />
-        <button type="button" onClick={onCancel} className="h-8 rounded-lg px-3 text-xs font-medium text-neutral-600 hover:bg-white hover:text-neutral-900">Annuler</button>
-        <button type="button" onClick={onSave} disabled={saving} className="h-8 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
+        <button type="button" onClick={onCancel} className={tool}>Quitter</button>
+        <button type="button" onClick={onSave} disabled={saving} className="ml-1 h-9 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
           {saving ? 'Enregistrement…' : 'Enregistrer'}
         </button>
       </div>
-      <p className="mt-1 text-center text-[11px] text-amber-800/80">
-        {error || (touch ? 'Touche une note pour la choisir, ou glisse pour choisir une zone. Avance avec la barre de lecture.' : 'Clic : choisir une note · Maj+clic : en ajouter · glisser : choisir une zone · molette : avancer / reculer · Suppr · ↑ ↓ (Maj : octave) · H : main')}
+      <p className={`mt-1 px-2.5 text-[11px] ${error ? 'text-red-600' : 'text-neutral-400'}`}>
+        {error || `Niveau ${level}${none ? '' : ` · ${count} note${count > 1 ? 's' : ''} choisie${count > 1 ? 's' : ''}`} · ${help}`}
       </p>
     </div>
   );

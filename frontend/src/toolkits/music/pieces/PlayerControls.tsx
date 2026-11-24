@@ -1,5 +1,5 @@
 import type { PieceTrack } from '@learn/shared';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import type { Section } from './sections';
 
 // The pieces of the player's toolbar, laid out by PlayAlong: one row on a
@@ -72,9 +72,11 @@ export const SlidersIcon = ({ className }: { className: string }) => (
 
 // Progress bar cut into the piece's sections (A B A C…): click or drag to
 // move, double-click a section to loop it, Shift+click to extend the loop.
-export function Timeline({ sections, duration, position, loop, onSeek, onLoop, sectionAt }: {
+export function Timeline({ sections, start, end, position, loop, onSeek, onLoop, sectionAt }: {
   sections: Section[];
-  duration: number;
+  // Played part of the piece, in seconds.
+  start: number;
+  end: number;
   position: number;
   loop: [number, number] | null;
   onSeek(t: number): void;
@@ -83,17 +85,17 @@ export function Timeline({ sections, duration, position, loop, onSeek, onLoop, s
 }) {
   const bar = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
-  const segments = sections.length > 1 ? sections : [{ start: 0, end: duration, label: '' }];
+  const segments = sections.length > 1 ? sections : [{ start, end, label: '' }];
   const at = (clientX: number) => {
     const r = bar.current!.getBoundingClientRect();
-    return Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * duration;
+    return Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * (end - start) + start;
   };
-  const progress = duration ? (position / duration) * 100 : 0;
+  const progress = end > start ? Math.min(100, Math.max(0, ((position - start) / (end - start)) * 100)) : 0;
 
   return (
     <div
       ref={bar}
-      className="relative flex h-6 min-w-0 max-w-2xl flex-1 cursor-pointer touch-none select-none gap-0.5 compact:h-8 compact:max-w-none"
+      className="relative flex h-7 min-w-0 flex-1 cursor-pointer touch-none select-none gap-0.5 compact:h-8"
       onPointerDown={(e) => {
         if (e.shiftKey && sections.length > 1) return onLoop(sectionAt(at(e.clientX)), true);
         dragging.current = true;
@@ -106,12 +108,14 @@ export function Timeline({ sections, duration, position, loop, onSeek, onLoop, s
       onDoubleClick={(e) => sections.length > 1 && onLoop(sectionAt(at(e.clientX)), false)}
     >
       {segments.map((s, i) => {
+        const length = Math.min(end, s.end) - Math.max(start, s.start);
+        if (length <= 0) return null;
         const looped = loop !== null && i >= loop[0] && i <= loop[1];
         return (
           <div
             key={i}
-            title={s.label ? `Partie ${s.label} · ${clock(s.start)} – ${clock(s.end)}` : undefined}
-            style={{ flexGrow: s.end - s.start, flexBasis: 0 }}
+            title={s.label ? `Partie ${s.label} · ${clock(Math.max(0, s.start - start))} – ${clock(Math.min(end, s.end) - start)}` : undefined}
+            style={{ flexGrow: length, flexBasis: 0 }}
             className={`flex min-w-0 items-center justify-center overflow-hidden rounded text-[10px] font-semibold ${
               looped ? 'bg-sky-100 text-sky-700 ring-1 ring-inset ring-sky-300' : 'bg-neutral-100 text-neutral-400'
             }`}
@@ -171,42 +175,5 @@ export function TrackList({ tracks, notes, enabled, onChange }: TracksProps) {
         );
       })}
     </>
-  );
-}
-
-export function TracksMenu(props: TracksProps) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    window.addEventListener('mousedown', close);
-    window.addEventListener('keydown', esc);
-    return () => {
-      window.removeEventListener('mousedown', close);
-      window.removeEventListener('keydown', esc);
-    };
-  }, [open]);
-
-  return (
-    <div ref={box} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        title="Instruments du morceau"
-        className={`flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors ${open ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'}`}
-      >
-        <SlidersIcon className="h-4 w-4" />
-        Pistes <span className="tabular-nums text-neutral-400">{props.enabled.filter(Boolean).length}/{props.tracks.length}</span>
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-20 mt-1 w-72 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl">
-          <TrackList {...props} />
-        </div>
-      )}
-    </div>
   );
 }

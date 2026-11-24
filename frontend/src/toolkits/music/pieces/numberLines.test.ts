@@ -1,10 +1,10 @@
 import type { PieceNote } from '@learn/shared';
 import { describe, expect, it } from 'vitest';
 import { BeatGrid } from './grid';
-import { beatName, breakLines } from './numberLines';
+import { breakLines, lineWidth } from './numberLines';
 import { numberPiece } from './numbers';
 
-const sizing = { font: 13, char: 8, min: 20, cap: 60 };
+const sizing = { font: 13, char: 8, min: 20, beat: 40, cap: 120 };
 const part = (beats: number[]) => numberPiece(
   beats.map((b): PieceNote => ({ midi: 60, time: b * 0.5, duration: 0.2, velocity: 0.7, hand: 'right' })), [], BeatGrid.regular(0, 0.5),
 ).parts[0];
@@ -18,8 +18,11 @@ describe('lines of numbers', () => {
     expect(breakLines(p, 5, sizing)).toHaveLength(16);
   });
 
-  it('names the beats of each bar', () => {
-    const p = part([0, 0.5, 4]);
-    expect([0, 1, 2, 8, 10].map((c) => beatName(p, c))).toEqual([1, null, 2, 1, 2]);
+  it('gives a beat the same width whatever the columns in it', () => {
+    const fine = part([0, 0.5, 1.5]);
+    const coarse = part([0, 1, 2]);
+    expect([fine.division, coarse.division]).toEqual([2, 1]);
+    const width = (p: typeof fine) => lineWidth(breakLines(p, 1000, sizing)[0], p, sizing);
+    expect(width(fine)).toBe(width(coarse));
   });
 });

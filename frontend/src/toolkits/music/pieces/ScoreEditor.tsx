@@ -1,7 +1,10 @@
 import { renderScore, scoreSchema, type Hand, type PieceDifficulty, type Score } from '@learn/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Field, inputClass } from '../../../components/Field';
+import { PlusIcon } from '../../../components/icons';
 import { ConfirmModal, Modal } from '../../../components/Modal';
+import { Popover } from '../../../components/Popover';
+import { Segmented } from '../../../components/Segmented';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
 import { readJson, writeJson } from '../../../lib/storage';
 import { PHONE, TOUCH, useMedia } from '../../../lib/useMedia';
@@ -12,11 +15,12 @@ import { CellPad } from './CellPad';
 import { commit, redo, startHistory, undo, type History } from './edit';
 import { EditGrid, type Cell } from './EditGrid';
 import { LabelInput, Small } from './Numbers';
-import { stepText } from './numbers';
+import { handName, stepText } from './numbers';
 import { DifficultyPicker, FolderSelect } from './pieceFields';
+import { SlidersIcon } from './PlayerControls';
 import { RunPanel } from './RunPanel';
 import {
-  addPart, addToOrder, assignKey, cellMidis, emptyScore, MAX_BEATS, midiOf, moveInOrder, parseRun, partOf, placeRun, placeTaps,
+  addPart, addToOrder, assignKey, cellMidis, emptyScore, HANDS, MAX_BEATS, midiOf, moveInOrder, parseRun, partOf, placeRun, placeTaps,
   removeFromOrder, removePart, renamePart, runText, scoreGrid, setBeats, setCell, setDivision, shiftHand, unknownNumbers,
 } from './score';
 import type { PieceFolder, StoredPiece } from './types';
@@ -27,7 +31,7 @@ import { usePreview } from './usePreview';
 
 const draftKey = (id: number | null) => `learn.score.${id ?? 'new'}`;
 const DIVISIONS: { value: Score['division']; label: string }[] = [
-  { value: 2, label: '½ temps' }, { value: 3, label: '⅓ (triolets)' }, { value: 4, label: '¼ de temps' },
+  { value: 2, label: '½ temps' }, { value: 3, label: '⅓ temps' }, { value: 4, label: '¼ temps' },
 ];
 
 // Numbers waiting for their key to be clicked.
@@ -209,44 +213,127 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex min-h-15 shrink-0 flex-wrap items-center gap-2 py-2 pl-16 pr-3 sm:pr-4">
+      <div className="flex h-17 shrink-0 items-center gap-1 pl-16 pr-3 phone:h-15 phone:pl-14 sm:pr-5">
         <div className="min-w-0 flex-1 truncate font-semibold text-neutral-900">{piece ? piece.title : 'Nouveau morceau'}</div>
         <Small onClick={() => setHistory(undo)} title="Annuler le dernier changement">↶</Small>
         <Small onClick={() => setHistory(redo)} title="Rétablir">↷</Small>
-        <Small active={preview.playing} onClick={() => (preview.playing ? preview.stop() : preview.play(0))}>{preview.playing ? 'Arrêter' : 'Écouter tout'}</Small>
+        <Popover label={<SlidersIcon className="h-4 w-4" />} title="Tempo et grille" className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100">
+          <div className="space-y-4">
+            <NumberField label="Tempo" unit="bpm" value={score.bpm} min={20} max={300} onChange={(bpm) => edit((s) => ({ ...s, bpm }))} />
+            <Field label="Une case vaut">
+              <Segmented<Score['division']> full value={score.division} onChange={(d) => edit((s) => setDivision(s, d))} options={DIVISIONS} />
+            </Field>
+          </div>
+        </Popover>
         <Small onClick={() => (changed ? setDialog('leave') : onClose())}>Quitter</Small>
-        <button type="button" onClick={() => void save()} disabled={saving} className={primaryButton}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+        <button type="button" onClick={() => void save()} disabled={saving} className={`${primaryButton} ml-1`}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
       </div>
-      {draft && changed && (
-        <div className="flex shrink-0 flex-wrap items-center gap-x-3 bg-amber-50 px-4 py-1.5 text-xs text-amber-900">
-          Brouillon repris sur cet appareil.
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-200 bg-white px-3 py-4 sm:px-6">
+        {draft && changed && (
+          <p className="mb-3 text-xs text-neutral-500">
+            Brouillon repris sur cet appareil.
+            <button
+              type="button"
+              className="ml-2 font-medium text-neutral-900 underline"
+              onClick={() => {
+                edit(() => piece?.score ?? emptyScore());
+                setLabel((piece?.score ?? emptyScore()).parts[0].label);
+              }}
+            >
+              {piece ? 'Version enregistrée' : 'Repartir de zéro'}
+            </button>
+          </p>
+        )}
+
+        {/* The part being written. */}
+        <div className="mb-5 flex flex-wrap items-center gap-1">
+          {score.parts.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => showPart(p.label)}
+              aria-current={p.label === part.label}
+              className={`h-9 min-w-9 rounded-lg px-3 text-sm font-semibold transition-colors ${p.label === part.label ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'}`}
+            >
+              {p.label}
+            </button>
+          ))}
           <button
             type="button"
-            className="font-medium underline"
+            title="Nouvelle partie"
+            aria-label="Nouvelle partie"
             onClick={() => {
-              edit(() => piece?.score ?? emptyScore());
-              setLabel((piece?.score ?? emptyScore()).parts[0].label);
+              const added = addPart(score, part.label, false);
+              edit(() => added.score);
+              showPart(added.label);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+          >
+            <PlusIcon className="h-4 w-4" />
+          </button>
+          <span className="flex-1" />
+          <Small
+            active={preview.playing}
+            onClick={() => {
+              if (preview.playing) preview.stop();
+              else if (partStart === null) setError(`Ajoute ${part.label} à l’ordre du morceau pour l’écouter.`);
+              else preview.play(partStart, { start: partStart, end: partEnd });
             }}
           >
-            {piece ? 'Repartir de la version enregistrée' : 'Repartir de zéro'}
-          </button>
+            {preview.playing ? 'Arrêter' : 'Écouter'}
+          </Small>
+          <Small onClick={() => { preview.stop(); setWriting({ hand: current?.hand ?? 'right' }); }} title="Taper toute une suite de numéros, puis son rythme">Écrire la suite</Small>
+          <Popover label="•••" title={`Partie ${part.label}`} className="flex h-9 w-9 items-center justify-center rounded-lg text-xs text-neutral-600 hover:bg-neutral-100">
+            {(close) => (
+              <div className="space-y-4">
+                <Field label="Nom">
+                  <LabelInput
+                    key={part.label}
+                    label={part.label}
+                    onRename={(to) => {
+                      const next = renamePart(score, part.label, to);
+                      if (next === score) return setError('Une autre partie a déjà ce nom.');
+                      edit(() => next);
+                      setLabel(to.trim().slice(0, 12));
+                    }}
+                  />
+                </Field>
+                <NumberField label="Durée" unit="temps" value={part.beats} min={1} max={MAX_BEATS} onChange={(b) => edit((s) => setBeats(s, part.label, b))} />
+                <div>
+                  <div className="mb-1.5 text-sm font-semibold text-neutral-900">Décaler une main</div>
+                  {HANDS.map((h) => (
+                    <div key={h} className="flex items-center text-sm text-neutral-600">
+                      <span className="flex-1">{handName(h)}</span>
+                      <Small onClick={() => edit((s) => shiftHand(s, part.label, h, -1))} title="Une case plus tôt">←</Small>
+                      <Small onClick={() => edit((s) => shiftHand(s, part.label, h, 1))} title="Une case plus tard">→</Small>
+                    </div>
+                  ))}
+                </div>
+                <div className="-mx-2 flex flex-col items-start">
+                  <Small
+                    onClick={() => {
+                      const added = addPart(score, part.label, true);
+                      edit(() => added.score);
+                      showPart(added.label);
+                      close();
+                    }}
+                  >
+                    Dupliquer la partie
+                  </Small>
+                  {score.parts.length > 1 && <Small onClick={() => { close(); setDialog('remove'); }}>Supprimer la partie</Small>}
+                </div>
+              </div>
+            )}
+          </Popover>
         </div>
-      )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-200 bg-white px-3 py-3 sm:px-5">
-        <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-neutral-600">
-          <NumberField label="Tempo" unit="bpm" value={score.bpm} min={20} max={300} onChange={(bpm) => edit((s) => ({ ...s, bpm }))} />
-          <label className="flex items-center gap-2">
-            Une case =
-            <select value={score.division} onChange={(e) => edit((s) => setDivision(s, Number(e.target.value) as Score['division']))} className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5">
-              {DIVISIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-            </select>
-          </label>
-        </div>
+        <EditGrid part={grid} selected={current} column={playingColumn} small={phone} onSelect={pick} />
+        <ErrorText>{error}</ErrorText>
 
         {/* Order the parts are played in. */}
-        <div className="mb-3 flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-xs font-semibold text-neutral-500">Ordre</span>
+        <div className="mt-4 flex flex-wrap items-center gap-1 border-t border-neutral-100 pt-4">
+          <span className="mr-2 text-xs text-neutral-500">Ordre du morceau</span>
           {score.order.map((l, i) => (
             <button
               key={i}
@@ -258,97 +345,27 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
               {l}
             </button>
           ))}
-          {orderAt !== null && orderAt < score.order.length && (
+          {orderAt !== null && orderAt < score.order.length ? (
             <>
               <Small onClick={() => { edit((s) => moveInOrder(s, orderAt, -1)); setOrderAt(Math.max(0, orderAt - 1)); }} title="Plus tôt">←</Small>
               <Small onClick={() => { edit((s) => moveInOrder(s, orderAt, 1)); setOrderAt(Math.min(score.order.length - 1, orderAt + 1)); }} title="Plus tard">→</Small>
               <Small onClick={() => { edit((s) => removeFromOrder(s, orderAt)); setOrderAt(null); }}>Retirer</Small>
             </>
+          ) : (
+            <>
+              <Small onClick={() => edit((s) => addToOrder(s, part.label))} title={`Jouer ${part.label} à la fin`}>+ {part.label}</Small>
+              <span className="flex-1" />
+              <Small onClick={() => (preview.playing ? preview.stop() : preview.play(0))}>{preview.playing ? 'Arrêter' : 'Écouter tout'}</Small>
+            </>
           )}
-          <span className="mx-1 h-5 w-px bg-neutral-200" />
-          {score.parts.map((p) => (
-            <button key={p.label} type="button" onClick={() => edit((s) => addToOrder(s, p.label))} title={`Ajouter ${p.label} à la fin`} className="h-8 rounded-lg border border-dashed border-neutral-300 px-2 text-xs font-medium text-neutral-500 hover:border-neutral-500 hover:text-neutral-900">
-              + {p.label}
-            </button>
-          ))}
         </div>
-
-        {/* The part being written. */}
-        <div className="mb-3 flex flex-wrap items-center gap-1.5 border-t border-neutral-100 pt-3">
-          {score.parts.map((p) => (
-            <button
-              key={p.label}
-              type="button"
-              onClick={() => showPart(p.label)}
-              aria-current={p.label === part.label}
-              className={`h-9 rounded-lg px-3 text-sm font-semibold ${p.label === part.label ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'}`}
-            >
-              Partie {p.label}
-            </button>
-          ))}
-          <Small
-            onClick={() => {
-              const added = addPart(score, part.label, false);
-              edit(() => added.score);
-              showPart(added.label);
-            }}
-          >
-            + Nouvelle partie
-          </Small>
-        </div>
-        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-neutral-600">
-          <span className="flex items-center gap-2">
-            Nom
-            <LabelInput
-              key={part.label}
-              label={part.label}
-              onRename={(to) => {
-                const next = renamePart(score, part.label, to);
-                if (next === score) return setError('Une autre partie a déjà ce nom.');
-                edit(() => next);
-                setLabel(to.trim().slice(0, 12));
-              }}
-            />
-          </span>
-          <NumberField label="Durée" unit="temps" value={part.beats} min={1} max={MAX_BEATS} onChange={(b) => edit((s) => setBeats(s, part.label, b))} />
-          <Small onClick={() => { preview.stop(); setWriting({ hand: current?.hand ?? 'right' }); }} title="Taper toute une suite de numéros, puis son rythme">Écrire la suite</Small>
-          {current && (
-            <span className="flex items-center gap-1">
-              <Small onClick={() => edit((s) => shiftHand(s, part.label, current.hand, -1))} title="Toute la main une case plus tôt">←</Small>
-              Décaler la main {current.hand === 'left' ? 'gauche' : 'droite'}
-              <Small onClick={() => edit((s) => shiftHand(s, part.label, current.hand, 1))} title="Toute la main une case plus tard">→</Small>
-            </span>
-          )}
-          <Small
-            onClick={() => {
-              if (preview.playing) preview.stop();
-              else if (partStart === null) setError(`Ajoute ${part.label} à l’ordre du morceau pour l’écouter.`);
-              else preview.play(partStart, { start: partStart, end: partEnd });
-            }}
-          >
-            {preview.playing ? 'Arrêter' : 'Écouter en boucle'}
-          </Small>
-          <Small
-            onClick={() => {
-              const added = addPart(score, part.label, true);
-              edit(() => added.score);
-              showPart(added.label);
-            }}
-          >
-            Dupliquer
-          </Small>
-          {score.parts.length > 1 && <Small onClick={() => setDialog('remove')}>Supprimer</Small>}
-        </div>
-
-        <EditGrid part={grid} selected={current} column={playingColumn} small={phone} onSelect={pick} />
-        <ErrorText>{error}</ErrorText>
       </div>
 
       <div className="shrink-0 border-t border-neutral-200 bg-white px-3 pb-3 pt-2 sm:px-5">
         {placing ? (
-          <div className="mb-2 flex min-h-9 flex-wrap items-center gap-3 rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-900">
+          <div className="mb-2 flex min-h-9 flex-wrap items-center gap-3 text-sm text-neutral-900">
             <span>Où est le <b className="text-lg tabular-nums">{placing.numbers[0]}</b> de la main {placing.hand === 'left' ? 'gauche' : 'droite'} ? Clique sa touche.</span>
-            <button type="button" onClick={() => setPlacing(null)} className="text-xs underline">Annuler</button>
+            <button type="button" onClick={() => setPlacing(null)} className="text-xs text-neutral-500 underline">Annuler</button>
           </div>
         ) : (
           <div className="mb-2 min-h-9">
@@ -371,12 +388,13 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
             )}
           </div>
         )}
-        <div className="mb-2 flex items-center justify-center gap-1 text-xs text-neutral-500">
-          <button type="button" onClick={() => setOctave((o) => Math.max(2, o - 1))} aria-label="Octave plus grave" className="h-8 w-8 rounded-lg bg-neutral-100 hover:bg-neutral-200">−</button>
-          <span className="px-2">Octave</span>
-          <button type="button" onClick={() => setOctave((o) => Math.min(phone ? 6 : 4, o + 1))} aria-label="Octave plus aiguë" className="h-8 w-8 rounded-lg bg-neutral-100 hover:bg-neutral-200">+</button>
+        <div className="flex items-stretch gap-1">
+          <OctaveButton label="Octave plus grave" onClick={() => setOctave((o) => Math.max(2, o - 1))}>‹</OctaveButton>
+          <div className="min-w-0 flex-1">
+            <PianoKeyboard from={from} to={to} labels="names" stickers={stickers} height="clamp(80px, 18dvh, 170px)" />
+          </div>
+          <OctaveButton label="Octave plus aiguë" onClick={() => setOctave((o) => Math.min(phone ? 6 : 4, o + 1))}>›</OctaveButton>
         </div>
-        <PianoKeyboard from={from} to={to} labels="names" stickers={stickers} height="clamp(80px, 18dvh, 170px)" />
       </div>
 
       {writing && (
@@ -429,6 +447,12 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
   );
 }
 
+export function OctaveButton({ label, onClick, children }: { label: string; onClick(): void; children: ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} title={label} aria-label={label} className="w-8 shrink-0 rounded-lg text-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900">{children}</button>
+  );
+}
+
 // A number typed freely, taken when it makes sense.
 function NumberField({ label, unit, value, min, max, onChange }: { label: string; unit: string; value: number; min: number; max: number; onChange(v: number): void }) {
   const [text, setText] = useState(String(value));
@@ -441,8 +465,8 @@ function NumberField({ label, unit, value, min, max, onChange }: { label: string
     if (ok !== value) onChange(ok);
   };
   return (
-    <label className="flex items-center gap-2">
-      {label}
+    <label className="flex items-center gap-2 text-sm text-neutral-600">
+      <span className="flex-1 font-semibold text-neutral-900">{label}</span>
       <input
         value={text}
         inputMode="numeric"

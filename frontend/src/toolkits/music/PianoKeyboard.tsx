@@ -75,11 +75,11 @@ export function PianoKeyboard({ from, to, marks, labels = 'none', stickers, inte
   const whites = keys.filter(([, k]) => !k.black).length;
   const fontSize = `min(11px, ${(50 / whites).toFixed(2)}cqw)`;
 
-  const stickerSize = `clamp(7px, ${(62 / whites).toFixed(2)}cqw, 15px)`;
-  const stuck = (midi: number) => stickers?.get(midi)?.map((s) => (
+  const stickerSize = `clamp(7px, ${(58 / whites).toFixed(2)}cqw, 17px)`;
+  const stuck = (midi: number, black: boolean) => stickers?.get(midi)?.map((s) => (
     <span
       key={s.hand}
-      className={`rounded px-[0.3em] font-bold leading-[1.35] text-white ${s.hand === 'left' ? 'bg-amber-600' : 'bg-sky-600'}`}
+      className={`font-bold leading-tight ${s.hand === 'left' ? (black ? 'text-amber-300' : 'text-amber-700') : black ? 'text-sky-300' : 'text-sky-700'}`}
       style={{ fontSize: stickerSize }}
     >
       {s.number}
@@ -105,13 +105,13 @@ export function PianoKeyboard({ from, to, marks, labels = 'none', stickers, inte
             key={m}
             onPointerDown={(e) => press(e, m)}
             onPointerEnter={(e) => enter(e, m)}
-            className={`absolute top-0 bottom-0 flex flex-col items-center justify-end gap-0.5 rounded-b-md border border-neutral-300 pb-2 font-medium text-neutral-500 transition-colors ${
+            className={`absolute top-0 bottom-0 flex flex-col items-center justify-end gap-0.5 rounded-b-md border border-neutral-200 pb-2 font-medium text-neutral-400 transition-colors ${
               mark ? markClass[mark].white : down ? 'bg-neutral-200' : 'bg-white'
             } ${interactive ? 'cursor-pointer' : ''}`}
             style={{ left: pct(k.x), width: pct(k.width), fontSize }}
             title={noteName(m)}
           >
-            {stuck(m)}
+            {stuck(m, false)}
             {label(m)}
           </div>
         );
@@ -125,12 +125,12 @@ export function PianoKeyboard({ from, to, marks, labels = 'none', stickers, inte
             onPointerDown={(e) => press(e, m)}
             onPointerEnter={(e) => enter(e, m)}
             className={`absolute top-0 z-10 flex flex-col items-center justify-end gap-0.5 rounded-b-md pb-1.5 font-medium text-white transition-colors ${
-              mark ? markClass[mark].black : down ? 'bg-neutral-600' : 'bg-neutral-900'
+              mark ? markClass[mark].black : down ? 'bg-neutral-600' : 'bg-neutral-800'
             } ${interactive ? 'cursor-pointer' : ''}`}
             style={{ left: pct(k.x), width: pct(k.width), height: '62%', fontSize }}
             title={noteName(m)}
           >
-            {stuck(m)}
+            {stuck(m, true)}
             {label(m)}
           </div>
         );

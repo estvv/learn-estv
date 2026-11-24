@@ -11,11 +11,14 @@ import type { PiecePlayer } from './player';
 // scroll to move through the piece.
 
 const LOOKAHEAD = 3; // seconds visible above the keyboard, at normal tempo
+// Pale while they come, strong while they sound; a little darker on black keys.
 const COLORS = {
-  right: { fill: '#0ea5e9', active: '#0284c7' }, // sky
-  left: { fill: '#f59e0b', active: '#d97706' }, // amber
-  none: { fill: '#8b5cf6', active: '#7c3aed' }, // violet
+  right: { fill: '#bae6fd', black: '#7dd3fc', active: '#0ea5e9', text: '#0c4a6e' }, // sky
+  left: { fill: '#fde68a', black: '#fcd34d', active: '#f59e0b', text: '#78350f' }, // amber
+  none: { fill: '#ddd6fe', black: '#c4b5fd', active: '#8b5cf6', text: '#4c1d95' }, // violet
 };
+// White keys' notes leave room to the black keys' ones.
+const WHITE_INSET = 0.16;
 const SELECTED = '#171717';
 const FONT = (size: number) => `700 ${size}px "Plus Jakarta Sans", sans-serif`;
 
@@ -25,6 +28,9 @@ export interface NotePicking {
   onPick(ids: number[], add: boolean): void;
   // The place in the piece changed (scrolling).
   onScroll(): void;
+  // A click on empty space adds a note there (a double click always does).
+  adding: boolean;
+  onAdd(midi: number, time: number): void;
 }
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -66,7 +72,7 @@ export function FallingNotes({ player, from, to, edit, numbers, parts }: {
       const bottom = h - (n.time - pos) * pps;
       const top = bottom - n.duration * pps;
       // Thin keys (a whole keyboard on a phone) keep almost all their width.
-      const gap = Math.min(1.5, keyBox.width * w * 0.1);
+      const gap = keyBox.black ? Math.min(1, keyBox.width * w * 0.1) : keyBox.width * w * WHITE_INSET;
       const x = keyBox.x * w + gap;
       const width = Math.max(3, keyBox.width * w - 2 * gap);
       const y = Math.max(-4, top);
@@ -85,7 +91,7 @@ export function FallingNotes({ player, from, to, edit, numbers, parts }: {
       ctx.clearRect(0, 0, w, h);
 
       // Faint guide on every C.
-      ctx.fillStyle = 'rgba(0,0,0,0.05)';
+      ctx.fillStyle = 'rgba(0,0,0,0.035)';
       for (const [midi, b] of layout) if (midi % 12 === 0) ctx.fillRect(b.x * w, 0, 1, h);
 
       const pos = player.position;
@@ -99,9 +105,9 @@ export function FallingNotes({ player, from, to, edit, numbers, parts }: {
       for (const cut of cuts ?? []) {
         if (cut.start <= pos || cut.start > pos + span) continue;
         const y = h - (cut.start - pos) * (h / span);
-        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillStyle = 'rgba(0,0,0,0.12)';
         ctx.fillRect(0, y, w, 1);
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
         ctx.font = FONT(12);
         ctx.textAlign = 'left';
         ctx.fillText(cut.label, 2, y - 9);
@@ -115,10 +121,16 @@ export function FallingNotes({ player, from, to, edit, numbers, parts }: {
         const color = COLORS[n.hand ?? 'none'];
         const active = n.time <= pos + 0.001 && (expected.size === 0 || expected.has(n.midi));
         const isSelected = !!selected && selected.has(idOf(n)!);
-        ctx.fillStyle = active ? color.active : color.fill;
-        ctx.globalAlpha = layout.get(n.midi)!.black ? 1 : 0.85;
+        const number = numbered?.get(n);
+        const size = Math.round(Math.min(17, Math.max(10, r.width * 0.5)));
+        // Tall enough for its number.
+        if (number !== undefined && r.height < size + 6) {
+          r.y -= size + 6 - r.height;
+          r.height = size + 6;
+        }
+        ctx.fillStyle = active ? color.active : layout.get(n.midi)!.black ? color.black : color.fill;
         ctx.beginPath();
-        ctx.roundRect(r.x, r.y, r.width, r.height, Math.min(5, r.width / 3));
+        ctx.roundRect(r.x, r.y, r.width, r.height, Math.min(6, r.width / 3));
         ctx.fill();
         if (isSelected) {
           ctx.globalAlpha = 1;
@@ -126,24 +138,17 @@ export function FallingNotes({ player, from, to, edit, numbers, parts }: {
           ctx.strokeStyle = SELECTED;
           ctx.stroke();
         }
-        const number = numbered?.get(n);
         if (number !== undefined) {
-          const size = Math.round(Math.min(16, Math.max(10, r.width * 0.62)));
-          const y = Math.min(h - size * 0.65, r.y + r.height - size * 0.75);
-          labels.push({ text: String(number), x: r.x + r.width / 2, y, size, color: ctx.fillStyle as string });
+          labels.push({ text: String(number), x: r.x + r.width / 2, y: r.y + r.height - size * 0.55 - 3, size, color: active ? '#fff' : color.text });
         }
       }
       ctx.globalAlpha = 1;
 
-      // Above all the notes; the outline keeps them readable on thin ones.
+      // Above all the notes.
       ctx.textAlign = 'center';
-      ctx.lineJoin = 'round';
       for (const l of labels) {
         ctx.font = FONT(l.size);
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = l.color;
-        ctx.strokeText(l.text, l.x, l.y);
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = l.color;
         ctx.fillText(l.text, l.x, l.y);
       }
 
@@ -180,6 +185,20 @@ export function FallingNotes({ player, from, to, edit, numbers, parts }: {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
+  // Key and time under a point, black keys first: they lie over the white ones.
+  const placeAt = (x: number, y: number) => {
+    const { clientWidth: w, clientHeight: h } = canvas.current!;
+    let midi: number | null = null;
+    for (const [m, b] of keyLayout(from, to)) {
+      if (x >= b.x * w && x < (b.x + b.width) * w && (midi === null || b.black)) midi = m;
+    }
+    return midi === null ? null : { midi, time: Math.max(0, player.position + (h - y) / (h / (LOOKAHEAD * player.rate))) };
+  };
+  const addAt = (x: number, y: number) => {
+    const place = placeAt(x, y);
+    if (place) edit?.onAdd(place.midi, place.time);
+  };
+
   // Topmost note under a point: notes are drawn in order, so search backwards.
   const noteAt = (x: number, y: number) => {
     for (let i = player.notes.length - 1; i >= 0; i--) {
@@ -192,7 +211,12 @@ export function FallingNotes({ player, from, to, edit, numbers, parts }: {
   return (
     <canvas
       ref={canvas}
-      className={`block h-full w-full ${edit ? 'cursor-crosshair touch-none' : ''}`}
+      className={`block h-full w-full ${edit ? (edit.adding ? 'cursor-copy touch-none' : 'cursor-crosshair touch-none') : ''}`}
+      onDoubleClick={edit && ((e) => {
+        const r = canvas.current!.getBoundingClientRect();
+        const [x, y] = [e.clientX - r.left, e.clientY - r.top];
+        if (!edit.adding && !noteAt(x, y)) addAt(x, y);
+      })}
       onPointerDown={edit && ((e) => {
         const { x, y } = point(e);
         const hit = noteAt(x, y);
@@ -211,7 +235,11 @@ export function FallingNotes({ player, from, to, edit, numbers, parts }: {
         if (!b) return;
         const [left, right, top, bottom] = [Math.min(b.x0, b.x1), Math.max(b.x0, b.x1), Math.min(b.y0, b.y1), Math.max(b.y0, b.y1)];
         // A click on empty space (no real box) clears the selection.
-        if (right - left < 4 && bottom - top < 4) return void (!e.shiftKey && edit.onPick([], false));
+        if (right - left < 4 && bottom - top < 4) {
+          if (edit.adding) addAt(b.x0, b.y0);
+          else if (!e.shiftKey) edit.onPick([], false);
+          return;
+        }
         const ids: number[] = [];
         for (const n of player.notes) {
           const r = geometry.current(n);

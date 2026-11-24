@@ -48,6 +48,15 @@ export const pieceSectionsSchema = z.array(pieceSectionSchema).min(1).max(200)
   .refine((s) => s[0].start === 0 && s.every((x, i) => i === 0 || x.start > s[i - 1].start), { message: 'Parties invalides' });
 export type PieceSection = z.infer<typeof pieceSectionSchema>;
 
+// Changes made by hand to an easier level, kept apart from the piece's notes.
+export const pieceLevelEditSchema = z.object({
+  removed: z.array(z.object({ midi: z.number().int().min(0).max(127), time: z.number().min(0) })).max(10_000),
+  added: z.array(pieceNoteSchema).max(10_000),
+});
+export const pieceEditsSchema = z.object({ simplified: pieceLevelEditSchema.optional(), melody: pieceLevelEditSchema.optional() });
+export type PieceLevelEdit = z.infer<typeof pieceLevelEditSchema>;
+export type PieceEdits = z.infer<typeof pieceEditsSchema>;
+
 export const pieceSchema = z.object({
   title: z.string().trim().min(1).max(120),
   // Performer or composer, when known.
@@ -65,4 +74,56 @@ export type Piece = z.infer<typeof pieceSchema>;
 
 export function pieceDuration(notes: PieceNote[]): number {
   return notes.reduce((end, n) => Math.max(end, n.time + n.duration), 0);
+}
+
+// --- Silence around a piece ---------------------------------------------------------
+
+export interface PieceContent {
+  notes: PieceNote[];
+  sections?: PieceSection[] | null;
+  edits?: PieceEdits | null;
+}
+
+// Less than this is no silence.
+const SILENCE = 0.01;
+const EDITED_LEVELS = ['simplified', 'melody'] as const;
+
+// `by` seconds less at the start: what begins before is dropped, parts and
+// changes to the easier levels follow.
+export function cutStart<T extends PieceContent>(content: T, by: number): T {
+  const move = <N extends { time: number }>(list: N[]): N[] =>
+    list.filter((n) => n.time >= by - 1e-6).map((n) => ({ ...n, time: Math.max(0, n.time - by) }));
+  const out = { ...content, notes: move(content.notes) };
+  if (content.sections) out.sections = shiftSections(content.sections, by);
+  if (content.edits) {
+    const edits: PieceEdits = {};
+    for (const level of EDITED_LEVELS) {
+      const e = content.edits[level];
+      if (e) edits[level] = { removed: move(e.removed), added: move(e.added) };
+    }
+    out.edits = edits;
+  }
+  return out;
+}
+
+export function shiftSections(sections: PieceSection[], by: number): PieceSection[] {
+  const moved = sections.map((p) => ({ ...p, start: Math.max(0, p.start - by) }));
+  // Of the parts now before the start, the last one opens the piece.
+  return moved.filter((p, i) => p.start > 0 || i + 1 === moved.length || moved[i + 1].start > 0);
+}
+
+// The piece starts on its first note. (It ends with its last one: nothing is
+// stored after it.)
+export function trimSilence<T extends PieceContent>(content: T): T {
+  const times = [content.notes, ...EDITED_LEVELS.map((l) => content.edits?.[l]?.added ?? [])].flat().map((n) => n.time);
+  const start = times.reduce((min, t) => Math.min(min, t), Infinity);
+  return Number.isFinite(start) && start > SILENCE ? cutStart(content, start) : content;
+}
+
+// From the first note heard to the end of the last one: other tracks, or the
+// notes an easier level leaves out, may play before and after.
+export function soundingSpan(notes: PieceNote[]): [start: number, end: number] {
+  if (!notes.length) return [0, 0];
+  const start = notes.reduce((min, n) => Math.min(min, n.time), Infinity);
+  return [start > SILENCE ? start : 0, pieceDuration(notes)];
 }

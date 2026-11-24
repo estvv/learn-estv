@@ -1,15 +1,15 @@
 import type { Hand } from '@learn/shared';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BEATS_PER_BAR } from './grid';
-import { beatName, breakLines, type Sizing } from './numberLines';
+import { breakLines, lineWidth, type Sizing } from './numberLines';
 import { handLetter, stepText, type Part } from './numbers';
 import { HANDS } from './score';
 
 // A part's grid with every cell there to be filled: the hands one above the
 // other, time going right.
 
-const SIZING: Sizing = { font: 16, char: 10.5, min: 32, cap: 60 };
-const PHONE: Sizing = { font: 15, char: 10, min: 25, cap: 60 };
+const SIZING: Sizing = { font: 16, char: 10.5, min: 32, beat: 64, cap: 120 };
+const PHONE: Sizing = { font: 15, char: 10, min: 25, beat: 50, cap: 110 };
 
 export interface Cell {
   hand: Hand;
@@ -53,7 +53,7 @@ export function EditGrid({ part, selected, column, small, onSelect }: {
     <div ref={box} style={{ fontSize: sizing.font }}>
       {lines.map((line) => (
         <div key={line.from} className="mb-3 flex">
-          <div className="grid w-6 shrink-0 font-semibold" style={{ gridTemplateRows: '1.1em repeat(2, 2.2em)' }}>
+          <div className="grid w-6 shrink-0 font-semibold" style={{ gridTemplateRows: '0.6em repeat(2, 2.3em)' }}>
             <span />
             {HANDS.map((h) => <span key={h} className={`self-center text-[0.75em] ${LOOK[h].text}`}>{handLetter(h)}</span>)}
           </div>
@@ -61,29 +61,22 @@ export function EditGrid({ part, selected, column, small, onSelect }: {
             className="grid min-w-0 flex-1 tabular-nums"
             style={{
               gridTemplateColumns: line.widths.map((w) => `minmax(${w}px, 1fr)`).join(' '),
-              gridTemplateRows: '1.1em repeat(2, 2.2em)',
-              maxWidth: Math.max(line.widths.length * sizing.cap, line.widths.reduce((a, w) => a + w, 0)),
+              gridTemplateRows: '0.6em repeat(2, 2.3em)',
+              maxWidth: lineWidth(line, part, sizing),
             }}
           >
             {line.widths.map((_, c) => {
               const at = line.from + c;
-              const beat = beatName(part, at);
-              return (
-                <span
-                  key={c}
-                  className={`flex items-center justify-center text-[0.68em] leading-none ${at === column ? 'font-bold text-neutral-900' : 'text-neutral-400'}`}
-                  style={{ gridColumn: c + 1, gridRow: 1 }}
-                >
-                  {beat ?? '·'}
-                </span>
-              );
+              if (at % part.division !== 0) return null;
+              const now = column >= 0 && Math.floor(column / part.division) === at / part.division;
+              return <span key={c} className={`mx-auto rounded-full ${now ? 'h-1.5 w-1.5 bg-neutral-900' : 'h-1 w-1 bg-neutral-200'}`} style={{ gridColumn: c + 1, gridRow: 1 }} />;
             })}
             {HANDS.map((hand, r) => line.widths.map((_, c) => {
               const step = line.from + c;
               const text = texts.get(`${hand}${step}`) ?? '';
               const on = selected?.hand === hand && selected.step === step;
               // Bars and beats show in the cells' left edge.
-              const edge = step % bar === 0 ? 'border-l-neutral-400' : step % part.division === 0 ? 'border-l-neutral-300' : 'border-l-neutral-100';
+              const edge = step % bar === 0 ? 'border-l-neutral-400' : step % part.division === 0 ? 'border-l-neutral-200' : 'border-l-neutral-100';
               return (
                 <button
                   key={`${hand}${c}`}

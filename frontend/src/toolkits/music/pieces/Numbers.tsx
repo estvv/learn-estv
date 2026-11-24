@@ -3,22 +3,25 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type React
 import { RepeatIcon } from '../../../components/icons';
 import { NoteText } from '../Accidentals';
 import { BEATS_PER_BAR } from './grid';
-import { beatName, breakLines, type LineBox, type Sizing } from './numberLines';
+import { breakLines, lineWidth, type LineBox, type Sizing } from './numberLines';
 import { handLetter, handName, pieceText, stepText, type Part } from './numbers';
-import { clock } from './PlayerControls';
 
-// The piece as numbers (see numbers.ts), from start to end: a band above the
-// falling notes, or the whole screen ("big"), part by part. The number being
-// played lights up; a click on one goes there.
+// The piece as numbers (see numbers.ts). Above the falling notes: the line
+// being played and the next one. "Big": the whole piece, part by part.
 
-const STRIP: Sizing = { font: 13, char: 8.5, min: 19, cap: 64 };
-const BIG: Sizing = { font: 21, char: 13.5, min: 32, cap: 96 };
-const BIG_COMPACT: Sizing = { font: 17, char: 11, min: 19, cap: 80 };
-// Left of the lines: the part's letter.
-const GUTTER = { strip: 44, big: 0 };
+const STRIP: Sizing = { font: 19, char: 12, min: 24, beat: 76, cap: 132 };
+const STRIP_SMALL: Sizing = { font: 15, char: 9.5, min: 18, beat: 40, cap: 96 };
+const BIG: Sizing = { font: 22, char: 14, min: 28, beat: 84, cap: 140 };
+const BIG_SMALL: Sizing = { font: 17, char: 10.5, min: 18, beat: 44, cap: 110 };
+const GUTTER = 40; // the part's letter
+const LETTERS = 24; // the hands' letters
+const ROW = 1.6; // em
+const HEAD = 0.7; // em
 
 const TEXT: Record<Hand, string> = { left: 'text-amber-700', right: 'text-sky-700' };
 const LIT: Record<Hand, string> = { left: 'bg-amber-500 text-white', right: 'bg-sky-500 text-white' };
+
+const ghost = 'h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium transition-colors';
 
 export interface PartEditing {
   onCut(part: number, beat: number): void;
@@ -63,9 +66,8 @@ export function Numbers({ title, parts, part: current, column, position, loop, b
     return () => observer.disconnect();
   }, [big]);
 
-  const sizing = !big ? STRIP : compact ? BIG_COMPACT : BIG;
-  // Paddings, the letter's column and the hands' letters.
-  const room = width - (big ? 72 : 36 + GUTTER.strip);
+  const sizing = big ? (compact ? BIG_SMALL : BIG) : compact ? STRIP_SMALL : STRIP;
+  const room = width - GUTTER - LETTERS - (big ? 32 : 60);
   const lines = useMemo(() => parts.map((p) => breakLines(p, room, sizing)), [parts, room, sizing]);
 
   // The same functions for every line, whatever the render.
@@ -74,76 +76,61 @@ export function Numbers({ title, parts, part: current, column, position, loop, b
   const seek = useRef((time: number) => latest.current.onSeek(time)).current;
   const cut = useRef((part: number, beat: number) => latest.current.editing?.onCut(part, beat)).current;
 
-  // The line being played stays in view.
   const line = Math.max(0, (lines[current] ?? []).filter((l) => l.from <= column).length - 1);
+  // The line being played stays in view.
   useEffect(() => {
     const el = box.current;
-    const target = el?.querySelector<HTMLElement>(`[data-line="${current}-${line}"]`);
+    const target = big ? el?.querySelector<HTMLElement>(`[data-line="${current}-${line}"]`) : null;
     if (!el || !target) return;
     const top = target.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
-    el.scrollTo({ top: big ? top - el.clientHeight * 0.3 : top - 4, behavior: 'smooth' });
+    el.scrollTo({ top: top - el.clientHeight * 0.3, behavior: 'smooth' });
   }, [current, line, big, width]);
 
   const looped = (i: number) => loop !== null && i >= loop[0] && i <= loop[1];
-  const lit = (i: number) => (i === current ? litSteps(parts[i], position) : '');
-
-  const body = parts.map((p, i) => {
-    const grid = lines[i].map((l, k) => (
-      <Line
-        key={l.from}
-        id={`${i}-${k}`}
-        index={i}
-        part={p}
-        line={l}
-        sizing={sizing}
-        lit={lit(i)}
-        column={i === current && k === line ? column : -1}
-        onSeek={seek}
-        onCut={big && correcting ? cut : undefined}
-      />
-    ));
-    const empty = p.rows.length === 0 && <p className="py-2 text-xs text-neutral-400">Silence</p>;
-    if (!big) {
-      return (
-        <div key={i} className="flex border-b border-neutral-100 last:border-b-0">
-          <div className="shrink-0 py-1" style={{ width: GUTTER.strip }}>
-            <LoopChip label={p.label} on={looped(i)} onClick={() => onLoop(looped(i) ? null : i)} />
-          </div>
-          <div className="min-w-0 flex-1">{grid}{empty}</div>
-        </div>
-      );
-    }
-    return (
-      <section key={i} className={`mb-3 rounded-xl border p-3 ${i === current ? 'border-neutral-300 shadow-sm' : 'border-neutral-200'}`}>
-        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          {correcting
-            ? <LabelInput key={`${p.start}-${p.label}`} label={p.label} onRename={(label) => correcting.onRename(i, label)} />
-            : <LoopChip label={p.label} on={looped(i)} onClick={() => onLoop(looped(i) ? null : i)} />}
-          <button type="button" onClick={() => onSeek(p.start)} className="text-xs tabular-nums text-neutral-400 hover:text-neutral-700">{clock(p.start)}</button>
-          {correcting && i > 0 && (
-            <>
-              <Small onClick={() => correcting.onMove(i, -1)} title="Commencer un temps plus tôt">← 1 temps</Small>
-              <Small onClick={() => correcting.onMove(i, 1)} title="Commencer un temps plus tard">1 temps →</Small>
-              <Small onClick={() => correcting.onJoin(i)} title="Ne faire qu’une partie avec celle d’avant">Joindre à la précédente</Small>
-            </>
-          )}
-          <Stickers part={p} />
-        </div>
-        {grid}{empty}
-      </section>
-    );
-  });
+  const draw = (i: number, k: number) => (
+    <Line
+      key={`${i}-${k}`}
+      id={`${i}-${k}`}
+      index={i}
+      part={parts[i]}
+      line={lines[i][k]}
+      sizing={sizing}
+      lit={i === current ? litSteps(parts[i], position) : ''}
+      column={i === current && k === line ? column : -1}
+      onSeek={seek}
+      onCut={big && correcting ? cut : undefined}
+    />
+  );
 
   if (!big) {
+    // The line being played, then the one after it (the loop's first line at its end).
+    const after = (): [number, number] | null => {
+      if (lines[current]?.[line + 1]) return [current, line + 1];
+      const i = loop && current >= loop[1] ? loop[0] : current + 1;
+      return lines[i]?.[0] ? [i, 0] : null;
+    };
+    const shown = [[current, line] as [number, number], ...(short ? [] : [after()])].filter((x) => x !== null);
+    // The height does not change with what is in it.
+    const hands = Math.max(1, ...parts.map((p) => p.rows.length));
+    const height = sizing.font * (HEAD + ROW * hands) + 10;
     return (
-      <div className={`relative shrink-0 border-t border-neutral-200 bg-white ${short ? 'h-[4.6rem]' : compact ? 'h-[8.5rem]' : 'h-[10.5rem]'}`}>
-        <div ref={box} className="h-full overflow-x-hidden overflow-y-auto overscroll-contain pl-2 pr-12 sm:pl-4">{body}</div>
+      <div ref={box} className="relative shrink-0 border-t border-neutral-200 bg-white py-2 pl-3 sm:pl-5" style={{ height: height * (short ? 1 : 2) + 16 }}>
+        {shown.map(([i, k], n) => lines[i]?.[k] && (
+          <div key={n} className={`flex overflow-hidden ${n ? 'opacity-35' : ''}`} style={{ height }}>
+            <div className="shrink-0 text-sm font-bold text-neutral-400" style={{ width: GUTTER, paddingTop: sizing.font * HEAD + 4 }}>
+              {(k === 0 || n === 0) && parts[i].label}
+            </div>
+            <div className="min-w-0 flex-1 pr-12">
+              {parts[i].rows.length ? draw(i, k) : <p className="pt-4 text-sm text-neutral-300">Silence</p>}
+            </div>
+          </div>
+        ))}
         <button
           type="button"
           onClick={() => onBig(true)}
-          title="Voir les chiffres en grand, par partie"
-          aria-label="Voir les chiffres en grand, par partie"
-          className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-500 shadow-sm hover:text-neutral-900"
+          title="Voir tous les chiffres"
+          aria-label="Voir tous les chiffres"
+          className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 sm:right-4"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" /></svg>
         </button>
@@ -153,38 +140,53 @@ export function Numbers({ title, parts, part: current, column, position, loop, b
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-neutral-200 bg-white">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-neutral-100 px-3 py-2 sm:px-4">
-        {/* The piece's form: click a part to go there. */}
-        <div className="flex min-w-0 flex-1 basis-40 gap-1 overflow-x-auto">
-          {parts.map((p, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onSeek(p.start)}
-              aria-current={i === current}
-              className={`h-8 min-w-8 shrink-0 rounded-lg px-2 text-sm font-semibold transition-colors ${
-                i === current ? 'bg-neutral-900 text-white' : looped(i) ? 'bg-sky-100 text-sky-700' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <CopyButton text={() => pieceText(title, parts)} />
-        <Small onClick={onEdit} title="Changer, ajouter ou effacer des notes">Modifier</Small>
-        {editing && <Small active={!!correcting} onClick={() => setCorrecting(!correcting)}>{correcting ? 'Terminé' : 'Corriger les parties'}</Small>}
-        <Small onClick={() => onBig(false)} title="Revenir aux notes qui tombent">Réduire</Small>
+      <div className="flex shrink-0 items-center gap-1 px-2 pt-2 sm:px-4">
+        <span className="min-w-0 flex-1 truncate pl-1 text-sm font-semibold text-neutral-900">{correcting ? 'Parties' : 'Chiffres'}</span>
+        {correcting ? (
+          <Small active onClick={() => setCorrecting(false)}>Terminé</Small>
+        ) : (
+          <>
+            <CopyButton text={() => pieceText(title, parts)} />
+            {editing && <Small onClick={() => setCorrecting(true)} title="Déplacer, couper, joindre ou renommer les parties">Parties</Small>}
+            <Small onClick={onEdit} title="Changer, ajouter ou effacer des notes">Modifier</Small>
+            <Small onClick={() => onBig(false)} title="Revenir aux notes qui tombent">Fermer</Small>
+          </>
+        )}
       </div>
       {correcting && (
-        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 bg-amber-50 px-4 py-2 text-xs text-amber-900">
-          <span className="min-w-0 flex-1 basis-60">
-            Clique le numéro d’un temps pour couper la partie à cet endroit. La même lettre = le même passage, avec les mêmes chiffres.
-          </span>
-          {correcting.error && <span className="text-red-600">{correcting.error}</span>}
-          {correcting.onReset && <button type="button" onClick={correcting.onReset} className="font-medium underline">Revenir au découpage automatique</button>}
-        </div>
+        <p className="shrink-0 px-3 pt-1 text-xs text-neutral-500 sm:px-5">
+          Clique un trait de temps pour couper ici. La même lettre = le même passage, avec les mêmes chiffres.
+          {correcting.onReset && <button type="button" onClick={correcting.onReset} className="ml-2 font-medium text-neutral-900 underline">Découpage automatique</button>}
+          {correcting.error && <span className="ml-2 text-red-600">{correcting.error}</span>}
+        </p>
       )}
-      <div ref={box} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">{body}</div>
+      <div ref={box} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-2 sm:px-5">
+        {parts.map((p, i) => (
+          <section key={i} className="border-b border-neutral-100 py-4 last:border-b-0">
+            {correcting && (
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                <LabelInput key={`${p.start}-${p.label}`} label={p.label} onRename={(label) => correcting.onRename(i, label)} />
+                {i > 0 && (
+                  <>
+                    <Small onClick={() => correcting.onMove(i, -1)} title="Commencer un temps plus tôt">← 1 temps</Small>
+                    <Small onClick={() => correcting.onMove(i, 1)} title="Commencer un temps plus tard">1 temps →</Small>
+                    <Small onClick={() => correcting.onJoin(i)} title="Ne faire qu’une partie avec celle d’avant">Joindre à la précédente</Small>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="flex">
+              <div className="shrink-0" style={{ width: GUTTER }}>
+                {!correcting && <PartLetter label={p.label} on={looped(i)} current={i === current} onClick={() => onLoop(looped(i) ? null : i)} />}
+              </div>
+              <div className="min-w-0 flex-1">
+                {lines[i].map((_, k) => draw(i, k))}
+                {p.rows.length ? !correcting && <Stickers part={p} /> : <p className="text-sm text-neutral-300">Silence</p>}
+              </div>
+            </div>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
@@ -200,6 +202,7 @@ function litSteps(part: Part, position: number): string {
   return out.join(',');
 }
 
+// One line of a part: the hands one above the other, a tick on each beat.
 const Line = memo(function Line({ id, index, part, line, sizing, lit, column, onSeek, onCut }: {
   id: string;
   index: number;
@@ -215,40 +218,37 @@ const Line = memo(function Line({ id, index, part, line, sizing, lit, column, on
   const count = line.widths.length;
   const on = lit ? lit.split(',') : [];
   const bar = BEATS_PER_BAR * part.division;
+  const rows = `${HEAD}em repeat(${part.rows.length}, ${ROW}em)`;
   return (
-    <div data-line={id} className="flex py-1" style={{ fontSize: sizing.font }}>
-      <div className="grid w-5 shrink-0 font-semibold" style={{ gridTemplateRows: `1.1em repeat(${part.rows.length}, 1.55em)` }}>
+    <div data-line={id} className="flex py-[5px]" style={{ fontSize: sizing.font }}>
+      <div className="grid shrink-0" style={{ width: LETTERS, gridTemplateRows: rows }}>
         <span />
-        {part.rows.map((r) => <span key={r.hand} className={`self-center text-[0.75em] ${TEXT[r.hand]}`}>{handLetter(r.hand)}</span>)}
+        {part.rows.map((r) => <span key={r.hand} className={`self-center text-xs font-semibold opacity-60 ${TEXT[r.hand]}`}>{handLetter(r.hand)}</span>)}
       </div>
       <div
         className="grid min-w-0 flex-1 tabular-nums"
         style={{
           gridTemplateColumns: line.widths.map((w) => `minmax(${w}px, 1fr)`).join(' '),
-          gridTemplateRows: `1.1em repeat(${part.rows.length}, 1.55em)`,
-          maxWidth: Math.max(count * sizing.cap, line.widths.reduce((a, w) => a + w, 0)),
+          gridTemplateRows: rows,
+          maxWidth: lineWidth(line, part, sizing),
         }}
       >
         {line.widths.map((_, c) => {
           const at = line.from + c;
-          const beat = beatName(part, at);
-          const now = at === column;
+          if (at % part.division !== 0) return null;
           const style = { gridColumn: c + 1, gridRow: 1 };
-          const look = `flex items-center justify-center text-[0.72em] leading-none ${now ? 'font-bold text-neutral-900' : 'text-neutral-400'}`;
-          const startsPart = at === 0;
-          return [
-            at % bar === 0 && c > 0 && <div key={`b${c}`} className="border-l border-neutral-200" style={{ gridColumn: c + 1, gridRow: '1 / -1' }} />,
-            beat !== null && onCut && !startsPart
-              ? <button key={c} type="button" onClick={() => onCut(index, at / part.division)} title="Couper ici" className={`${look} rounded bg-amber-100 font-semibold text-amber-800 hover:bg-amber-200`} style={style}>{beat}</button>
-              : <span key={c} className={look} style={style}>{beat ?? <span className="text-neutral-300">·</span>}</span>,
-          ];
+          const now = Math.floor(column / part.division) === at / part.division && column >= 0;
+          if (onCut && at > 0) {
+            return <button key={c} type="button" onClick={() => onCut(index, at / part.division)} title="Couper ici" aria-label="Couper ici" className="relative mx-auto h-full w-2 rounded-sm bg-neutral-300 after:absolute after:-inset-x-2 after:-inset-y-1 hover:bg-neutral-900" style={style} />;
+          }
+          return <span key={c} className={`mx-auto rounded-full ${now ? 'h-1.5 w-1.5 bg-neutral-900' : at % bar === 0 ? 'h-1.5 w-1.5 bg-neutral-300' : 'h-1 w-1 bg-neutral-200'}`} style={style} />;
         })}
         {part.rows.map((row, r) => row.steps.filter((s) => s.step >= line.from && s.step < line.from + count).map((s) => (
           <button
             key={`${r}-${s.step}`}
             type="button"
             onClick={() => onSeek(s.time)}
-            className={`mx-px flex items-center justify-center whitespace-nowrap rounded font-semibold leading-none ${on.includes(`${r}:${s.step}`) ? LIT[row.hand] : `${TEXT[row.hand]} hover:bg-neutral-100`}`}
+            className={`mx-px flex items-center justify-center whitespace-nowrap rounded-md font-semibold leading-none ${on.includes(`${r}:${s.step}`) ? LIT[row.hand] : `${TEXT[row.hand]} hover:bg-neutral-100`}`}
             style={{ gridColumn: s.step - line.from + 1, gridRow: r + 2 }}
           >
             {stepText(s)}
@@ -262,12 +262,12 @@ const Line = memo(function Line({ id, index, part, line, sizing, lit, column, on
 // Which key each number is, to put the stickers on the piano.
 function Stickers({ part }: { part: Part }) {
   return (
-    <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+    <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-neutral-400">
       {part.rows.map(({ hand }) => {
         const keys = part.keys.filter((k) => k.hand === hand);
         return (
-          <span key={hand} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="text-neutral-400">{handName(hand)}</span>
+          <span key={hand} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+            {handName(hand)}
             {keys.map((k) => {
               // The same note twice, octaves apart: tell which.
               const twice = keys.some((o) => o !== k && (o.midi - k.midi) % 12 === 0);
@@ -284,7 +284,8 @@ function Stickers({ part }: { part: Part }) {
   );
 }
 
-function LoopChip({ label, on, onClick }: { label: string; on: boolean; onClick(): void }) {
+// The part's letter; a click repeats the part.
+function PartLetter({ label, on, current, onClick }: { label: string; on: boolean; current: boolean; onClick(): void }) {
   const title = on ? `Arrêter la boucle (partie ${label})` : `Répéter la partie ${label} en boucle`;
   return (
     <button
@@ -293,9 +294,10 @@ function LoopChip({ label, on, onClick }: { label: string; on: boolean; onClick(
       title={title}
       aria-label={title}
       aria-pressed={on}
-      className={`flex h-7 max-w-full items-center gap-1 rounded-lg px-1.5 text-xs font-bold transition-colors ${on ? 'bg-sky-100 text-sky-700' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
+      className={`group flex max-w-9 flex-col items-center gap-1 rounded-lg px-1.5 py-1 text-base font-bold ${on ? 'bg-sky-100 text-sky-700' : current ? 'text-neutral-900 hover:bg-neutral-100' : 'text-neutral-400 hover:bg-neutral-100'}`}
     >
-      <span className="truncate">{label}</span><RepeatIcon className="h-3 w-3 shrink-0" />
+      <span className="max-w-full truncate">{label}</span>
+      <RepeatIcon className={`h-3.5 w-3.5 ${on ? '' : 'opacity-40 group-hover:opacity-100'}`} />
     </button>
   );
 }
@@ -314,7 +316,7 @@ export function LabelInput({ label, onRename }: { label: string; onRename(label:
       onChange={(e) => setValue(e.target.value)}
       onBlur={save}
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-      className="w-20 rounded-lg border border-neutral-300 px-2 py-1 text-sm font-semibold focus:border-neutral-500 focus:outline-none"
+      className="w-20 rounded-lg border border-neutral-200 px-2 py-1 text-sm font-semibold focus:border-neutral-500 focus:outline-none"
     />
   );
 }
@@ -328,19 +330,14 @@ function CopyButton({ text }: { text(): string }) {
   }, [state]);
   return (
     <Small onClick={() => void navigator.clipboard.writeText(text()).then(() => setState('copied'), () => setState('failed'))}>
-      {state === 'copied' ? 'Copié' : state === 'failed' ? 'Copie impossible' : 'Copier le texte'}
+      {state === 'copied' ? 'Copié' : state === 'failed' ? 'Copie impossible' : 'Copier'}
     </Small>
   );
 }
 
 export function Small({ active, title, onClick, children }: { active?: boolean; title?: string; onClick(): void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className={`h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium transition-colors ${active ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'}`}
-    >
+    <button type="button" title={title} onClick={onClick} className={`${ghost} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'}`}>
       {children}
     </button>
   );
