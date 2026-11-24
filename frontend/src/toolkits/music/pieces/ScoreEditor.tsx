@@ -22,7 +22,7 @@ import { SlidersIcon } from './PlayerControls';
 import { RunPanel } from './RunPanel';
 import {
   addPart, addToOrder, assignKey, cellMidis, emptyScore, HANDS, MAX_BEATS, midiOf, moveInOrder, parseRun, partOf, placeRun, placeTaps,
-  removeFromOrder, removePart, renamePart, runText, scoreGrid, setBeats, setCell, setDivision, shiftHand, unknownNumbers,
+  removeFromOrder, removeKey, removePart, renamePart, runText, scoreGrid, setBeats, setCell, setDivision, shiftHand, unknownNumbers,
 } from './score';
 import type { PieceFolder, StoredPiece } from './types';
 import { usePreview } from './usePreview';
@@ -418,6 +418,7 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
                 onText={(text) => writeCell(current.hand, current.step, text)}
                 onMove={move}
                 onMoveKey={(number) => setPlacing({ hand: current.hand, numbers: [number], then: null })}
+                onRemoveKey={(number) => edit((s) => removeKey(s, part.label, current.hand, number))}
               />
             ) : (
               <span className="text-xs text-neutral-400">Choisis une case de la grille.</span>

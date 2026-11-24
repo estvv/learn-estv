@@ -4,7 +4,7 @@ import { BeatGrid } from './grid';
 import { givenByScore, numberPiece, partText } from './numbers';
 import { fromSaved } from './parts';
 import {
-  addPart, addToOrder, assignKey, emptyScore, moveInOrder, parseRun, partOf, placeRun, placeTaps, quantizeTaps, removeFromOrder, removePart, renamePart,
+  addPart, addToOrder, assignKey, emptyScore, moveInOrder, parseRun, partOf, placeRun, placeTaps, quantizeTaps, removeFromOrder, removeKey, removePart, renamePart,
   runText, scoreGrid, setBeats, setCell, setDivision, shiftHand, unknownNumbers,
 } from './score';
 
@@ -55,6 +55,21 @@ describe('writing by hand', () => {
     s = assignKey(s, 'A', 'left', 1, 45);
     expect(scoreSchema.safeParse(s).success).toBe(true);
     expect(setCell(s, 'A', 'left', 0, []).parts[0].notes).toHaveLength(1);
+  });
+
+  it('takes a number away with its notes, in that hand and that part only', () => {
+    let s = placeRun(keyed(), 'A', 'right', parseRun('4 6 4')!, [0, 1, 2]);
+    s = assignKey(s, 'A', 'left', 4, 67);
+    s = setCell(s, 'A', 'left', 0, [67]);
+    s = addPart(s, 'A', true).score;
+    const out = removeKey(s, 'A', 'right', 4);
+    expect(runText(partOf(out, 'A'), 'right')).toBe('6');
+    expect(partOf(out, 'A').keys.filter((k) => k.hand === 'right').map((k) => k.number)).toEqual([2, 3, 5, 6]);
+    expect(runText(partOf(out, 'A'), 'left')).toBe('4');
+    expect(runText(partOf(out, 'B'), 'right')).toBe('4 6 4');
+    expect(scoreSchema.safeParse(out).success).toBe(true);
+    // The number is free again.
+    expect(runText(partOf(setCell(removeKey(out, 'A', 'right', 2), 'A', 'right', 5, [80]), 'A'), 'right')).toBe('6 1');
   });
 
   it('finds the rhythm of taps', () => {

@@ -62,6 +62,18 @@ export function assignKey(score: Score, label: string, hand: Hand, number: numbe
   });
 }
 
+// Takes a number off its key, with the notes written with it.
+export function removeKey(score: Score, label: string, hand: Hand, number: number): Score {
+  return change(score, label, (p) => {
+    const midi = midiOf(p, hand, number);
+    return {
+      ...p,
+      keys: p.keys.filter((k) => k.hand !== hand || k.number !== number),
+      notes: p.notes.filter((n) => n.hand !== hand || n.midi !== midi),
+    };
+  });
+}
+
 // --- A run of numbers -------------------------------------------------------------
 
 // "4-4 6-2-5-3": chords one after the other, "1+3" together. Null: not numbers.

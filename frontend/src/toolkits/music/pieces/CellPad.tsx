@@ -14,7 +14,7 @@ export function playKey(midi: number) {
   setTimeout(() => inputBus.noteOff(midi, 'virtual'), 220);
 }
 
-export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping, onText, onMove, onMoveKey }: {
+export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping, onText, onMove, onMoveKey, onRemoveKey }: {
   // Of the cell: another cell, another text.
   id: string;
   hand: Hand;
@@ -33,10 +33,12 @@ export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping,
   onMove(to: 'previous' | 'next' | 'hand'): void;
   // Puts a number on another key.
   onMoveKey?(number: number): void;
+  // Takes it away, with its notes.
+  onRemoveKey?(number: number): void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(text);
-  const [moving, setMoving] = useState(false);
+  const [arranging, setArranging] = useState(false);
   useEffect(() => {
     setValue(text);
     onTyping?.('');
@@ -78,26 +80,40 @@ export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping,
         className="w-20 rounded-lg border border-neutral-300 px-2 py-1.5 text-center text-base font-semibold tabular-nums focus:border-neutral-500 focus:outline-none"
       />
       <div className="flex min-w-0 flex-1 basis-48 flex-wrap items-center gap-1">
-        {keys.map((k) => (
-          <button
-            key={k.number}
-            type="button"
-            onClick={() => {
-              if (moving && onMoveKey) {
-                setMoving(false);
+        {keys.map((k) => (arranging && onMoveKey && onRemoveKey ? (
+          <span key={k.number} className="flex h-9 items-center rounded-lg bg-neutral-100 text-sm text-neutral-700">
+            <button
+              type="button"
+              onClick={() => {
+                setArranging(false);
                 onMoveKey(k.number);
-              } else playKey(k.midi);
-            }}
-            className={`flex h-9 items-center gap-1 rounded-lg px-2 text-sm ${moving ? 'bg-neutral-900 text-white' : COLOR[hand]}`}
-          >
+              }}
+              title={`Mettre le ${k.number} sur une autre touche`}
+              className="flex h-9 items-center gap-1 rounded-l-lg pl-2 pr-1.5 hover:bg-neutral-200"
+            >
+              <b className="tabular-nums">{k.number}</b>
+              <span className="text-xs opacity-75"><NoteText text={frenchName(k.midi)} /></span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onRemoveKey(k.number)}
+              title={`Supprimer le ${k.number} et ses notes`}
+              aria-label={`Supprimer le ${k.number} et ses notes`}
+              className="flex h-9 w-8 items-center justify-center rounded-r-lg text-neutral-400 hover:bg-red-50 hover:text-red-600"
+            >
+              ✕
+            </button>
+          </span>
+        ) : (
+          <button key={k.number} type="button" onClick={() => playKey(k.midi)} className={`flex h-9 items-center gap-1 rounded-lg px-2 text-sm ${COLOR[hand]}`}>
             <b className="tabular-nums">{k.number}</b>
             <span className="text-xs opacity-75"><NoteText text={frenchName(k.midi)} /></span>
           </button>
-        ))}
+        )))}
         {!keys.length && <span className="text-xs text-neutral-400">Tape un numéro, ou joue une touche du clavier.</span>}
         {onMoveKey && keys.length > 0 && (
-          <button type="button" onClick={() => setMoving(!moving)} className="px-2 text-xs text-neutral-400 hover:text-neutral-900">
-            {moving ? 'Annuler' : 'Déplacer un numéro'}
+          <button type="button" onClick={() => setArranging(!arranging)} className={`h-9 px-2 text-xs ${arranging ? 'font-medium text-neutral-900' : 'text-neutral-400 hover:text-neutral-900'}`}>
+            {arranging ? 'Terminé' : 'Modifier les numéros'}
           </button>
         )}
       </div>
