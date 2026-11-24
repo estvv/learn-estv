@@ -4,8 +4,8 @@ import { BeatGrid } from './grid';
 import { givenByScore, numberPiece, partText } from './numbers';
 import { fromSaved } from './parts';
 import {
-  addPart, addToOrder, assignKey, emptyScore, hasNumber, moveInOrder, numberKey, parseRun, partOf, placeRun, placeTaps, quantizeTaps, removeFromOrder, removeKey, removePart, renamePart,
-  runText, scoreGrid, setBeats, setCell, setDivision, shiftHand, unknownNumbers,
+  addFree, addNotes, addPart, addRecorded, addToOrder, assignKey, emptyScore, moveInOrder, numberKey, parseRun, partOf, placeRun, placeTaps, quantizeTaps, removeFromOrder, removeKey, removeNote, removePart, renamePart, replaceNote,
+  runText, setBeats, setCell, setDivision, shiftHand, tappedBpm, unknownNumbers,
 } from './score';
 
 // The video's own numbers: 4 is G, 6 is Bb…
@@ -63,7 +63,6 @@ describe('writing by hand', () => {
     expect(partOf(s, 'A').keys.map((k) => `${k.midi}=${k.number}`)).toEqual(['50=1', '47=2']);
     expect(partOf(s, 'A').notes).toEqual([]);
     expect(numberKey(s, 'A', 'left', 50)).toBe(s);
-    expect([hasNumber(partOf(s, 'A'), 'left', 47), hasNumber(partOf(s, 'A'), 'right', 47)]).toEqual([true, false]);
   });
 
   it('takes a number away with its notes, in that hand and that part only', () => {
@@ -132,7 +131,6 @@ describe('writing by hand', () => {
     const { parts } = numberPiece(notes, fromSaved(sections, duration), BeatGrid.regular(0, 60 / s.bpm), givenByScore(s));
     expect(parts).toHaveLength(2);
     expect(parts.map((p) => partText(p))).toEqual(Array(2).fill('    1  .  2  .  3  .  4  .\nD :    4     4  6  2  5  3'));
-    expect(scoreGrid(s, 'A').columns).toBe(8);
   });
 
   it('changes the grid without moving notes in time', () => {
@@ -140,5 +138,48 @@ describe('writing by hand', () => {
     expect(steps(setDivision(s, 4))).toEqual([2, 8]);
     expect(steps(setDivision(setDivision(s, 4), 2))).toEqual([1, 4]);
     expect(setBeats(s, 'A', 2).parts[0].notes).toHaveLength(1);
+  });
+
+  it('lays notes one by one, keys numbered as they come', () => {
+    let s = addNotes(emptyScore(), 'A', [{ hand: 'right', step: 0, midi: 64, length: 2 }, { hand: 'left', step: 0, midi: 40, length: 4 }]);
+    s = addNotes(s, 'A', [{ hand: 'right', step: 2, midi: 60, length: 1 }]);
+    expect(partOf(s, 'A').keys.filter((k) => k.hand === 'right').map((k) => `${k.midi}=${k.number}`)).toEqual(['64=1', '60=2']);
+    // Moved, stretched, put twice at one place, taken away.
+    const [first] = partOf(s, 'A').notes;
+    s = replaceNote(s, 'A', first, { ...first, step: 17, length: 3 });
+    expect(partOf(s, 'A').beats).toBe(12);
+    s = addNotes(s, 'A', [{ hand: 'right', step: 17, midi: 64, length: 1 }]);
+    expect(partOf(s, 'A').notes.filter((n) => n.midi === 64)).toEqual([{ hand: 'right', step: 17, midi: 64, length: 1 }]);
+    expect(partOf(removeNote(s, 'A', partOf(s, 'A').notes[0]), 'A').notes).toHaveLength(2);
+    expect(scoreSchema.safeParse(s).success).toBe(true);
+  });
+
+  it('holds notes as long as written, not over the same key again', () => {
+    const s = addNotes({ ...emptyScore(), bpm: 60 }, 'A', [
+      { hand: 'right', step: 0, midi: 60, length: 6 }, { hand: 'right', step: 2, midi: 64, length: 1 }, { hand: 'right', step: 4, midi: 60, length: 2 },
+    ]);
+    expect(renderScore(s).notes.map((n) => [n.midi, +(n.duration / 0.95).toFixed(2)])).toEqual([[60, 2], [64, 0.5], [60, 1]]);
+    expect(setDivision(s, 4).parts[0].notes.map((n) => n.length)).toEqual([12, 2, 4]);
+  });
+
+  it('records along with the metronome', () => {
+    const s = addRecorded(emptyScore(), 'A', 'left', [{ midi: 48, on: 10.02, off: 10.58 }, { midi: 52, on: 10.93, off: 11.1 }, { midi: 50, on: 9.9, off: 10 }], 10);
+    expect(partOf(s, 'A').notes.map((n) => [n.midi, n.step, n.length])).toEqual([[48, 0, 2], [52, 3, 1], [50, 0, 1]]);
+  });
+
+  it('records freely, finding the tempo of the first take only', () => {
+    const key = (midi: number, on: number, held = 0.28) => ({ midi, on, off: on + held });
+    const s = addFree(emptyScore(), 'A', 'right', [key(60, 5), key(64, 5.02), key(62, 5.9), key(64, 6.2), key(65, 6.5), key(67, 6.8)]);
+    expect(s.bpm).toBe(100);
+    expect(partOf(s, 'A').notes.map((n) => n.step)).toEqual([0, 0, 3, 4, 5, 6]);
+    const more = addFree(s, 'A', 'left', [key(40, 1), key(43, 1.64), key(45, 2.25)]);
+    expect(more.bpm).toBe(100);
+    expect(partOf(more, 'A').notes.filter((n) => n.hand === 'left').map((n) => n.step)).toEqual([0, 2, 4]);
+    expect(addFree(s, 'A', 'left', [])).toBe(s);
+  });
+
+  it('hears a tempo', () => {
+    expect(tappedBpm([0, 0.6, 1.21, 1.8])).toBe(100);
+    expect(tappedBpm([0, 1])).toBeNull();
   });
 });

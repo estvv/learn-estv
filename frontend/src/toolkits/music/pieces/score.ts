@@ -1,5 +1,5 @@
-import type { Hand, Score, ScorePart } from '@learn/shared';
-import { freeNumber, type Part, type Step } from './numbers';
+import type { Hand, Score, ScoreNote, ScorePart } from '@learn/shared';
+import { freeNumber } from './numbers';
 import { newLabel } from './parts';
 
 // Writing a piece by hand (shared/src/score.ts). Every function returns a new
@@ -67,8 +67,6 @@ export function numberKey(score: Score, label: string, hand: Hand, midi: number)
   return numberOf(partOf(score, label), hand, midi) === undefined ? change(score, label, (p) => withKeys(p, hand, [midi])) : score;
 }
 
-export const hasNumber = (p: ScorePart, hand: Hand, midi: number) => numberOf(p, hand, midi) !== undefined;
-
 // Takes a number off its key, with the notes written with it.
 export function removeKey(score: Score, label: string, hand: Hand, number: number): Score {
   return change(score, label, (p) => {
@@ -79,6 +77,98 @@ export function removeKey(score: Score, label: string, hand: Hand, number: numbe
       notes: p.notes.filter((n) => n.hand !== hand || n.midi !== midi),
     };
   });
+}
+
+// --- Notes laid one by one -------------------------------------------------------
+
+const same = (a: ScoreNote, b: ScoreNote) => a.hand === b.hand && a.step === b.step && a.midi === b.midi;
+
+// Room for what is written, by whole bars.
+function grown(p: ScorePart, division: number): ScorePart {
+  const columns = p.notes.reduce((max, n) => Math.max(max, n.step + 1), 0);
+  const beats = Math.max(p.beats, Math.ceil(columns / (BAR * division)) * BAR);
+  if (beats <= MAX_BEATS) return { ...p, beats };
+  return { ...p, beats: MAX_BEATS, notes: p.notes.filter((n) => n.step < MAX_BEATS * division) };
+}
+
+// Same key, same place: the new one takes over. New keys get a number.
+export function addNotes(score: Score, label: string, notes: ScoreNote[]): Score {
+  if (!notes.length) return score;
+  return change(score, label, (p) => {
+    const unique = notes.filter((n, i) => notes.findIndex((o) => same(o, n)) === i);
+    let out: ScorePart = { ...p, notes: [...p.notes.filter((n) => !unique.some((o) => same(o, n))), ...unique] };
+    for (const hand of HANDS) out = withKeys(out, hand, unique.filter((n) => n.hand === hand).map((n) => n.midi));
+    return grown(out, score.division);
+  });
+}
+
+export const removeNote = (score: Score, label: string, note: ScoreNote): Score =>
+  change(score, label, (p) => ({ ...p, notes: p.notes.filter((n) => !same(n, note)) }));
+
+export const replaceNote = (score: Score, label: string, note: ScoreNote, by: ScoreNote): Score =>
+  addNotes(removeNote(score, label, note), label, [by]);
+
+// --- Recording ---------------------------------------------------------------------
+
+// A key as it was played, in seconds.
+export interface Played {
+  midi: number;
+  on: number;
+  off: number;
+}
+
+// Along with the metronome: `start` is the first beat of the part.
+export function addRecorded(score: Score, label: string, hand: Hand, played: Played[], start: number): Score {
+  const column = 60 / score.bpm / score.division;
+  return addNotes(score, label, played.map((k) => ({
+    hand, midi: k.midi,
+    step: Math.max(0, Math.round((k.on - start) / column)),
+    length: Math.max(1, Math.round((k.off - k.on) / column)),
+  })));
+}
+
+// Keys pressed this close together are a chord.
+const TOGETHER = 0.06;
+
+// Without a metronome: the first key is the start of the part, and the tempo is
+// found, unless other notes already give it.
+export function addFree(score: Score, label: string, hand: Hand, played: Played[]): Score {
+  const sorted = [...played].sort((a, b) => a.on - b.on);
+  const groups: Played[][] = [];
+  for (const k of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && k.on - last[0].on <= TOGETHER) last.push(k);
+    else groups.push([k]);
+  }
+  if (!groups.length) return score;
+  const empty = score.parts.every((p) => !p.notes.length);
+  const { unit, steps } = quantizeTaps(groups.map((g) => g[0].on), empty ? null : 60 / score.bpm / score.division);
+  const { bpm, division, scale } = empty ? tempoOf(unit, score.division) : { bpm: score.bpm, division: score.division, scale: 1 };
+  return addNotes({ ...score, bpm, division }, label, groups.flatMap((g, i) => g.map((k) => ({
+    hand, midi: k.midi, step: steps[i] * scale, length: Math.max(1, Math.round((k.off - k.on) / unit) * scale),
+  }))));
+}
+
+// A tempo people count, from the length of a column.
+function tempoOf(unit: number, division: Score['division']): { bpm: number; division: Score['division']; scale: number } {
+  let bpm = 60 / (unit * division);
+  let scale = 1;
+  let grid = division;
+  if (bpm > 180 && grid === 2) {
+    grid = 4;
+    bpm /= 2;
+  }
+  while (bpm < 55) {
+    scale *= 2;
+    bpm *= 2;
+  }
+  return { bpm: Math.min(300, Math.round(bpm)), division: grid, scale };
+}
+
+// Beats per minute of taps (seconds); null: not enough of them yet.
+export function tappedBpm(times: number[]): number | null {
+  if (times.length < 3) return null;
+  return Math.min(300, Math.max(20, Math.round((60 * (times.length - 1)) / (times[times.length - 1] - times[0]))));
 }
 
 // --- A run of numbers -------------------------------------------------------------
@@ -158,19 +248,8 @@ export function placeTaps(score: Score, label: string, hand: Hand, run: number[]
     return placeRun(score, label, hand, run, steps.map((s) => s + firstStep));
   }
   const { unit, steps } = quantizeTaps(times, null);
-  let { division } = score;
-  let columns = steps;
-  let bpm = 60 / (unit * division);
-  if (bpm > 180 && division === 2) {
-    division = 4;
-    bpm /= 2;
-  }
-  while (bpm < 55) {
-    columns = columns.map((s) => s * 2);
-    bpm *= 2;
-  }
-  const tempo = { ...score, division, bpm: Math.min(300, Math.round(bpm)) };
-  return placeRun(tempo, label, hand, run, columns.map((s) => s + firstStep));
+  const { bpm, division, scale } = tempoOf(unit, score.division);
+  return placeRun({ ...score, division, bpm }, label, hand, run, steps.map((s) => s * scale + firstStep));
 }
 
 // --- Parts and order ----------------------------------------------------------------
@@ -211,7 +290,11 @@ export function setDivision(score: Score, division: Score['division']): Score {
     parts: score.parts.map((p) => {
       const seen = new Set<string>();
       const notes = p.notes
-        .map((n) => ({ ...n, step: Math.min(p.beats * division - 1, Math.round((n.step * division) / score.division)) }))
+        .map((n) => ({
+          ...n,
+          step: Math.min(p.beats * division - 1, Math.round((n.step * division) / score.division)),
+          ...(n.length ? { length: Math.max(1, Math.round((n.length * division) / score.division)) } : {}),
+        }))
         .filter((n) => {
           const id = `${n.hand}${n.step}:${n.midi}`;
           return !seen.has(id) && !!seen.add(id);
@@ -230,25 +313,4 @@ export function moveInOrder(score: Score, i: number, by: 1 | -1): Score {
   const order = [...score.order];
   [order[i], order[to]] = [order[to], order[i]];
   return { ...score, order };
-}
-
-// A part as the number grid draws it, both hands even when silent. Times are
-// seconds from the start of the part.
-export function scoreGrid(score: Score, label: string): Part {
-  const p = partOf(score, label);
-  const column = 60 / score.bpm / score.division;
-  const rows = HANDS.map((hand) => {
-    const steps = [...new Set(p.notes.filter((n) => n.hand === hand).map((n) => n.step))].sort((a, b) => a - b);
-    return {
-      hand,
-      steps: steps.map((step): Step => ({
-        step, time: step * column, end: (step + 1) * column, notes: [],
-        chords: [cellMidis(p, hand, step).map((m) => numberOf(p, hand, m) ?? 0)],
-      })),
-    };
-  });
-  return {
-    label: p.label, start: 0, end: p.beats * score.division * column, division: score.division,
-    columns: p.beats * score.division, beat: 0, rows, keys: p.keys,
-  };
 }

@@ -1,33 +1,36 @@
-import { renderScore, scoreSchema, type Hand, type PieceDifficulty, type Score } from '@learn/shared';
+import { frenchName, renderScore, scoreSchema, type Hand, type PieceDifficulty, type Score, type ScoreNote } from '@learn/shared';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Field, inputClass } from '../../../components/Field';
 import { PlusIcon } from '../../../components/icons';
 import { ConfirmModal, Modal } from '../../../components/Modal';
 import { Popover } from '../../../components/Popover';
 import { Segmented } from '../../../components/Segmented';
+import { Switch } from '../../../components/Switch';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
 import { readJson, writeJson } from '../../../lib/storage';
-import { PHONE, TOUCH, useMedia } from '../../../lib/useMedia';
+import { PHONE, useMedia } from '../../../lib/useMedia';
+import { NoteText } from '../Accidentals';
 import { useNoteInput } from '../input/hooks';
 import { PianoKeyboard, type Sticker } from '../PianoKeyboard';
 import { foldersApi, piecesApi } from './api';
-import { CellPad } from './CellPad';
+import { playKey } from './CellPad';
 import { commit, redo, startHistory, undo, type History } from './edit';
-import { EditGrid, type Cell } from './EditGrid';
 import { ImportModal } from './ImportModal';
 import { LabelInput, Small } from './Numbers';
-import { handName, stepText } from './numbers';
+import { handName } from './numbers';
 import { DifficultyPicker, FolderSelect } from './pieceFields';
-import { SlidersIcon } from './PlayerControls';
+import { RollEditor, sameNote } from './RollEditor';
 import { RunPanel } from './RunPanel';
 import {
-  addPart, addToOrder, assignKey, cellMidis, emptyScore, hasNumber, HANDS, MAX_BEATS, midiOf, moveInOrder, numberKey, parseRun, partOf, placeRun, placeTaps,
-  removeFromOrder, removeKey, removePart, renamePart, runText, scoreGrid, setBeats, setCell, setDivision, shiftHand, unknownNumbers,
+  addFree, addNotes, addPart, addRecorded, addToOrder, assignKey, emptyScore, HANDS, MAX_BEATS, midiOf, moveInOrder, numberKey, partOf, placeRun, placeTaps,
+  removeFromOrder, removeKey, removeNote, removePart, renamePart, replaceNote, runText, setBeats, setDivision, shiftHand, tappedBpm, unknownNumbers,
 } from './score';
 import type { PieceFolder, StoredPiece } from './types';
 import { usePreview } from './usePreview';
+import { useRecorder } from './useRecorder';
 
-// Writes a piece by hand, in numbers: its parts on a grid, then their order.
+// Writes a piece by hand, in two steps: which key each number is, then the
+// keys one after the other, laid above the keyboard or recorded while playing.
 // What is not saved yet is kept on this device.
 
 const draftKey = (id: number | null) => `learn.score.${id ?? 'new'}`;
@@ -39,8 +42,8 @@ const DIVISIONS: { value: Score['division']; label: string }[] = [
 interface Placing {
   hand: Hand;
   numbers: number[];
-  // What was being written.
-  then: { kind: 'cell'; step: number; text: string } | { kind: 'run'; text: string } | null;
+  // The run being written.
+  run: string | null;
   // Numbers read on a picture: the same key in every part, then the other hand's.
   everywhere?: { later: { hand: Hand; numbers: number[] }[] };
 }
@@ -53,7 +56,7 @@ export interface ScoreDraft {
 }
 
 const placingOf = ([first, ...later]: ScoreDraft['toPlace'] = []): Placing | null =>
-  (first ? { ...first, then: null, everywhere: { later } } : null);
+  (first ? { ...first, run: null, everywhere: { later } } : null);
 
 export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
   subject: string;
@@ -76,16 +79,19 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
     if (changed) writeJson(key, { score });
   }, [key, score, changed]);
 
+  const [step, setStep] = useState<'numbers' | 'piece'>(() => (given || !score.parts.some((p) => p.notes.length) ? 'numbers' : 'piece'));
   const [label, setLabel] = useState(score.parts[0].label);
   const part = partOf(score, label);
-  const grid = useMemo(() => scoreGrid(score, part.label), [score, part.label]);
-  const [cell, setCellPicked] = useState<Cell | null>({ hand: 'right', step: 0 });
-  const [chord, setChord] = useState(false);
+  const [hand, setHand] = useState<Hand>('right');
   // What playing a key does, besides being heard.
   const [assign, setAssign] = useState(false);
   const [fill, setFill] = useState(false);
+  const [cursor, setCursor] = useState(0);
+  // Of the notes added, in beats.
+  const [held, setHeld] = useState(1);
+  const [metronome, setMetronome] = useState(true);
+  const [picked, setPicked] = useState<ScoreNote | null>(null);
   const [placing, setPlacing] = useState<Placing | null>(() => placingOf(given?.toPlace));
-  // From a file instead: what it is read into may come here, or be a piece by itself.
   const [importing, setImporting] = useState(false);
   const [title, setTitle] = useState(given?.title ?? '');
   const [folders, setFolders] = useState<PieceFolder[]>([]);
@@ -98,12 +104,13 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const phone = useMedia(PHONE);
-  const touch = useMedia(TOUCH);
 
   const edit = (change: (s: Score) => Score) => {
     setError('');
     setHistory((h) => commit(h, change(h.present)));
   };
+  const columns = part.beats * score.division;
+  const length = Math.max(1, Math.round(held * score.division));
 
   // --- Listening ---------------------------------------------------------------------
   const rendered = useMemo(() => renderScore(score), [score]);
@@ -112,98 +119,88 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
   // Where the part shown is played: the first time, in the piece.
   const partStart = rendered.sections.find((s) => s.label === part.label)?.start ?? null;
   const partEnd = partStart === null ? 0 : partStart + part.beats * beat;
-  const playingColumn = useMemo(() => {
-    if (!preview.playing) return -1;
+  const playhead = useMemo(() => {
+    if (!preview.playing) return null;
     for (const s of rendered.sections) {
       const p = partOf(score, s.label);
       const at = preview.position - s.start;
-      if (at >= -0.03 && at < p.beats * beat - 0.03) return p.label === part.label ? Math.floor((at / beat) * score.division + 0.2) : -1;
+      if (at >= -0.03 && at < p.beats * beat) return p.label === part.label ? Math.max(0, (at / beat) * score.division) : null;
     }
-    return -1;
+    return null;
   }, [preview.playing, preview.position, rendered, score, part.label, beat]);
-
-  // --- Cells ----------------------------------------------------------------------------
-  const pick = (c: Cell) => {
-    setCellPicked(c);
-    setPlacing(null);
-  };
-  const move = (to: 'previous' | 'next' | 'hand') => {
-    if (!cell) return;
-    if (to === 'hand') return setCellPicked({ ...cell, hand: cell.hand === 'left' ? 'right' : 'left' });
-    const step = Math.max(0, cell.step + (to === 'next' ? 1 : -1));
-    // Past the end, the part gets one more bar.
-    if (step >= grid.columns) {
-      if (part.beats + 4 > MAX_BEATS) return;
-      edit((s) => setBeats(s, part.label, partOf(s, part.label).beats + 4));
-    }
-    setCellPicked({ ...cell, step });
-  };
-  const writeCell = (hand: Hand, step: number, text: string): boolean => {
-    const run = parseRun(text.replace(/\s+/g, '+'));
-    if (!run || run.length > 1) return setError('Une case : un numéro, ou plusieurs avec + (1+3).'), false;
-    const missing = unknownNumbers(part, hand, run);
-    if (missing.length) {
-      setPlacing({ hand, numbers: missing, then: { kind: 'cell', step, text } });
-      return false;
-    }
-    edit((s) => setCell(s, part.label, hand, step, (run[0] ?? []).map((n) => midiOf(partOf(s, part.label), hand, n)!)));
-    return true;
+  const listen = () => {
+    if (preview.playing) return preview.stop();
+    if (partStart === null) return setError(`Ajoute ${part.label} à l’ordre du morceau pour l’écouter.`);
+    preview.play(partStart, { start: partStart, end: partEnd });
   };
 
-  // A key played: the one a number waits for, or what the cell holds.
-  // A number typed and not entered yet, then a key: that is its key.
-  const typed = useRef('');
-  const typedPlacing = (): Placing | null => {
-    const run = parseRun(typed.current.trim().replace(/\s+/g, '+'));
-    if (!cell || run?.length !== 1) return null;
-    const numbers = unknownNumbers(part, cell.hand, run);
-    return numbers.length ? { hand: cell.hand, numbers, then: { kind: 'cell', step: cell.step, text: typed.current.trim() } } : null;
-  };
+  // --- Recording ---------------------------------------------------------------------
+  const recorder = useRecorder({
+    bpm: score.bpm,
+    metronome,
+    onStart: () => {
+      if (partStart !== null) preview.play(partStart);
+    },
+    onDone: ({ played, start }) => {
+      preview.stop();
+      if (!played.length) return setError('Aucune touche jouée pendant l’enregistrement.');
+      edit((s) => (start === null ? addFree(s, part.label, hand, played) : addRecorded(s, part.label, hand, played, start)));
+    },
+  });
+  const recording = recorder.state !== null;
+
+  // --- Keys played ---------------------------------------------------------------------
   const onKey = useRef<(midi: number) => void>(() => {});
   onKey.current = (midi) => {
-    if (writing || dialog || importing || preview.playing) return;
-    const asked = placing ?? typedPlacing();
-    typed.current = '';
-    if (asked) {
-      const [number, ...rest] = asked.numbers;
-      const { hand, then } = asked;
-      const next = asked.everywhere
-        ? score.parts.reduce((s, p) => assignKey(s, p.label, hand, number, midi), score)
-        : assignKey(score, part.label, hand, number, midi);
-      if (rest.length) {
-        edit(() => next);
-        return setPlacing({ ...asked, numbers: rest });
-      }
-      const [following, ...later] = asked.everywhere?.later ?? [];
-      setPlacing(following ? { ...following, then: null, everywhere: { later } } : null);
-      if (then?.kind === 'cell') {
-        const p = partOf(next, part.label);
-        const midis = (parseRun(then.text.replace(/\s+/g, '+'))?.[0] ?? []).map((n) => midiOf(p, hand, n)!);
-        edit(() => setCell(next, part.label, hand, then.step, midis));
-        setCellPicked({ hand, step: Math.min(grid.columns - 1, then.step + 1) });
-      } else {
-        edit(() => next);
-        if (then?.kind === 'run') setWriting({ hand, text: then.text });
-      }
+    if (writing || dialog || importing || recording) return;
+    if (placing) {
+      const [number, ...rest] = placing.numbers;
+      const { hand: of, run, everywhere } = placing;
+      edit((s) => (everywhere ? s.parts.reduce((all, p) => assignKey(all, p.label, of, number, midi), s) : assignKey(s, part.label, of, number, midi)));
+      if (rest.length) return setPlacing({ ...placing, numbers: rest });
+      const [following, ...later] = everywhere?.later ?? [];
+      setPlacing(following ? { ...following, run: null, everywhere: { later } } : null);
+      if (run !== null) setWriting({ hand: of, text: run });
       return;
     }
-    if (!cell) return;
-    const numbered = assign ? numberKey(score, part.label, cell.hand, midi) : score;
-    if (!fill) {
-      if (numbered !== score) edit(() => numbered);
+    if (preview.playing) return;
+    if (step === 'numbers') {
+      if (assign) edit((s) => numberKey(s, part.label, hand, midi));
       return;
     }
-    if (!hasNumber(partOf(numbered, part.label), cell.hand, midi)) {
-      return setError(`Cette touche n’a pas de numéro à la main ${cell.hand === 'left' ? 'gauche' : 'droite'}. Allume Assigner pour lui en donner un.`);
-    }
-    if (cell.step >= grid.columns) return;
-    const now = cellMidis(part, cell.hand, cell.step);
-    const midis = !chord ? [midi] : now.includes(midi) ? now.filter((m) => m !== midi) : [...now, midi];
-    edit(() => setCell(numbered, part.label, cell.hand, cell.step, midis));
-    if (!chord) move('next');
+    if (!fill) return;
+    edit((s) => addNotes(s, part.label, [{ hand, step: cursor, midi, length }]));
+    // Keys pressed together are written together.
+    clearTimeout(chordTimer.current);
+    chordTimer.current = setTimeout(() => setCursor((c) => c + length), 130);
   };
+  const chordTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(chordTimer.current), []);
   // Not the microphone: it would hear the preview.
   useNoteInput((e) => e.type === 'on' && e.source !== 'mic' && onKey.current(e.midi));
+  const moveCursor = (by: number) => setCursor((c) => Math.max(0, c + by));
+
+  // Delete: the note picked. Escape: no note picked, or stop recording.
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName) || dialog || writing || importing) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === 'z') setHistory(e.shiftKey ? redo : undo);
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && picked) {
+        edit((s) => removeNote(s, part.label, picked));
+        setPicked(null);
+      } else if (e.key === 'Escape') {
+        if (recording) recorder.stop();
+        setPicked(null);
+      } else if (e.code === 'Space') {
+        if (recording) recorder.stop();
+        else listen();
+      } else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onDown);
+    return () => window.removeEventListener('keydown', onDown);
+  });
 
   // --- Keyboard ---------------------------------------------------------------------------
   const [octave, setOctave] = useState(3);
@@ -219,21 +216,21 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
     preview.stop();
     setLabel(l);
     setPlacing(null);
-    setCellPicked((c) => (c ? { ...c, step: 0 } : c));
+    setPicked(null);
+    setCursor(0);
   };
 
   // --- Saving ----------------------------------------------------------------------------
-  const problem = () => {
-    const r = scoreSchema.safeParse(score);
-    return r.success ? null : r.error.issues[0].message;
-  };
   const done = (id: number) => {
     writeJson(key, { score: null });
     onSaved(id);
   };
   const save = async () => {
-    const wrong = problem();
-    if (wrong) return setError(wrong === 'Aucune note' ? 'Il faut au moins une note dans l’ordre du morceau.' : wrong);
+    const valid = scoreSchema.safeParse(score);
+    if (!valid.success) {
+      const wrong = valid.error.issues[0].message;
+      return setError(wrong === 'Aucune note' ? 'Il faut au moins une note dans l’ordre du morceau.' : wrong);
+    }
     if (!piece) return setDialog('save');
     setSaving(true);
     try {
@@ -245,64 +242,41 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
     }
   };
 
-  const current = cell && cell.step < grid.columns ? cell : null;
-  const currentStep = current && grid.rows.find((r) => r.hand === current.hand)?.steps.find((s) => s.step === current.step);
+  const keys = part.keys.filter((k) => k.hand === hand).sort((a, b) => a.number - b.number);
+  const empty = !piece && score.parts.length === 1 && !part.notes.length && !part.keys.length;
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-17 shrink-0 items-center gap-1 pl-16 pr-3 phone:h-15 phone:pl-14 sm:pr-5">
-        <div className="min-w-0 flex-1 truncate font-semibold text-neutral-900">{piece ? piece.title : 'Nouveau morceau'}</div>
-        <Small onClick={() => setHistory(undo)} title="Annuler le dernier changement">↶</Small>
-        <Small onClick={() => setHistory(redo)} title="Rétablir">↷</Small>
-        <Popover label={<SlidersIcon className="h-4 w-4" />} title="Tempo et grille" className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100">
-          <div className="space-y-4">
-            <NumberField label="Tempo" unit="bpm" value={score.bpm} min={20} max={300} onChange={(bpm) => edit((s) => ({ ...s, bpm }))} />
-            <Field label="Une case vaut">
-              <Segmented<Score['division']> full value={score.division} onChange={(d) => edit((s) => setDivision(s, d))} options={DIVISIONS} />
-            </Field>
-          </div>
-        </Popover>
-        {!piece && <Small onClick={() => { preview.stop(); setImporting(true); }} title="Image, partition PDF, vidéo ou son">Partir d’un fichier</Small>}
-        <Small onClick={() => (changed ? setDialog('leave') : onClose())}>Quitter</Small>
-        <button type="button" onClick={() => void save()} disabled={saving} className={`${primaryButton} ml-1`}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+        <div className="min-w-0 flex-1 truncate font-semibold text-neutral-900 phone:hidden">{piece ? piece.title : 'Nouveau morceau'}</div>
+        <Segmented<'numbers' | 'piece'>
+          value={step}
+          onChange={(s) => {
+            preview.stop();
+            setStep(s);
+          }}
+          options={[{ value: 'numbers', label: '1. Numéros' }, { value: 'piece', label: '2. Morceau' }]}
+        />
+        <div className="flex flex-1 items-center justify-end gap-1">
+          <Small onClick={() => setHistory(undo)} title="Annuler le dernier changement (Ctrl+Z)">↶</Small>
+          <span className="phone:hidden"><Small onClick={() => setHistory(redo)} title="Rétablir">↷</Small></span>
+          <Small onClick={() => (changed ? setDialog('leave') : onClose())}>Quitter</Small>
+          <button type="button" onClick={() => void save()} disabled={saving} className={`${primaryButton} ml-1 phone:px-3`}>{saving ? '…' : 'Enregistrer'}</button>
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-200 bg-white px-3 py-4 sm:px-6">
-        {!piece && !part.notes.length && !placing && score.parts.length === 1 && (
-          <button
-            type="button"
-            onClick={() => setImporting(true)}
-            className="mb-5 w-full rounded-xl border-2 border-dashed border-neutral-200 px-4 py-5 text-center text-sm text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900"
-          >
-            <span className="block font-medium text-neutral-900">Partir d’un fichier</span>
-            <span className="mt-1 block text-xs text-neutral-400">Image de numéros ou de partition (lue par l’IA) · partition PDF · vidéo · son. Ou remplis la grille à la main.</span>
-          </button>
-        )}
-        {draft && changed && (
-          <p className="mb-3 text-xs text-neutral-500">
-            Brouillon repris sur cet appareil.
-            <button
-              type="button"
-              className="ml-2 font-medium text-neutral-900 underline"
-              onClick={() => {
-                edit(() => piece?.score ?? emptyScore());
-                setLabel((piece?.score ?? emptyScore()).parts[0].label);
-              }}
-            >
-              {piece ? 'Version enregistrée' : 'Repartir de zéro'}
-            </button>
-          </p>
-        )}
-
-        {/* The part being written. */}
-        <div className="mb-5 flex flex-wrap items-center gap-1">
+      {/* Hand and part, the same in both steps; then what this step needs. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-neutral-200 bg-white px-3 py-2 sm:px-5">
+        <Segmented<Hand> value={hand} onChange={setHand} options={[{ value: 'left', label: 'Gauche' }, { value: 'right', label: 'Droite' }]} />
+        <div className="flex items-center gap-0.5">
           {score.parts.map((p) => (
             <button
               key={p.label}
               type="button"
               onClick={() => showPart(p.label)}
               aria-current={p.label === part.label}
-              className={`h-9 min-w-9 rounded-lg px-3 text-sm font-semibold transition-colors ${p.label === part.label ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'}`}
+              title={`Partie ${p.label}`}
+              className={`h-9 min-w-9 rounded-lg px-2.5 text-sm font-semibold transition-colors ${p.label === part.label ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900'}`}
             >
               {p.label}
             </button>
@@ -320,68 +294,193 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
           >
             <PlusIcon className="h-4 w-4" />
           </button>
-          <span className="flex-1" />
-          <Small
-            active={preview.playing}
-            onClick={() => {
-              if (preview.playing) preview.stop();
-              else if (partStart === null) setError(`Ajoute ${part.label} à l’ordre du morceau pour l’écouter.`);
-              else preview.play(partStart, { start: partStart, end: partEnd });
-            }}
-          >
-            {preview.playing ? 'Arrêter' : 'Écouter'}
-          </Small>
-          <Small onClick={() => { preview.stop(); setWriting({ hand: current?.hand ?? 'right' }); }} title="Taper toute une suite de numéros, puis son rythme">Écrire la suite</Small>
-          <Popover label="•••" title={`Partie ${part.label}`} className="flex h-9 w-9 items-center justify-center rounded-lg text-xs text-neutral-600 hover:bg-neutral-100">
-            {(close) => (
-              <div className="space-y-4">
-                <Field label="Nom">
-                  <LabelInput
-                    key={part.label}
-                    label={part.label}
-                    onRename={(to) => {
-                      const next = renamePart(score, part.label, to);
-                      if (next === score) return setError('Une autre partie a déjà ce nom.');
-                      edit(() => next);
-                      setLabel(to.trim().slice(0, 12));
-                    }}
-                  />
-                </Field>
-                <NumberField label="Durée" unit="temps" value={part.beats} min={1} max={MAX_BEATS} onChange={(b) => edit((s) => setBeats(s, part.label, b))} />
-                <div>
-                  <div className="mb-1.5 text-sm font-semibold text-neutral-900">Décaler une main</div>
-                  {HANDS.map((h) => (
-                    <div key={h} className="flex items-center text-sm text-neutral-600">
-                      <span className="flex-1">{handName(h)}</span>
-                      <Small onClick={() => edit((s) => shiftHand(s, part.label, h, -1))} title="Une case plus tôt">←</Small>
-                      <Small onClick={() => edit((s) => shiftHand(s, part.label, h, 1))} title="Une case plus tard">→</Small>
-                    </div>
-                  ))}
-                </div>
-                <div className="-mx-2 flex flex-col items-start">
-                  <Small
-                    onClick={() => {
-                      const added = addPart(score, part.label, true);
-                      edit(() => added.score);
-                      showPart(added.label);
-                      close();
-                    }}
-                  >
-                    Dupliquer la partie
-                  </Small>
-                  {score.parts.length > 1 && <Small onClick={() => { close(); setDialog('remove'); }}>Supprimer la partie</Small>}
-                </div>
-              </div>
-            )}
-          </Popover>
         </div>
 
-        <EditGrid part={grid} selected={current} column={playingColumn} small={phone} onSelect={pick} />
-        <ErrorText>{error}</ErrorText>
+        {step === 'numbers' ? (
+          <Switch on={assign} label="Assigner" title="Éteint : on écoute. Allumé : chaque nouvelle touche jouée reçoit un numéro." onChange={setAssign} />
+        ) : (
+          <>
+            <Small active={preview.playing && !recording} onClick={listen} title="Espace">{preview.playing && !recording ? 'Arrêter' : 'Écouter'}</Small>
+            <button
+              type="button"
+              onClick={() => {
+                setPicked(null);
+                if (recording) recorder.stop();
+                else {
+                  preview.stop();
+                  void recorder.start();
+                }
+              }}
+              title={recording ? 'Arrêter (Espace)' : 'Joue au clavier, tes touches s’écrivent au bon moment'}
+              className={`flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold ${recording ? 'bg-red-600 text-white' : 'text-red-600 hover:bg-red-50'}`}
+            >
+              <span className={`h-2.5 w-2.5 ${recording ? 'rounded-sm bg-white' : 'rounded-full bg-red-600'}`} />
+              {!recorder.state ? 'S’enregistrer' : recorder.state.phase === 'count' ? `Dans ${recorder.state.left}…` : 'Arrêter'}
+            </button>
+            <Switch on={metronome} label="Métronome" title="Éteint : joue librement, le tempo de ta première prise est trouvé tout seul." onChange={setMetronome} />
+            <Switch on={fill} label="Touche par touche" title="Chaque touche jouée s’écrit à la ligne grise, qui avance ensuite." onChange={setFill} />
+            {fill && (
+              <span className="flex items-center">
+                <Small onClick={() => moveCursor(-length)} title="Reculer la ligne">↓</Small>
+                <Small onClick={() => moveCursor(length)} title="Avancer la ligne : un silence">↑ Silence</Small>
+              </span>
+            )}
+            <label className="flex items-center gap-1.5 text-xs text-neutral-500" title="Durée des notes ajoutées">
+              Durée
+              <select value={held} onChange={(e) => setHeld(Number(e.target.value))} className="rounded-lg bg-transparent py-1.5 text-neutral-900 focus:outline-none">
+                {[0.25, 0.5, 1, 2, 4].filter((d) => d * score.division >= 0.99).map((d) => <option key={d} value={d}>{{ 0.25: '¼ temps', 0.5: '½ temps', 1: '1 temps', 2: '2 temps', 4: '4 temps' }[d]}</option>)}
+                {score.division === 3 && <option value={1 / 3}>⅓ temps</option>}
+              </select>
+            </label>
+            <Tempo bpm={score.bpm} onChange={(bpm) => edit((s) => ({ ...s, bpm }))} />
+          </>
+        )}
+        <span className="flex-1" />
+        <Popover label="•••" title="Plus" className="flex h-9 w-9 items-center justify-center rounded-lg text-xs text-neutral-600 hover:bg-neutral-100">
+          {(close) => (
+            <div className="space-y-4">
+              <Field label={`Nom de la partie ${part.label}`}>
+                <LabelInput
+                  key={part.label}
+                  label={part.label}
+                  onRename={(to) => {
+                    const next = renamePart(score, part.label, to);
+                    if (next === score) return setError('Une autre partie a déjà ce nom.');
+                    edit(() => next);
+                    setLabel(to.trim().slice(0, 12));
+                  }}
+                />
+              </Field>
+              <NumberField label="Durée de la partie" unit="temps" value={part.beats} min={1} max={MAX_BEATS} onChange={(b) => edit((s) => setBeats(s, part.label, b))} />
+              <Field label="Une case vaut">
+                <Segmented<Score['division']> full value={score.division} onChange={(d) => edit((s) => setDivision(s, d))} options={DIVISIONS} />
+              </Field>
+              <div>
+                <div className="mb-1.5 text-sm font-semibold text-neutral-900">Décaler une main</div>
+                {HANDS.map((h) => (
+                  <div key={h} className="flex items-center text-sm text-neutral-600">
+                    <span className="flex-1">{handName(h)}</span>
+                    <Small onClick={() => edit((s) => shiftHand(s, part.label, h, -1))} title="Une case plus tôt">↓</Small>
+                    <Small onClick={() => edit((s) => shiftHand(s, part.label, h, 1))} title="Une case plus tard">↑</Small>
+                  </div>
+                ))}
+              </div>
+              <div className="-mx-2 flex flex-col items-start">
+                <Small
+                  onClick={() => {
+                    const added = addPart(score, part.label, true);
+                    edit(() => added.score);
+                    showPart(added.label);
+                    close();
+                  }}
+                >
+                  Dupliquer la partie
+                </Small>
+                {score.parts.length > 1 && <Small onClick={() => { close(); setDialog('remove'); }}>Supprimer la partie</Small>}
+                <Small onClick={() => { close(); preview.stop(); setWriting({ hand }); }}>Écrire une suite de numéros</Small>
+                {!piece && <Small onClick={() => { close(); preview.stop(); setImporting(true); }}>Partir d’un fichier</Small>}
+              </div>
+            </div>
+          )}
+        </Popover>
+      </div>
 
-        {/* Order the parts are played in. */}
-        <div className="mt-4 flex flex-wrap items-center gap-1 border-t border-neutral-100 pt-4">
-          <span className="mr-2 text-xs text-neutral-500">Ordre du morceau</span>
+      {error && <div className="shrink-0 bg-white px-3 pb-2 sm:px-5"><ErrorText>{error}</ErrorText></div>}
+      {placing && (
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-neutral-100 bg-white px-3 py-2 text-sm text-neutral-900 sm:px-5">
+          <span>
+            Où est le <b className="text-lg tabular-nums">{placing.numbers[0]}</b> de la main {placing.hand === 'left' ? 'gauche' : 'droite'} ? Clique sa touche.
+            {placing.everywhere && <span className="text-xs text-neutral-500"> Encore {placing.numbers.length + placing.everywhere.later.reduce((n, l) => n + l.numbers.length, 0)}.</span>}
+          </span>
+          <button type="button" onClick={() => setPlacing(null)} className="text-xs text-neutral-500 underline">{placing.everywhere ? 'Plus tard' : 'Annuler'}</button>
+        </div>
+      )}
+
+      {step === 'numbers' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-100 bg-white px-3 py-5 sm:px-5">
+          <p className="mb-4 text-sm text-neutral-500">
+            {assign ? `Joue les touches de la main ${hand === 'left' ? 'gauche' : 'droite'} dans l’ordre : 1, 2, 3…` : 'Joue pour écouter. Allume Assigner pour donner un numéro aux touches.'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {keys.map((k) => (
+              <span key={k.number} className={`flex h-12 items-center rounded-xl ${hand === 'left' ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-800'}`}>
+                <button type="button" onClick={() => playKey(k.midi)} title="Écouter" className="flex h-12 items-center gap-2 pl-4 pr-2">
+                  <b className="text-xl tabular-nums">{k.number}</b>
+                  <span className="text-sm opacity-75"><NoteText text={frenchName(k.midi)} /></span>
+                </button>
+                <button type="button" onClick={() => setPlacing({ hand, numbers: [k.number], run: null })} title="Mettre ce numéro sur une autre touche" className="h-12 px-1.5 text-xs opacity-50 hover:opacity-100">Déplacer</button>
+                <button type="button" onClick={() => edit((s) => removeKey(s, part.label, hand, k.number))} title="Supprimer le numéro et ses notes" aria-label={`Supprimer le ${k.number}`} className="h-12 pl-1.5 pr-3 opacity-50 hover:text-red-600 hover:opacity-100">✕</button>
+              </span>
+            ))}
+            {!keys.length && !empty && <span className="text-sm text-neutral-400">Aucun numéro à la main {hand === 'left' ? 'gauche' : 'droite'}.</span>}
+          </div>
+          {empty && (
+            <button
+              type="button"
+              onClick={() => setImporting(true)}
+              className="mt-2 w-full max-w-xl rounded-xl border-2 border-dashed border-neutral-200 px-4 py-5 text-center text-sm text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900"
+            >
+              <span className="block font-medium text-neutral-900">Partir d’un fichier</span>
+              <span className="mt-1 block text-xs text-neutral-400">Image de numéros ou de partition (lue par l’IA) · partition PDF · vidéo · son</span>
+            </button>
+          )}
+          {draft && changed && (
+            <p className="mt-6 text-xs text-neutral-400">
+              Brouillon repris sur cet appareil.
+              <button
+                type="button"
+                className="ml-2 underline hover:text-neutral-900"
+                onClick={() => {
+                  edit(() => piece?.score ?? emptyScore());
+                  showPart((piece?.score ?? emptyScore()).parts[0].label);
+                }}
+              >
+                {piece ? 'Version enregistrée' : 'Repartir de zéro'}
+              </button>
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col border-t border-neutral-100 bg-white pl-11 pr-11">
+          <RollEditor
+            part={part}
+            division={score.division}
+            from={from}
+            to={to}
+            hand={hand}
+            length={length}
+            cursor={fill ? Math.min(cursor, columns - 1) : null}
+            playhead={playhead}
+            picked={picked}
+            onPick={setPicked}
+            onAdd={(note) => {
+              setPicked(null);
+              edit((s) => addNotes(s, part.label, [note]));
+            }}
+            onChange={(note, by) => {
+              edit((s) => replaceNote(s, part.label, note, by));
+              if (sameNote(picked, note)) setPicked(by);
+            }}
+            onRemove={(note) => {
+              setPicked(null);
+              edit((s) => removeNote(s, part.label, note));
+            }}
+          />
+        </div>
+      )}
+
+      <div className="flex shrink-0 items-stretch gap-1 border-t border-neutral-200 bg-white px-1">
+        <OctaveButton label="Octave plus grave" onClick={() => setOctave((o) => Math.max(2, o - 1))}>‹</OctaveButton>
+        <div className="min-w-0 flex-1 px-1">
+          <PianoKeyboard from={from} to={to} labels="names" stickers={stickers} height="clamp(90px, 20dvh, 200px)" />
+        </div>
+        <OctaveButton label="Octave plus aiguë" onClick={() => setOctave((o) => Math.min(phone ? 6 : 4, o + 1))}>›</OctaveButton>
+      </div>
+
+      {/* Order the parts are played in. */}
+      {step === 'piece' && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-neutral-200 bg-white px-3 py-2 sm:px-5">
+          <span className="mr-2 text-xs text-neutral-500">Ordre</span>
           {score.order.map((l, i) => (
             <button
               key={i}
@@ -403,52 +502,11 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
             <>
               <Small onClick={() => edit((s) => addToOrder(s, part.label))} title={`Jouer ${part.label} à la fin`}>+ {part.label}</Small>
               <span className="flex-1" />
-              <Small onClick={() => (preview.playing ? preview.stop() : preview.play(0))}>{preview.playing ? 'Arrêter' : 'Écouter tout'}</Small>
+              <Small onClick={() => (preview.playing ? preview.stop() : preview.play(0))}>Écouter tout</Small>
             </>
           )}
         </div>
-      </div>
-
-      <div className="shrink-0 border-t border-neutral-200 bg-white px-3 pb-3 pt-2 sm:px-5">
-        {placing ? (
-          <div className="mb-2 flex min-h-9 flex-wrap items-center gap-3 text-sm text-neutral-900">
-            <span>Où est le <b className="text-lg tabular-nums">{placing.numbers[0]}</b> de la main {placing.hand === 'left' ? 'gauche' : 'droite'} ? Clique sa touche.{placing.everywhere && <span className="text-xs text-neutral-500"> Encore {placing.numbers.length + placing.everywhere.later.reduce((n, l) => n + l.numbers.length, 0)}.</span>}</span>
-            <button type="button" onClick={() => setPlacing(null)} className="text-xs text-neutral-500 underline">{placing.everywhere ? 'Plus tard' : 'Annuler'}</button>
-          </div>
-        ) : (
-          <div className="mb-2 min-h-9">
-            {current ? (
-              <CellPad
-                id={`${part.label}-${current.hand}-${current.step}`}
-                hand={current.hand}
-                text={currentStep ? stepText(currentStep) : ''}
-                keys={part.keys.filter((k) => k.hand === current.hand)}
-                assign={assign}
-                fill={fill}
-                chord={chord}
-                focus={!touch && !writing && !dialog && !importing}
-                onAssign={setAssign}
-                onFill={setFill}
-                onChord={setChord}
-                onTyping={(text) => { typed.current = text; }}
-                onText={(text) => writeCell(current.hand, current.step, text)}
-                onMove={move}
-                onMoveKey={(number) => setPlacing({ hand: current.hand, numbers: [number], then: null })}
-                onRemoveKey={(number) => edit((s) => removeKey(s, part.label, current.hand, number))}
-              />
-            ) : (
-              <span className="text-xs text-neutral-400">Choisis une case de la grille.</span>
-            )}
-          </div>
-        )}
-        <div className="flex items-stretch gap-1">
-          <OctaveButton label="Octave plus grave" onClick={() => setOctave((o) => Math.max(2, o - 1))}>‹</OctaveButton>
-          <div className="min-w-0 flex-1">
-            <PianoKeyboard from={from} to={to} labels="names" stickers={stickers} height="clamp(80px, 18dvh, 170px)" />
-          </div>
-          <OctaveButton label="Octave plus aiguë" onClick={() => setOctave((o) => Math.min(phone ? 6 : 4, o + 1))}>›</OctaveButton>
-        </div>
-      </div>
+      )}
 
       {writing && (
         <RunPanel
@@ -459,11 +517,12 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
           midiOf={(h, n) => midiOf(part, h, n)}
           onPlaceKeys={(h, numbers, text) => {
             setWriting(null);
-            setPlacing({ hand: h, numbers, then: { kind: 'run', text } });
+            setPlacing({ hand: h, numbers, run: text });
           }}
           onPlace={(h, run, taps) => {
             edit((s) => (taps ? placeTaps(s, part.label, h, run, taps) : placeRun(s, part.label, h, run, run.map((_, i) => i))));
             setWriting(null);
+            setStep('piece');
           }}
           onClose={() => setWriting(null)}
         />
@@ -477,9 +536,9 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
           onNumbers={(read) => {
             setImporting(false);
             edit(() => read.score);
-            setLabel(read.score.parts[0].label);
+            showPart(read.score.parts[0].label);
             setTitle(read.title);
-            setCellPicked({ hand: 'right', step: 0 });
+            setStep('numbers');
             setPlacing(placingOf(read.toPlace));
           }}
         />
@@ -516,6 +575,29 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
   );
 }
 
+// Typed, or tapped along with the music.
+function Tempo({ bpm, onChange }: { bpm: number; onChange(bpm: number): void }) {
+  const taps = useRef<number[]>([]);
+  return (
+    <span className="flex items-center gap-1 text-xs text-neutral-500">
+      <NumberField label="Tempo" unit="" value={bpm} min={20} max={300} onChange={onChange} />
+      <Small
+        title="Tape plusieurs fois en rythme avec la musique"
+        onClick={() => {
+          const now = performance.now() / 1000;
+          const last = taps.current[taps.current.length - 1];
+          if (last !== undefined && now - last > 2.5) taps.current = [];
+          taps.current = [...taps.current, now].slice(-9);
+          const heard = tappedBpm(taps.current);
+          if (heard && heard !== bpm) onChange(heard);
+        }}
+      >
+        Taper
+      </Small>
+    </span>
+  );
+}
+
 export function OctaveButton({ label, onClick, children }: { label: string; onClick(): void; children: ReactNode }) {
   return (
     <button type="button" onClick={onClick} title={label} aria-label={label} className="w-8 shrink-0 rounded-lg text-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900">{children}</button>
@@ -534,15 +616,15 @@ function NumberField({ label, unit, value, min, max, onChange }: { label: string
     if (ok !== value) onChange(ok);
   };
   return (
-    <label className="flex items-center gap-2 text-sm text-neutral-600">
-      <span className="flex-1 font-semibold text-neutral-900">{label}</span>
+    <label className="flex items-center gap-2 text-xs text-neutral-500">
+      <span className="flex-1">{label}</span>
       <input
         value={text}
         inputMode="numeric"
         onChange={(e) => setText(e.target.value)}
         onBlur={save}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-        className="w-16 rounded-lg border border-neutral-200 px-2 py-1.5 text-center tabular-nums focus:border-neutral-500 focus:outline-none"
+        className="w-14 rounded-lg border border-neutral-200 px-2 py-1.5 text-center tabular-nums text-neutral-900 focus:border-neutral-500 focus:outline-none"
       />
       {unit}
     </label>

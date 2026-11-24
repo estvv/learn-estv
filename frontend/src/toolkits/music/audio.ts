@@ -67,6 +67,20 @@ export function playNote(midi: number, durationSeconds: number, velocity = 0.8) 
   if (sampler && audioState.get() === 'ready') sampler.triggerAttackRelease(noteName(midi), durationSeconds, undefined, velocity);
 }
 
+// The metronome: a short click, higher on the first beat.
+export function tick(first: boolean) {
+  if (!tone || audioState.get() !== 'ready') return;
+  const ctx = tone.getContext().rawContext;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.frequency.value = first ? 1760 : 1175;
+  gain.gain.setValueAtTime(0.25, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.07);
+}
+
 export function releaseAll() {
   sampler?.releaseAll();
 }
