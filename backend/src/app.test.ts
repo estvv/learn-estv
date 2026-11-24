@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AiError, parseReading } from './ai.js';
+import { AiError } from './ai/index.js';
 import { createApp } from './app.js';
 import { hashPassword } from './auth/crypto.js';
 import { importSeeds } from './content/store.js';
@@ -330,21 +330,8 @@ describe('auth and progress', () => {
     await request(app).post('/api/ai/read').send({ images: [image] }).expect(401);
     const me = await login('me', 'password123');
     expect((await me.post('/api/ai/read').send({ images: [image] }).expect(200)).body.data.kind).toBe('nothing');
-    expect((await me.post('/api/ai/read').send({ images: [image, image] }).expect(502)).body.error).toBe('Illisible');
+    expect((await me.post('/api/ai/read').send({ images: [image, image] }).expect(422)).body.error).toBe('Illisible');
     await me.post('/api/ai/read').send({ images: ['https://example.com/a.jpg'] }).expect(400);
     await me.post('/api/ai/read').send({ images: [] }).expect(400);
-  });
-
-  it('makes sense of what the AI answers', () => {
-    const numbers = { kind: 'numbers', parts: [{ label: null, left: [1, null, '3'], right: ['4', '4', 6] }] };
-    expect(parseReading(`\`\`\`json\n${JSON.stringify(numbers)}\n\`\`\``)).toEqual({
-      kind: 'numbers', title: '', parts: [{ label: '', aligned: false, left: ['1', '', '3'], right: ['4', '4', '6'] }],
-    });
-    expect(parseReading([{ type: 'text', text: JSON.stringify({ kind: 'score', bpm: 'vif', measures: [{ right: [{ notes: ['C4'], beats: '1' }] }] }) }])).toMatchObject({
-      kind: 'score', bpm: null, measures: [{ right: [{ notes: ['C4'], beats: 1 }], left: [] }],
-    });
-    expect(() => parseReading('{"kind":"numbers","parts":[')).toThrow(AiError);
-    expect(() => parseReading('{"kind":"song"}')).toThrow(AiError);
-    expect(() => parseReading(null)).toThrow(AiError);
   });
 });

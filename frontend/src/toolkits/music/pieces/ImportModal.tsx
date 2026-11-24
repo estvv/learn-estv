@@ -171,7 +171,7 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
 
         {!busy && kind === 'image' && !result && (
           <div className="space-y-3">
-            <p className="text-sm text-neutral-600">L’IA lit l’image : des numéros écrits, ou une partition. Elle est envoyée à Mistral pour être lue.</p>
+            <p className="text-sm text-neutral-600">L’IA lit l’image : des numéros écrits, ou une partition. Elle est envoyée à Gemini (Google), ou à Mistral si Gemini ne répond pas.</p>
             <button type="button" onClick={() => void byAi(files)} className={primaryButton}>Lire l’image</button>
           </div>
         )}
@@ -183,7 +183,7 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
               ? <Sound sensitivity={sensitivity} again={false} onSensitivity={setSensitivity} onRun={() => file && void bySound(file)} />
               : (
                 <>
-                  <p className="text-xs text-neutral-500">L’IA peut essayer sur ses pages, envoyées à Mistral en images (les {MAX_PICTURES} premières). À vérifier ensuite.</p>
+                  <p className="text-xs text-neutral-500">L’IA peut essayer sur ses pages, envoyées en images à Gemini ou Mistral (les {MAX_PICTURES} premières). À vérifier ensuite.</p>
                   <button type="button" onClick={() => void byAi(files)} className={secondaryButton}>Essayer avec l’IA</button>
                 </>
               )}

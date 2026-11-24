@@ -13,6 +13,10 @@ export async function api<T>(endpoint: string, options: RequestInit & { json?: u
     body: json !== undefined ? JSON.stringify(json) : init.body,
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(body.error ?? `Erreur ${response.status}`, response.status);
+  if (!response.ok) {
+    // No answer of ours: the server is down or restarting.
+    const unreachable = [502, 503, 504].includes(response.status) ? 'Le serveur ne répond pas (il redémarre peut-être). Réessaie dans quelques secondes.' : `Erreur ${response.status}`;
+    throw new ApiError(body.error ?? unreachable, response.status);
+  }
   return body.data as T;
 }

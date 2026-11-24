@@ -22,7 +22,10 @@ export const config = {
   contentDir: process.env.CONTENT_DIR ?? path.join(repoRoot, 'content/packs'),
   cookieSecure: process.env.COOKIE_SECURE !== '0' && process.env.NODE_ENV === 'production',
   mistralApiKey: process.env.MISTRAL_API_KEY ?? '',
-  // Reads images: must be a model that takes them.
-  mistralVisionModel: process.env.MISTRAL_VISION_MODEL || 'mistral-large-4-0',
+  geminiApiKey: process.env.GEMINI_API_KEY ?? '',
+  // Empty: the best one whose free quota is not used up.
+  geminiModel: process.env.GEMINI_MODEL ?? '',
+  // Reads images; empty: the best one the subscription allows.
+  mistralVisionModel: process.env.MISTRAL_VISION_MODEL ?? '',
   mistralModel: process.env.MISTRAL_MODEL ?? 'mistral-large-latest',
 };

@@ -19,6 +19,8 @@ services:
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - MISTRAL_MODEL=${MISTRAL_MODEL:-mistral-large-latest}
       - MISTRAL_VISION_MODEL=${MISTRAL_VISION_MODEL:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-}
     restart: unless-stopped
     read_only: true
     tmpfs:

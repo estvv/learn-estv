@@ -1,15 +1,31 @@
 import { aiReadingSchema, type AiReading } from '@learn/shared';
-import { config } from './config.js';
 
-// Reads images with Mistral. They are sent to its API, and nowhere else.
-export type ImageReader = (images: string[]) => Promise<AiReading>;
+// What every AI is asked, and what is made of its answer.
 
 // Shown to the user as they are.
 export class AiError extends Error {}
 
-const TIMEOUT = 110_000;
+export type ImageReader = (images: string[]) => Promise<AiReading>;
 
-const PROMPT = `Tu lis des images liées au piano et tu réponds uniquement par un objet JSON.
+export interface Answer {
+  status: number;
+  body: unknown;
+}
+
+// Of a whole reading, whatever the number of models tried.
+export const TIMEOUT = 110_000;
+
+export async function post(url: string, headers: Record<string, string>, body: unknown, signal: AbortSignal): Promise<Answer> {
+  try {
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal });
+    return { status: response.status, body: await response.json().catch(() => null) };
+  } catch {
+    throw new AiError('l’IA n’a pas répondu');
+  }
+}
+
+export const ASK = 'Lis ces images.';
+export const PROMPT = `Tu lis des images liées au piano et tu réponds uniquement par un objet JSON.
 
 Cas 1 — des NUMÉROS de touches, écrits pour apprendre un morceau (notes personnelles, capture de vidéo, « gauche 3-5-7 2-4-6 / droite 4-4 6-2-5-3 », lignes « G : » et « D : »).
 {"kind":"numbers","title":"","parts":[{"label":"A","aligned":true,"left":["1","","3"],"right":["4","4","6"]}]}
@@ -32,37 +48,6 @@ Cas 3 — ni l'un ni l'autre, ou illisible : {"kind":"nothing","reason":"en une 
 
 Plusieurs images sont la suite l'une de l'autre. N'invente rien : en cas de doute sur un symbole, mets ce qui est le plus probable ; si tout est illisible, cas 3.`;
 
-export const mistralReader: ImageReader = async (images) => {
-  if (!config.mistralApiKey) throw new AiError('La lecture par l’IA n’est pas configurée sur ce serveur');
-  let response: Response;
-  try {
-    response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.mistralApiKey}` },
-      body: JSON.stringify({
-        model: config.mistralVisionModel,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: PROMPT },
-          { role: 'user', content: [{ type: 'text', text: 'Lis ces images.' }, ...images.map((url) => ({ type: 'image_url', image_url: url }))] },
-        ],
-      }),
-      signal: AbortSignal.timeout(TIMEOUT),
-    });
-  } catch {
-    throw new AiError('L’IA n’a pas répondu. Réessaie, avec moins d’images si possible.');
-  }
-  if (!response.ok) {
-    console.error('Mistral', response.status, (await response.text().catch(() => '')).slice(0, 300));
-    if (response.status === 401) throw new AiError('La clé Mistral est refusée');
-    if (response.status === 429) throw new AiError('Trop de demandes à l’IA : réessaie dans une minute');
-    throw new AiError(`L’IA a refusé la demande (${response.status})`);
-  }
-  const body = (await response.json().catch(() => null)) as { choices?: { message?: { content?: unknown } }[] } | null;
-  return parseReading(body?.choices?.[0]?.message?.content);
-};
-
 // The content is text, or pieces of text.
 export function parseReading(content: unknown): AiReading {
   const text = Array.isArray(content) ? content.map((c) => (c as { text?: string }).text ?? '').join('') : String(content ?? '');
@@ -71,9 +56,10 @@ export function parseReading(content: unknown): AiReading {
   try {
     value = JSON.parse(json);
   } catch {
-    throw new AiError('L’IA a donné une réponse incomplète. Réessaie avec une image plus petite ou plus nette.');
+    throw new AiError('réponse incomplète, réessaie avec une image plus petite ou plus nette');
   }
   const parsed = aiReadingSchema.safeParse(value);
-  if (!parsed.success) throw new AiError('L’IA a donné une réponse inutilisable. Réessaie avec une image plus nette.');
+  if (!parsed.success) console.error('IA, réponse inutilisable :', parsed.error.issues.slice(0, 3));
+  if (!parsed.success) throw new AiError('réponse inutilisable, réessaie avec une image plus nette');
   return parsed.data;
 }

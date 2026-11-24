@@ -5,7 +5,7 @@ import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
 import { loadSession } from './auth/session.js';
 import type { DB } from './db/index.js';
-import { mistralReader, type ImageReader } from './ai.js';
+import { readImages as readWithAi, type ImageReader } from './ai/index.js';
 import { adminRoutes } from './routes/admin.js';
 import { aiRoutes } from './routes/ai.js';
 import { authRoutes } from './routes/auth.js';
@@ -16,7 +16,7 @@ import { pieceRoutes } from './routes/pieces.js';
 import { userRoutes } from './routes/users.js';
 import { catalogCover, type CoverFinder } from './covers.js';
 
-export function createApp(db: DB, { findCover = catalogCover, readImages = mistralReader }: { findCover?: CoverFinder; readImages?: ImageReader } = {}) {
+export function createApp(db: DB, { findCover = catalogCover, readImages = readWithAi }: { findCover?: CoverFinder; readImages?: ImageReader } = {}) {
   const app = express();
   // Caddy -> nginx -> here: two proxies in front.
   app.set('trust proxy', 2);
