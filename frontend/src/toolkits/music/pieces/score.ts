@@ -62,6 +62,13 @@ export function assignKey(score: Score, label: string, hand: Hand, number: numbe
   });
 }
 
+// The next number, on a key that has none yet.
+export function numberKey(score: Score, label: string, hand: Hand, midi: number): Score {
+  return numberOf(partOf(score, label), hand, midi) === undefined ? change(score, label, (p) => withKeys(p, hand, [midi])) : score;
+}
+
+export const hasNumber = (p: ScorePart, hand: Hand, midi: number) => numberOf(p, hand, midi) !== undefined;
+
 // Takes a number off its key, with the notes written with it.
 export function removeKey(score: Score, label: string, hand: Hand, number: number): Score {
   return change(score, label, (p) => {

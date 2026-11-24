@@ -4,7 +4,7 @@ import { BeatGrid } from './grid';
 import { givenByScore, numberPiece, partText } from './numbers';
 import { fromSaved } from './parts';
 import {
-  addPart, addToOrder, assignKey, emptyScore, moveInOrder, parseRun, partOf, placeRun, placeTaps, quantizeTaps, removeFromOrder, removeKey, removePart, renamePart,
+  addPart, addToOrder, assignKey, emptyScore, hasNumber, moveInOrder, numberKey, parseRun, partOf, placeRun, placeTaps, quantizeTaps, removeFromOrder, removeKey, removePart, renamePart,
   runText, scoreGrid, setBeats, setCell, setDivision, shiftHand, unknownNumbers,
 } from './score';
 
@@ -55,6 +55,15 @@ describe('writing by hand', () => {
     s = assignKey(s, 'A', 'left', 1, 45);
     expect(scoreSchema.safeParse(s).success).toBe(true);
     expect(setCell(s, 'A', 'left', 0, []).parts[0].notes).toHaveLength(1);
+  });
+
+  it('numbers keys without writing them', () => {
+    let s = numberKey(emptyScore(), 'A', 'left', 50);
+    s = numberKey(s, 'A', 'left', 47);
+    expect(partOf(s, 'A').keys.map((k) => `${k.midi}=${k.number}`)).toEqual(['50=1', '47=2']);
+    expect(partOf(s, 'A').notes).toEqual([]);
+    expect(numberKey(s, 'A', 'left', 50)).toBe(s);
+    expect([hasNumber(partOf(s, 'A'), 'left', 47), hasNumber(partOf(s, 'A'), 'right', 47)]).toEqual([true, false]);
   });
 
   it('takes a number away with its notes, in that hand and that part only', () => {

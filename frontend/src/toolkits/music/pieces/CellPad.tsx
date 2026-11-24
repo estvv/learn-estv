@@ -1,8 +1,10 @@
 import { frenchName, type Hand } from '@learn/shared';
 import { useEffect, useRef, useState } from 'react';
 import { NoteText } from '../Accidentals';
+import { Segmented } from '../../../components/Segmented';
+import { Switch } from '../../../components/Switch';
 import { inputBus } from '../input/bus';
-import { handName, type Key } from './numbers';
+import type { Key } from './numbers';
 
 // Fills the cell picked: type its numbers, or touch the numbers already known
 // (as on the keyboard, the sound comes with it).
@@ -14,16 +16,22 @@ export function playKey(midi: number) {
   setTimeout(() => inputBus.noteOff(midi, 'virtual'), 220);
 }
 
-export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping, onText, onMove, onMoveKey, onRemoveKey }: {
+export function CellPad({ id, hand, text, keys, assign, fill, chord, focus, onAssign, onFill, onChord, onTyping, onText, onMove, onMoveKey, onRemoveKey }: {
   // Of the cell: another cell, another text.
   id: string;
   hand: Hand;
   text: string;
   keys: Key[];
+  // Keys played get a number. Left out: numbers come by themselves.
+  assign?: boolean;
+  // Keys played are written in the cell. Off: they are only heard.
+  fill: boolean;
   // Keys add up in the cell instead of going to the next one.
   chord: boolean;
   // Typed on a computer: its own keys move and empty.
   focus: boolean;
+  onAssign?(on: boolean): void;
+  onFill(on: boolean): void;
   onChord(on: boolean): void;
   // What is typed, before it is entered; empty once it is.
   onTyping?(text: string): void;
@@ -53,7 +61,7 @@ export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping,
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs font-semibold text-neutral-500">{handName(hand)}</span>
+      <Segmented<Hand> value={hand} onChange={(h) => h !== hand && onMove('hand')} options={[{ value: 'left', label: 'Gauche' }, { value: 'right', label: 'Droite' }]} />
       <input
         ref={input}
         value={value}
@@ -110,16 +118,18 @@ export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping,
             <span className="text-xs opacity-75"><NoteText text={frenchName(k.midi)} /></span>
           </button>
         )))}
-        {!keys.length && <span className="text-xs text-neutral-400">Tape un numéro, ou joue une touche du clavier.</span>}
+        {!keys.length && <span className="text-xs text-neutral-400">{onAssign ? 'Aucun numéro. Allume Assigner, puis joue les touches.' : 'Aucun numéro dans cette main.'}</span>}
         {onMoveKey && keys.length > 0 && (
           <button type="button" onClick={() => setArranging(!arranging)} className={`h-9 px-2 text-xs ${arranging ? 'font-medium text-neutral-900' : 'text-neutral-400 hover:text-neutral-900'}`}>
             {arranging ? 'Terminé' : 'Modifier les numéros'}
           </button>
         )}
       </div>
-      <label className="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-600" title="Les touches jouées s’ajoutent dans la même case">
-        <input type="checkbox" checked={chord} onChange={(e) => onChord(e.target.checked)} className="h-4 w-4 accent-neutral-900" />Accord
-      </label>
+      <div className="flex flex-wrap items-center">
+        {onAssign && <Switch on={!!assign} label="Assigner" title="Chaque nouvelle touche jouée reçoit un numéro" onChange={onAssign} />}
+        <Switch on={fill} label="Remplir" title="Les touches jouées s’écrivent dans la grille" onChange={onFill} />
+        {fill && <Switch on={chord} label="Accord" title="Les touches jouées s’ajoutent dans la même case" onChange={onChord} />}
+      </div>
       {!focus && <button type="button" onClick={() => onText('')} disabled={!text} className="h-9 rounded-lg px-2 text-xs font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-35">Vider</button>}
       {!focus && <div className="flex">
         <button type="button" onClick={() => onMove('previous')} aria-label="Case précédente" className="h-9 w-9 rounded-lg text-neutral-600 hover:bg-neutral-100">←</button>

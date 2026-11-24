@@ -39,6 +39,8 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
   const part: Part = parts[index] ?? parts[0];
   const [cell, setCell] = useState<Cell | null>(null);
   const [chord, setChord] = useState(false);
+  // Off: keys played are only heard.
+  const [fill, setFill] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -96,7 +98,7 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
 
   const onKey = useRef<(midi: number) => void>(() => {});
   onKey.current = (midi) => {
-    if (leaving || preview.playing || !current) return;
+    if (leaving || preview.playing || !current || !fill) return;
     const now = stepAt(current)?.notes.map((n) => n.midi) ?? [];
     put(current, !chord ? [midi] : now.includes(midi) ? now.filter((m) => m !== midi) : [...now, midi]);
     if (!chord) move('next');
@@ -187,8 +189,10 @@ export function NotesEditor({ piece, onSaved, onClose }: { piece: StoredPiece; o
               hand={current.hand}
               text={currentStep ? stepText(currentStep) : ''}
               keys={keys.filter((k) => k.hand === (current.hand as Hand))}
+              fill={fill}
               chord={chord}
               focus={!touch && !leaving}
+              onFill={setFill}
               onChord={setChord}
               onText={(text) => write(current, text)}
               onMove={move}

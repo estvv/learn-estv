@@ -21,7 +21,7 @@ import { DifficultyPicker, FolderSelect } from './pieceFields';
 import { SlidersIcon } from './PlayerControls';
 import { RunPanel } from './RunPanel';
 import {
-  addPart, addToOrder, assignKey, cellMidis, emptyScore, HANDS, MAX_BEATS, midiOf, moveInOrder, parseRun, partOf, placeRun, placeTaps,
+  addPart, addToOrder, assignKey, cellMidis, emptyScore, hasNumber, HANDS, MAX_BEATS, midiOf, moveInOrder, numberKey, parseRun, partOf, placeRun, placeTaps,
   removeFromOrder, removeKey, removePart, renamePart, runText, scoreGrid, setBeats, setCell, setDivision, shiftHand, unknownNumbers,
 } from './score';
 import type { PieceFolder, StoredPiece } from './types';
@@ -81,6 +81,9 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
   const grid = useMemo(() => scoreGrid(score, part.label), [score, part.label]);
   const [cell, setCellPicked] = useState<Cell | null>({ hand: 'right', step: 0 });
   const [chord, setChord] = useState(false);
+  // What playing a key does, besides being heard.
+  const [assign, setAssign] = useState(false);
+  const [fill, setFill] = useState(false);
   const [placing, setPlacing] = useState<Placing | null>(() => placingOf(given?.toPlace));
   // From a file instead: what it is read into may come here, or be a piece by itself.
   const [importing, setImporting] = useState(false);
@@ -184,10 +187,19 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
       }
       return;
     }
-    if (!cell || cell.step >= grid.columns) return;
+    if (!cell) return;
+    const numbered = assign ? numberKey(score, part.label, cell.hand, midi) : score;
+    if (!fill) {
+      if (numbered !== score) edit(() => numbered);
+      return;
+    }
+    if (!hasNumber(partOf(numbered, part.label), cell.hand, midi)) {
+      return setError(`Cette touche n’a pas de numéro à la main ${cell.hand === 'left' ? 'gauche' : 'droite'}. Allume Assigner pour lui en donner un.`);
+    }
+    if (cell.step >= grid.columns) return;
     const now = cellMidis(part, cell.hand, cell.step);
     const midis = !chord ? [midi] : now.includes(midi) ? now.filter((m) => m !== midi) : [...now, midi];
-    edit((s) => setCell(s, part.label, cell.hand, cell.step, midis));
+    edit(() => setCell(numbered, part.label, cell.hand, cell.step, midis));
     if (!chord) move('next');
   };
   // Not the microphone: it would hear the preview.
@@ -411,8 +423,12 @@ export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
                 hand={current.hand}
                 text={currentStep ? stepText(currentStep) : ''}
                 keys={part.keys.filter((k) => k.hand === current.hand)}
+                assign={assign}
+                fill={fill}
                 chord={chord}
                 focus={!touch && !writing && !dialog && !importing}
+                onAssign={setAssign}
+                onFill={setFill}
                 onChord={setChord}
                 onTyping={(text) => { typed.current = text; }}
                 onText={(text) => writeCell(current.hand, current.step, text)}
