@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { pieceDifficulties, pieceDuration, pieceEditsSchema, pieceHands, pieceLevels, pieceNoteSchema, pieceSchema, pieceSectionsSchema, renderScore, scoreSchema, trimSilence, type Score } from '@learn/shared';
+import { pieceDifficulties, pieceDuration, pieceEditsSchema, pieceLevels, pieceNoteSchema, pieceSchema, pieceSectionsSchema, renderScore, scoreSchema, trimSilence, type Score } from '@learn/shared';
 import { z } from 'zod';
 import { requireUser } from '../auth/session.js';
 import { coverFromLink, isCatalogImage, type CoverFinder } from '../covers.js';
@@ -29,7 +29,6 @@ const updateBody = z.object({
   folder_id: folderId.optional(),
   difficulty: difficulty.optional(),
   level: z.enum(pieceLevels).optional(),
-  hands: z.enum(pieceHands).nullable().optional(),
   // Parts set by hand; null: found automatically.
   sections: pieceSectionsSchema.nullable().optional(),
   // Changes made by hand to the easier levels; null: none.
@@ -180,7 +179,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
   });
 
   router.get('/:id', (req, res) => {
-    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, sections, score, edits, hands, COALESCE(level, 'original') AS level, data FROM pieces WHERE id = ? AND user_id = ?`)
+    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, sections, score, edits, COALESCE(level, 'original') AS level, data FROM pieces WHERE id = ? AND user_id = ?`)
       .get(Number(req.params.id), req.user!.id) as { data: string } & Record<string, unknown> | undefined;
     if (!row) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
     const { data, tracks, sections, score, edits, ...meta } = row;
@@ -225,7 +224,6 @@ export function pieceRoutes(db: DB, findCover: CoverFinder) {
     if (b.difficulty !== undefined) { sets.push('difficulty = ?'); values.push(b.difficulty); }
     if (b.level !== undefined) { sets.push('level = ?'); values.push(b.level); }
     if (b.sections !== undefined) { sets.push('sections = ?'); values.push(b.sections && JSON.stringify(b.sections)); }
-    if (b.hands !== undefined) { sets.push('hands = ?'); values.push(b.hands); }
     if (b.edits !== undefined) { sets.push('edits = ?'); values.push(b.edits && JSON.stringify(b.edits)); }
     if (b.description !== undefined) { sets.push('description = ?'); values.push(textOrNull(b.description)); }
     if (b.tracks_enabled !== undefined) {

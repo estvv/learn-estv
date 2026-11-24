@@ -14,6 +14,7 @@ import { foldersApi, piecesApi } from './api';
 import { CellPad } from './CellPad';
 import { commit, redo, startHistory, undo, type History } from './edit';
 import { EditGrid, type Cell } from './EditGrid';
+import { ImportModal } from './ImportModal';
 import { LabelInput, Small } from './Numbers';
 import { handName, stepText } from './numbers';
 import { DifficultyPicker, FolderSelect } from './pieceFields';
@@ -40,19 +41,33 @@ interface Placing {
   numbers: number[];
   // What was being written.
   then: { kind: 'cell'; step: number; text: string } | { kind: 'run'; text: string } | null;
+  // Numbers read on a picture: the same key in every part, then the other hand's.
+  everywhere?: { later: { hand: Hand; numbers: number[] }[] };
 }
 
-export function ScoreEditor({ subject, piece, onSaved, onClose }: {
+// A score to start from, with numbers whose keys are not known yet.
+export interface ScoreDraft {
+  title: string;
+  score: Score;
+  toPlace: { hand: Hand; numbers: number[] }[];
+}
+
+const placingOf = ([first, ...later]: ScoreDraft['toPlace'] = []): Placing | null =>
+  (first ? { ...first, then: null, everywhere: { later } } : null);
+
+export function ScoreEditor({ subject, piece, from: given, onSaved, onClose }: {
   subject: string;
   // Null: a new piece.
   piece: StoredPiece | null;
+  from?: ScoreDraft;
   onSaved(id: number): void;
   onClose(): void;
 }) {
   const key = draftKey(piece?.id ?? null);
-  const [draft] = useState(() => readJson<{ score: Score | null }>(key, { score: null }).score);
+  const [draft] = useState(() => (given ? null : readJson<{ score: Score | null }>(key, { score: null }).score));
   const [history, setHistory] = useState<History<Score>>(() => {
     const saved = piece?.score ?? emptyScore();
+    if (given) return { ...startHistory(saved), past: [saved], present: given.score };
     return draft?.parts?.length ? { ...startHistory(saved), past: [saved], present: draft } : startHistory(saved);
   });
   const score = history.present;
@@ -66,7 +81,14 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
   const grid = useMemo(() => scoreGrid(score, part.label), [score, part.label]);
   const [cell, setCellPicked] = useState<Cell | null>({ hand: 'right', step: 0 });
   const [chord, setChord] = useState(false);
-  const [placing, setPlacing] = useState<Placing | null>(null);
+  const [placing, setPlacing] = useState<Placing | null>(() => placingOf(given?.toPlace));
+  // From a file instead: what it is read into may come here, or be a piece by itself.
+  const [importing, setImporting] = useState(false);
+  const [title, setTitle] = useState(given?.title ?? '');
+  const [folders, setFolders] = useState<PieceFolder[]>([]);
+  useEffect(() => {
+    if (importing) foldersApi.list(subject).then(setFolders, () => {});
+  }, [importing, subject]);
   const [writing, setWriting] = useState<{ hand: Hand; text?: string } | null>(null);
   const [orderAt, setOrderAt] = useState<number | null>(null);
   const [dialog, setDialog] = useState<'save' | 'leave' | 'remove' | null>(null);
@@ -136,18 +158,21 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
   };
   const onKey = useRef<(midi: number) => void>(() => {});
   onKey.current = (midi) => {
-    if (writing || dialog || preview.playing) return;
+    if (writing || dialog || importing || preview.playing) return;
     const asked = placing ?? typedPlacing();
     typed.current = '';
     if (asked) {
       const [number, ...rest] = asked.numbers;
       const { hand, then } = asked;
-      const next = assignKey(score, part.label, hand, number, midi);
+      const next = asked.everywhere
+        ? score.parts.reduce((s, p) => assignKey(s, p.label, hand, number, midi), score)
+        : assignKey(score, part.label, hand, number, midi);
       if (rest.length) {
         edit(() => next);
         return setPlacing({ ...asked, numbers: rest });
       }
-      setPlacing(null);
+      const [following, ...later] = asked.everywhere?.later ?? [];
+      setPlacing(following ? { ...following, then: null, everywhere: { later } } : null);
       if (then?.kind === 'cell') {
         const p = partOf(next, part.label);
         const midis = (parseRun(then.text.replace(/\s+/g, '+'))?.[0] ?? []).map((n) => midiOf(p, hand, n)!);
@@ -225,11 +250,22 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
             </Field>
           </div>
         </Popover>
+        {!piece && <Small onClick={() => { preview.stop(); setImporting(true); }} title="Image, partition PDF, vidéo ou son">Partir d’un fichier</Small>}
         <Small onClick={() => (changed ? setDialog('leave') : onClose())}>Quitter</Small>
         <button type="button" onClick={() => void save()} disabled={saving} className={`${primaryButton} ml-1`}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-200 bg-white px-3 py-4 sm:px-6">
+        {!piece && !part.notes.length && !placing && score.parts.length === 1 && (
+          <button
+            type="button"
+            onClick={() => setImporting(true)}
+            className="mb-5 w-full rounded-xl border-2 border-dashed border-neutral-200 px-4 py-5 text-center text-sm text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900"
+          >
+            <span className="block font-medium text-neutral-900">Partir d’un fichier</span>
+            <span className="mt-1 block text-xs text-neutral-400">Image de numéros ou de partition (lue par l’IA) · partition PDF · vidéo · son. Ou remplis la grille à la main.</span>
+          </button>
+        )}
         {draft && changed && (
           <p className="mb-3 text-xs text-neutral-500">
             Brouillon repris sur cet appareil.
@@ -364,8 +400,8 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
       <div className="shrink-0 border-t border-neutral-200 bg-white px-3 pb-3 pt-2 sm:px-5">
         {placing ? (
           <div className="mb-2 flex min-h-9 flex-wrap items-center gap-3 text-sm text-neutral-900">
-            <span>Où est le <b className="text-lg tabular-nums">{placing.numbers[0]}</b> de la main {placing.hand === 'left' ? 'gauche' : 'droite'} ? Clique sa touche.</span>
-            <button type="button" onClick={() => setPlacing(null)} className="text-xs text-neutral-500 underline">Annuler</button>
+            <span>Où est le <b className="text-lg tabular-nums">{placing.numbers[0]}</b> de la main {placing.hand === 'left' ? 'gauche' : 'droite'} ? Clique sa touche.{placing.everywhere && <span className="text-xs text-neutral-500"> Encore {placing.numbers.length + placing.everywhere.later.reduce((n, l) => n + l.numbers.length, 0)}.</span>}</span>
+            <button type="button" onClick={() => setPlacing(null)} className="text-xs text-neutral-500 underline">{placing.everywhere ? 'Plus tard' : 'Annuler'}</button>
           </div>
         ) : (
           <div className="mb-2 min-h-9">
@@ -376,7 +412,7 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
                 text={currentStep ? stepText(currentStep) : ''}
                 keys={part.keys.filter((k) => k.hand === current.hand)}
                 chord={chord}
-                focus={!touch && !writing && !dialog}
+                focus={!touch && !writing && !dialog && !importing}
                 onChord={setChord}
                 onTyping={(text) => { typed.current = text; }}
                 onText={(text) => writeCell(current.hand, current.step, text)}
@@ -415,6 +451,22 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
           onClose={() => setWriting(null)}
         />
       )}
+      {importing && (
+        <ImportModal
+          subject={subject}
+          folders={folders}
+          onClose={() => setImporting(false)}
+          onSaved={onSaved}
+          onNumbers={(read) => {
+            setImporting(false);
+            edit(() => read.score);
+            setLabel(read.score.parts[0].label);
+            setTitle(read.title);
+            setCellPicked({ hand: 'right', step: 0 });
+            setPlacing(placingOf(read.toPlace));
+          }}
+        />
+      )}
       {dialog === 'remove' && (
         <ConfirmModal
           title={`Supprimer la partie ${part.label} ?`}
@@ -442,7 +494,7 @@ export function ScoreEditor({ subject, piece, onSaved, onClose }: {
           onClose={() => setDialog(null)}
         />
       )}
-      {dialog === 'save' && <SaveModal subject={subject} score={score} onClose={() => setDialog(null)} onSaved={done} />}
+      {dialog === 'save' && <SaveModal subject={subject} title={title} score={score} onClose={() => setDialog(null)} onSaved={done} />}
     </div>
   );
 }
@@ -480,8 +532,8 @@ function NumberField({ label, unit, value, min, max, onChange }: { label: string
   );
 }
 
-function SaveModal({ subject, score, onClose, onSaved }: { subject: string; score: Score; onClose(): void; onSaved(id: number): void }) {
-  const [title, setTitle] = useState('');
+function SaveModal({ subject, title: named, score, onClose, onSaved }: { subject: string; title: string; score: Score; onClose(): void; onSaved(id: number): void }) {
+  const [title, setTitle] = useState(named);
   const [artist, setArtist] = useState('');
   const [folder, setFolder] = useState<number | null>(null);
   const [folders, setFolders] = useState<PieceFolder[]>([]);

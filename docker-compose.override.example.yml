@@ -35,6 +35,7 @@ services:
       PORT: "8080"
       COOKIE_SECURE: "0"
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_VISION_MODEL: ${MISTRAL_VISION_MODEL:-}
     healthcheck:
       start_period: 180s
 

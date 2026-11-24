@@ -6,4 +6,5 @@ export * from './modules/index.ts';
 export * from './mastery.ts';
 export * from './piece.ts';
 export * from './score.ts';
+export * from './aiReading.ts';
 export * from './unitFile.ts';

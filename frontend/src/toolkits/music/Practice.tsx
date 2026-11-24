@@ -15,7 +15,7 @@ import { listOrder, neighbour } from './pieces/folderPath';
 import { NotesEditor } from './pieces/NotesEditor';
 import { PiecesPanel } from './pieces/PiecesPanel';
 import { PlayAlong } from './pieces/PlayAlong';
-import { ScoreEditor } from './pieces/ScoreEditor';
+import { ScoreEditor, type ScoreDraft } from './pieces/ScoreEditor';
 import { currentOf, drop, next, previous, queueFrom, startQueue, type Queue } from './pieces/shuffle';
 import type { StoredPiece } from './pieces/types';
 
@@ -34,6 +34,8 @@ export function MusicPractice({ subject }: { subject: string }) {
   const [piece, setPiece] = useState<StoredPiece | null>(null);
   // Writing a piece: a new one (?nouveau) or this one (?modifier).
   const creating = params.has('nouveau');
+  // Read on a picture: where the new one starts from.
+  const [draft, setDraft] = useState<ScoreDraft | null>(null);
   const changing = !!pieceId && !queue && params.has('modifier');
   // Read again once changed.
   const [version, setVersion] = useState(0);
@@ -87,7 +89,15 @@ export function MusicPractice({ subject }: { subject: string }) {
   }, [queued]);
 
   if (creating) {
-    return <ScoreEditor subject={subject} piece={null} onSaved={(id) => setParams({ morceau: String(id) }, { replace: true })} onClose={() => setParams({}, { replace: true })} />;
+    return (
+      <ScoreEditor
+        subject={subject}
+        piece={null}
+        from={draft ?? undefined}
+        onSaved={(id) => setParams({ morceau: String(id) }, { replace: true })}
+        onClose={() => setParams({}, { replace: true })}
+      />
+    );
   }
   if (changing && piece && piece.id === pieceId) {
     const back = () => setParams({ morceau: String(pieceId) }, { replace: true });
@@ -154,7 +164,8 @@ export function MusicPractice({ subject }: { subject: string }) {
             const started = startQueue(ids);
             setQueue(started && { ...started, turn: turn.current + 1 });
           }}
-          onCreate={() => {
+          onCreate={(from) => {
+            setDraft(from ?? null);
             setPanel(false);
             setQueue(null);
             setParams({ nouveau: '1' });

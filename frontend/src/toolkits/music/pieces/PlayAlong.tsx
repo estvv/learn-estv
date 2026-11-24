@@ -1,4 +1,4 @@
-import { isBlack, pieceDuration, type Hand, type PieceHands, type PieceLevel, type PieceSection } from '@learn/shared';
+import { isBlack, pieceDuration, type Hand, type PieceLevel, type PieceSection } from '@learn/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RepeatIcon, ShuffleIcon } from '../../../components/icons';
 import { ConfirmModal } from '../../../components/Modal';
@@ -10,7 +10,7 @@ import { ensureAudio, playNote } from '../audio';
 import { useNoteInput } from '../input/hooks';
 import { PianoKeyboard, type KeyLabels, type KeyMark, type Sticker } from '../PianoKeyboard';
 import { piecesApi } from './api';
-import { changeOf, editable, handsOf, layoutOf, levelNames, levelNotes, levelOf, playedSpan, visible } from './derive';
+import { changeOf, editable, layoutOf, levelNames, levelNotes, levelOf, playedSpan, visible } from './derive';
 import {
   addNote, commit, cutAfter, cutBefore, redo, removeNotes, startHistory, switchHand, transpose, undo, withIds, withoutIds,
   type EditNote, type History,
@@ -323,10 +323,6 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
     setPanel(open);
     if (!compact) writeJson(PANEL_KEY, { open });
   };
-  const pickHands = (next: PieceHands) => {
-    onChange({ hands: next });
-    void piecesApi.update(piece.id, { hands: next }).catch(() => {});
-  };
   const toggleNumbers = (on: boolean) => {
     setNumbersOn(on);
     writeJson(NUMBERS_KEY, { on });
@@ -437,7 +433,6 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
           rate={rate}
           hand={editing ? null : hand}
           bothHands={bothHands}
-          hands={editing || score ? null : handsOf(piece)}
           numbered={editing ? null : numbersOn}
           tracks={piece.tracks ?? []}
           notes={piece.notes}
@@ -447,7 +442,6 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
           onLevel={pickLevel}
           onRate={pickRate}
           onHand={setHand}
-          onHands={pickHands}
           onNumbered={toggleNumbers}
           onTracks={pickTracks}
           onBigKeys={setBigKeys}

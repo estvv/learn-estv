@@ -1,6 +1,6 @@
-import { cutStart, pieceDuration, renderScore, soundingSpan, trimSilence, type PieceContent, type PieceEdits, type PieceHands, type PieceLevel, type PieceNote, type PieceSection } from '@learn/shared';
+import { cutStart, pieceDuration, renderScore, soundingSpan, trimSilence, type PieceContent, type PieceEdits, type PieceLevel, type PieceNote, type PieceSection } from '@learn/shared';
 import { BeatGrid, beatGrid } from './grid';
-import { assignHands, credible } from './hands';
+import { assignHands, credible, shareHands } from './hands';
 import { applyEdit, editOf } from './levelEdits';
 import { givenByScore, numberPiece, type Given, type NumberedPiece } from './numbers';
 import { fromSaved } from './parts';
@@ -39,24 +39,28 @@ function oneTrackPerHand(piece: StoredPiece, notes: PieceNote[]): boolean {
   return sets.length === 2 && sets.every((s) => s.size === 1) && [...sets[0]][0] !== [...sets[1]][0];
 }
 
-// Whether hands are worked out or taken from the file.
-export function handsOf(piece: StoredPiece): PieceHands {
-  if (piece.hands) return piece.hands;
+// The file's hands are kept when they make sense, else they are worked out.
+export function trusted(piece: StoredPiece): boolean {
   const notes = tracksOn(piece);
-  return oneTrackPerHand(piece, notes) && credible(notes, !!piece.tracks) ? 'file' : 'auto';
+  return oneTrackPerHand(piece, notes) && credible(notes, !!piece.tracks);
 }
 
 // The notes of the tracks turned on, each with its hand. The owner's choices
 // are kept; notes of no known hand get one in any case.
-export function played(piece: StoredPiece): PieceNote[] {
+function voices(piece: StoredPiece): PieceNote[] {
   const notes = tracksOn(piece);
   if (piece.score) return notes;
-  const file = handsOf(piece) === 'file';
+  const file = trusted(piece);
   if (file && notes.every((n) => n.hand)) return notes;
   return assignHands(notes, (n) => !!n.hand && (file || !!n.pinned));
 }
 
-const plainLevel = (piece: StoredPiece) => simplify(played(piece), levelOf(piece));
+// Two hands whenever there is something for both: a lone melody or bass line is
+// shared out, at whatever level it is all there is.
+const twoHands = (piece: StoredPiece, notes: PieceNote[]) => (piece.score ? notes : shareHands(notes, (n) => !!n.pinned));
+export const played = (piece: StoredPiece): PieceNote[] => twoHands(piece, voices(piece));
+// The melody and the bass are picked before sharing.
+const plainLevel = (piece: StoredPiece) => twoHands(piece, simplify(voices(piece), levelOf(piece)));
 
 // The notes of the piece's level, as listened to.
 export function levelNotes(piece: StoredPiece): PieceNote[] {

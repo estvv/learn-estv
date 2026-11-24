@@ -5,7 +5,9 @@ import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
 import { loadSession } from './auth/session.js';
 import type { DB } from './db/index.js';
+import { mistralReader, type ImageReader } from './ai.js';
 import { adminRoutes } from './routes/admin.js';
+import { aiRoutes } from './routes/ai.js';
 import { authRoutes } from './routes/auth.js';
 import { config } from './config.js';
 import { contentRoutes } from './routes/content.js';
@@ -14,7 +16,7 @@ import { pieceRoutes } from './routes/pieces.js';
 import { userRoutes } from './routes/users.js';
 import { catalogCover, type CoverFinder } from './covers.js';
 
-export function createApp(db: DB, { findCover = catalogCover }: { findCover?: CoverFinder } = {}) {
+export function createApp(db: DB, { findCover = catalogCover, readImages = mistralReader }: { findCover?: CoverFinder; readImages?: ImageReader } = {}) {
   const app = express();
   // Caddy -> nginx -> here: two proxies in front.
   app.set('trust proxy', 2);
@@ -44,6 +46,7 @@ export function createApp(db: DB, { findCover = catalogCover }: { findCover?: Co
   app.use('/api/subjects', contentRoutes(db));
   app.use('/api/progress', progressRoutes(db));
   app.use('/api/users', userRoutes(db));
+  app.use('/api/ai', aiRoutes(readImages));
   app.use('/api/pieces', pieceRoutes(db, findCover));
 
   app.use('/api', (_req, res) => void res.status(404).json({ success: false, error: 'Introuvable' }));

@@ -22,5 +22,7 @@ export const config = {
   contentDir: process.env.CONTENT_DIR ?? path.join(repoRoot, 'content/packs'),
   cookieSecure: process.env.COOKIE_SECURE !== '0' && process.env.NODE_ENV === 'production',
   mistralApiKey: process.env.MISTRAL_API_KEY ?? '',
+  // Reads images: must be a model that takes them.
+  mistralVisionModel: process.env.MISTRAL_VISION_MODEL || 'mistral-large-4-0',
   mistralModel: process.env.MISTRAL_MODEL ?? 'mistral-large-latest',
 };

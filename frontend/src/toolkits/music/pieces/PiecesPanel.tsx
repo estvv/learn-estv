@@ -11,6 +11,7 @@ import { foldersApi, piecesApi } from './api';
 import { foldersToReveal, type FolderKey } from './folderPath';
 import { ImportModal } from './ImportModal';
 import { Cover, DifficultyBadge, DifficultyPicker, FolderSelect } from './pieceFields';
+import type { ScoreDraft } from './ScoreEditor';
 import { sourceLabels, type PieceFolder, type PieceMeta, type PieceSummary } from './types';
 
 const formatDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
@@ -25,7 +26,8 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
   subject: string;
   current: number | null;
   listening: boolean;
-  onCreate(): void;
+  // Writes a piece by hand, from scratch or from what was read on a picture.
+  onCreate(from?: ScoreDraft): void;
   onPick(id: number | null): void;
   // Plays these pieces in a random order, endlessly.
   onShuffle(ids: number[]): void;
@@ -176,10 +178,10 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
         ) : (
           <>
             <div className="flex gap-2 p-4 pb-2">
-              <button type="button" onClick={() => setImporting(true)} className={`${primaryButton} min-w-0 flex-1`}>
+              <button type="button" onClick={() => setImporting(true)} className={`${primaryButton} min-w-0 flex-1`} title="Image (IA), partition PDF, vidéo, son, MIDI">
                 <PlusIcon className="h-4 w-4" />Importer
               </button>
-              <button type="button" onClick={onCreate} className={`${secondaryButton} min-w-0 flex-1`} title="Écrire un morceau à la main, en chiffres">
+              <button type="button" onClick={() => onCreate()} className={`${secondaryButton} min-w-0 flex-1`} title="Écrire un morceau à la main, en chiffres">
                 <PencilIcon className="h-4 w-4" />Créer
               </button>
               {pieces && (
@@ -262,6 +264,10 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
           subject={subject}
           folders={folders}
           onClose={() => setImporting(false)}
+          onNumbers={(draft) => {
+            setImporting(false);
+            onCreate(draft);
+          }}
           onSaved={(id) => {
             setImporting(false);
             load();

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { AiError, parseReading } from './ai.js';
 import { createApp } from './app.js';
 import { hashPassword } from './auth/crypto.js';
 import { importSeeds } from './content/store.js';
@@ -27,7 +28,13 @@ beforeEach(() => {
   db = openDatabase(':memory:');
   importSeeds(db, contentDir, () => {});
   // Covers: no network in tests; songs titled "Inconnu" have none.
-  app = createApp(db, { findCover: async (title, artist) => (title === 'Inconnu' ? null : `https://img.test/${artist ?? '-'}/${title}`) });
+  app = createApp(db, {
+    readImages: async (images) => {
+      if (images.length > 1) throw new AiError('Illisible');
+      return { kind: 'nothing', reason: 'test' };
+    },
+    findCover: async (title, artist) => (title === 'Inconnu' ? null : `https://img.test/${artist ?? '-'}/${title}`),
+  });
 });
 
 describe('content', () => {
@@ -200,12 +207,6 @@ describe('auth and progress', () => {
     expect((await me.get(`/api/pieces/${lateId}`).expect(200)).body.data.notes.map((n: { time: number }) => n.time)).toEqual([0, 0.5]);
     await me.delete(`/api/pieces/${lateId}`).expect(200);
 
-    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.hands).toBeNull();
-    await me.patch(`/api/pieces/${id}`).send({ hands: 'auto' }).expect(200);
-    await me.patch(`/api/pieces/${id}`).send({ hands: 'both' }).expect(400);
-    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.hands).toBe('auto');
-    await me.patch(`/api/pieces/${id}`).send({ hands: null }).expect(200);
-
     // Changes to an easier level: the piece's notes stay.
     const edits = { simplified: { removed: [{ midi: 60, time: 0 }], added: [{ midi: 64, time: 1, duration: 0.5, velocity: 0.7, hand: 'left' }] } };
     await me.patch(`/api/pieces/${id}`).send({ edits }).expect(200);
@@ -321,5 +322,29 @@ describe('auth and progress', () => {
     expect(top.find((f) => f.id === subsub)?.parent_id).toBeNull();
     await me.delete(`/api/pieces/${id}`).expect(200);
     expect((await me.get('/api/pieces').expect(200)).body.data).toHaveLength(0);
+  });
+
+  it('reads images for accounts only, and says why it could not', async () => {
+    await addUser('me', 'password123');
+    const image = 'data:image/jpeg;base64,AAAA';
+    await request(app).post('/api/ai/read').send({ images: [image] }).expect(401);
+    const me = await login('me', 'password123');
+    expect((await me.post('/api/ai/read').send({ images: [image] }).expect(200)).body.data.kind).toBe('nothing');
+    expect((await me.post('/api/ai/read').send({ images: [image, image] }).expect(502)).body.error).toBe('Illisible');
+    await me.post('/api/ai/read').send({ images: ['https://example.com/a.jpg'] }).expect(400);
+    await me.post('/api/ai/read').send({ images: [] }).expect(400);
+  });
+
+  it('makes sense of what the AI answers', () => {
+    const numbers = { kind: 'numbers', parts: [{ label: null, left: [1, null, '3'], right: ['4', '4', 6] }] };
+    expect(parseReading(`\`\`\`json\n${JSON.stringify(numbers)}\n\`\`\``)).toEqual({
+      kind: 'numbers', title: '', parts: [{ label: '', aligned: false, left: ['1', '', '3'], right: ['4', '4', '6'] }],
+    });
+    expect(parseReading([{ type: 'text', text: JSON.stringify({ kind: 'score', bpm: 'vif', measures: [{ right: [{ notes: ['C4'], beats: '1' }] }] }) }])).toMatchObject({
+      kind: 'score', bpm: null, measures: [{ right: [{ notes: ['C4'], beats: 1 }], left: [] }],
+    });
+    expect(() => parseReading('{"kind":"numbers","parts":[')).toThrow(AiError);
+    expect(() => parseReading('{"kind":"song"}')).toThrow(AiError);
+    expect(() => parseReading(null)).toThrow(AiError);
   });
 });

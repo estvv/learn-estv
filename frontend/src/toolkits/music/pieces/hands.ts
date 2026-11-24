@@ -175,6 +175,48 @@ function registerMiddles(sorted: PieceNote[], groups: PieceNote[][]): number[] {
   return local.map((m) => m ?? usual);
 }
 
+// --- One line for two hands ----------------------------------------------------------
+
+// Fits under one hand without moving.
+const ONE_POSITION = 9;
+// Fewer notes than this share: the hand is not really playing.
+const IDLE_SHARE = 0.04;
+// Each hand gets this share of the notes at least.
+const FAIR = 0.2;
+
+// Notes that one hand would play alone, over more keys than it covers: cut
+// between two keys, so that a key always belongs to the same hand. The cut
+// leaves each hand as few keys to reach as possible, and few exchanges.
+export function shareHands(notes: PieceNote[], fixed: (n: PieceNote) => boolean = () => false): PieceNote[] {
+  const free = notes.filter((n) => !fixed(n));
+  if (free.length < 4) return notes;
+  const left = notes.filter((n) => n.hand === 'left').length;
+  if (Math.min(left, notes.length - left) >= notes.length * IDLE_SHARE) return notes;
+  const keys = [...new Set(free.map((n) => n.midi))].sort((a, b) => a - b);
+  if (keys[keys.length - 1] - keys[0] <= ONE_POSITION) return notes;
+
+  const sorted = [...free].sort((a, b) => a.time - b.time || a.midi - b.midi);
+  let cut: number | null = null;
+  let best = Infinity;
+  for (let k = 1; k < keys.length; k++) {
+    const under = sorted.filter((n) => n.midi < keys[k]).length;
+    if (Math.min(under, sorted.length - under) < sorted.length * FAIR) continue;
+    let swaps = 0;
+    for (let i = 1; i < sorted.length; i++) if ((sorted[i].midi < keys[k]) !== (sorted[i - 1].midi < keys[k])) swaps++;
+    const reach = Math.max(keys[k - 1] - keys[0], keys[keys.length - 1] - keys[k]);
+    const cost = reach + (8 * swaps) / sorted.length - 0.5 * (keys[k] - keys[k - 1]);
+    if (cost < best) {
+      best = cost;
+      cut = keys[k];
+    }
+  }
+  if (cut === null) return notes;
+  return notes.map((n) => {
+    const hand: Hand = n.midi < cut ? 'left' : 'right';
+    return fixed(n) || n.hand === hand ? n : { ...n, hand };
+  });
+}
+
 // --- What the file says -----------------------------------------------------------
 
 // A hand cannot reach further.

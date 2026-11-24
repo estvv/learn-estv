@@ -1,26 +1,44 @@
-import { useRef, useState } from 'react';
+import type { PieceDifficulty } from '@learn/shared';
+import { useRef, useState, type DragEvent } from 'react';
 import { Field, inputClass } from '../../../components/Field';
 import { Modal } from '../../../components/Modal';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
-import { ACCEPT, fileKind, piecesApi } from './api';
+import { numbersToPlace, readPictures } from './aiImport';
+import { ACCEPT, fileKind, piecesApi, type FileKind } from './api';
 import { importAudio } from './importAudio';
 import { importMidi } from './importMidi';
 import { importMusicXml } from './importMusicXml';
+import { importPdf, NotAScore, pdfPictures } from './importPdf';
+import { importVideo, NoKeyboard } from './importVideo';
+import { guessNames } from './names';
 import { DifficultyPicker, FolderSelect } from './pieceFields';
+import type { ScoreDraft } from './ScoreEditor';
 import { sourceLabels, type ImportResult, type PieceFolder } from './types';
-import type { PieceDifficulty } from '@learn/shared';
 
 const STAGES = { decode: 'Lecture du son…', model: 'Chargement du modèle de transcription…', transcribe: 'Transcription' } as const;
+const MAX_PICTURES = 4;
 
 const formatDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
-// Pick a file, convert it to notes in the browser, name it, save it.
-export function ImportModal({ subject, folders, onClose, onSaved }: { subject: string; folders: PieceFolder[]; onClose(): void; onSaved(id: number): void }) {
+// Give it anything: the file says how it is read. What comes out is named,
+// saved, then changed by hand like any other piece.
+export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
+  subject: string;
+  folders: PieceFolder[];
+  onClose(): void;
+  onSaved(id: number): void;
+  // Numbers read on a picture: the rest happens in the editor.
+  onNumbers(draft: ScoreDraft): void;
+}) {
   const input = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [over, setOver] = useState(false);
   const [sensitivity, setSensitivity] = useState(0.5);
   const [progress, setProgress] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [octave, setOctave] = useState(0);
+  // What could not be read as hoped, and what else can be tried.
+  const [other, setOther] = useState<{ why: string; way: 'sound' | 'ai' } | null>(null);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [description, setDescription] = useState('');
@@ -28,30 +46,65 @@ export function ImportModal({ subject, folders, onClose, onSaved }: { subject: s
   const [difficulty, setDifficulty] = useState<PieceDifficulty | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const file = files[0] ?? null;
   const kind = file ? fileKind(file) : null;
 
-  const convert = async (f: File, sens = sensitivity) => {
+  const show = (r: ImportResult) => {
+    setResult(r);
+    setOctave(0);
+    setTitle(r.title);
+    setArtist(r.artist ?? '');
+  };
+  const attempt = async (work: () => Promise<void>) => {
     setError('');
+    setOther(null);
     setResult(null);
-    const k = fileKind(f);
-    if (!k) return setError('Format non reconnu : MIDI (.mid), MusicXML (.musicxml, .mxl) ou audio/vidéo.');
     try {
-      let r: ImportResult;
-      if (k === 'midi') r = await importMidi(f);
-      else if (k === 'musicxml') r = await importMusicXml(f);
-      else {
-        r = await importAudio(f, {
-          sensitivity: sens,
-          onProgress: (stage, p) => setProgress(stage === 'transcribe' && p !== undefined ? `${STAGES[stage]} : ${Math.round(p * 100)} %` : STAGES[stage]),
-        });
-      }
-      setResult(r);
-      setTitle(r.title);
-      setArtist(r.artist ?? '');
+      await work();
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof NotAScore) setOther({ why: 'Ce PDF est un scan, ou vient d’un logiciel dont les symboles ne sont pas reconnus.', way: 'ai' });
+      else if (e instanceof NoKeyboard) setOther({ why: `${e.message}.`, way: 'sound' });
+      else setError((e as Error).message);
     } finally {
       setProgress(null);
+    }
+  };
+
+  const bySound = (f: File) => attempt(async () => {
+    show(await importAudio(f, {
+      sensitivity,
+      onProgress: (stage, p) => setProgress(stage === 'transcribe' && p !== undefined ? `${STAGES[stage]} : ${Math.round(p * 100)} %` : STAGES[stage]),
+    }));
+  });
+  const byAi = (list: File[]) => attempt(async () => {
+    setProgress('Lecture par l’IA… (jusqu’à une minute)');
+    const pictures = fileKind(list[0]) === 'pdf' ? await pdfPictures(list[0], MAX_PICTURES) : list;
+    const read = await readPictures(pictures, guessNames(list[0].name).title);
+    if (read.kind === 'numbers') onNumbers({ title: read.title, score: read.score, toPlace: numbersToPlace(read.score) });
+    else show(read.result);
+  });
+  const direct: Partial<Record<FileKind, (f: File) => Promise<ImportResult>>> = {
+    midi: importMidi,
+    musicxml: importMusicXml,
+    pdf: importPdf,
+    video: (f) => importVideo(f, (p) => setProgress(`Lecture des images : ${Math.round(p * 100)} %`)),
+  };
+
+  const choose = (list: File[]) => {
+    if (!list.length) return;
+    const k = fileKind(list[0]);
+    // Several pictures are the pages of one piece.
+    const own = k === 'image' ? list.filter((f) => fileKind(f) === 'image').slice(0, MAX_PICTURES) : list.slice(0, 1);
+    setFiles(own);
+    setResult(null);
+    setOther(null);
+    setError(k ? '' : 'Format non reconnu.');
+    const convert = k && direct[k];
+    if (convert) {
+      void attempt(async () => {
+        setProgress(k === 'video' ? 'Recherche du clavier dans la vidéo…' : 'Lecture…');
+        show(await convert(own[0]));
+      });
     }
   };
 
@@ -61,7 +114,12 @@ export function ImportModal({ subject, folders, onClose, onSaved }: { subject: s
     setError('');
     try {
       const { warnings: _, ...piece } = result;
-      const { id } = await piecesApi.create(subject, { ...piece, title: title.trim() || result.title, artist: artist.trim() || null }, { folder_id: folder, difficulty, description: description.trim() || null });
+      const { id } = await piecesApi.create(subject, {
+        ...piece,
+        notes: shifted(piece.notes, octave),
+        title: title.trim() || result.title,
+        artist: artist.trim() || null,
+      }, { folder_id: folder, difficulty, description: description.trim() || null });
       onSaved(id);
     } catch (e) {
       setError((e as Error).message);
@@ -70,56 +128,67 @@ export function ImportModal({ subject, folders, onClose, onSaved }: { subject: s
   };
 
   const duration = result ? result.notes.reduce((end, n) => Math.max(end, n.time + n.duration), 0) : 0;
+  const busy = !!progress;
 
   return (
-    <Modal title="Importer un morceau" subtitle="MIDI, MusicXML (MuseScore) ou un fichier audio / vidéo à transcrire." onClose={onClose} width="md">
+    <Modal title="Importer un morceau" onClose={onClose} width="md">
       <div className="space-y-4">
         <button
           type="button"
           onClick={() => input.current?.click()}
-          disabled={!!progress}
-          className="w-full rounded-xl border-2 border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900"
+          disabled={busy}
+          onDragOver={(e: DragEvent) => {
+            e.preventDefault();
+            setOver(true);
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(e: DragEvent) => {
+            e.preventDefault();
+            setOver(false);
+            if (!busy) choose([...e.dataTransfer.files]);
+          }}
+          className={`w-full rounded-xl border-2 border-dashed px-4 py-7 text-center text-sm transition-colors ${over ? 'border-neutral-900 bg-neutral-50 text-neutral-900' : 'border-neutral-200 text-neutral-500 hover:border-neutral-400 hover:text-neutral-900'}`}
         >
-          {file ? <span className="font-medium text-neutral-900">{file.name}</span> : 'Choisir un fichier'}
-          <span className="mt-1 block text-xs text-neutral-400">.mid · .musicxml · .mxl · mp3 · wav · m4a · mp4 · webm</span>
+          {file
+            ? <span className="block truncate font-medium text-neutral-900">{files.length > 1 ? `${files.length} images` : file.name}</span>
+            : 'Dépose ou choisis un fichier'}
+          <span className="mt-1.5 block text-xs text-neutral-400">Image de numéros ou de partition (lue par l’IA) · partition PDF · vidéo · son · MIDI · MusicXML</span>
         </button>
         <input
           ref={input}
           type="file"
           accept={ACCEPT}
+          multiple
           className="hidden"
           onChange={(e) => {
-            const f = e.target.files?.[0];
+            const list = [...(e.target.files ?? [])];
             e.target.value = '';
-            if (!f) return;
-            setFile(f);
-            // Files with exact notes convert at once; audio waits for the sensitivity.
-            if (fileKind(f) !== 'audio') void convert(f);
-            else {
-              setResult(null);
-              setError('');
-            }
+            choose(list);
           }}
         />
 
-        {kind === 'audio' && (
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
-            <div className="text-sm font-semibold text-neutral-900">Transcription automatique</div>
-            <p className="mt-0.5 text-xs text-neutral-500">
-              Faite dans ton navigateur, rien n’est envoyé. Fiable sur du piano seul ; sur une chanson complète (voix, batterie), le résultat sera approximatif.
-            </p>
-            <label className="mt-3 flex items-center gap-3 text-sm text-neutral-600">
-              Sensibilité
-              <input type="range" min={0} max={1} step={0.05} value={sensitivity} onChange={(e) => setSensitivity(Number(e.target.value))} className="flex-1 accent-neutral-900" />
-              <span className="w-24 text-right text-xs text-neutral-400">{sensitivity < 0.35 ? 'notes sûres' : sensitivity > 0.65 ? 'toutes les notes' : 'équilibrée'}</span>
-            </label>
-            <button type="button" disabled={!!progress} onClick={() => file && void convert(file)} className={`${secondaryButton} mt-3`}>
-              {result ? 'Retranscrire' : 'Transcrire'}
-            </button>
+        {busy && <p className="text-sm text-neutral-500">{progress}</p>}
+
+        {!busy && kind === 'image' && !result && (
+          <div className="space-y-3">
+            <p className="text-sm text-neutral-600">L’IA lit l’image : des numéros écrits, ou une partition. Elle est envoyée à Mistral pour être lue.</p>
+            <button type="button" onClick={() => void byAi(files)} className={primaryButton}>Lire l’image</button>
           </div>
         )}
-
-        {progress && <p className="text-sm text-neutral-500">{progress}</p>}
+        {!busy && kind === 'audio' && <Sound sensitivity={sensitivity} again={!!result} onSensitivity={setSensitivity} onRun={() => file && void bySound(file)} />}
+        {!busy && other && (
+          <div className="space-y-3 rounded-lg bg-neutral-50 p-4">
+            <p className="text-sm text-neutral-700">{other.why}</p>
+            {other.way === 'sound'
+              ? <Sound sensitivity={sensitivity} again={false} onSensitivity={setSensitivity} onRun={() => file && void bySound(file)} />
+              : (
+                <>
+                  <p className="text-xs text-neutral-500">L’IA peut essayer sur ses pages, envoyées à Mistral en images (les {MAX_PICTURES} premières). À vérifier ensuite.</p>
+                  <button type="button" onClick={() => void byAi(files)} className={secondaryButton}>Essayer avec l’IA</button>
+                </>
+              )}
+          </div>
+        )}
 
         {result && (
           <div className="space-y-3">
@@ -128,6 +197,15 @@ export function ImportModal({ subject, folders, onClose, onSaved }: { subject: s
               {result.bpm && <> · {result.bpm} bpm</>}
               {result.warnings.map((w) => <p key={w} className="mt-1.5 text-xs text-amber-700">{w}</p>)}
             </div>
+            {result.source === 'video' && (
+              <div className="flex items-center gap-3 text-sm text-neutral-600">
+                Octave
+                <button type="button" onClick={() => setOctave(octave - 1)} aria-label="Une octave plus bas" className="h-8 w-8 rounded-lg bg-neutral-100 hover:bg-neutral-200">−</button>
+                <span className="w-8 text-center tabular-nums">{octave > 0 ? `+${octave}` : octave}</span>
+                <button type="button" onClick={() => setOctave(octave + 1)} aria-label="Une octave plus haut" className="h-8 w-8 rounded-lg bg-neutral-100 hover:bg-neutral-200">+</button>
+                {kind === 'video' && <button type="button" onClick={() => file && void bySound(file)} className="ml-auto text-xs underline">Transcrire le son à la place</button>}
+              </div>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Titre">
                 <input value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
@@ -151,13 +229,42 @@ export function ImportModal({ subject, folders, onClose, onSaved }: { subject: s
         )}
 
         <ErrorText>{error}</ErrorText>
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={secondaryButton}>Annuler</button>
-          <button type="button" onClick={() => void save()} disabled={!result || saving || !!progress} className={primaryButton}>
-            {saving ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
-        </div>
+        {result && (
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className={secondaryButton}>Annuler</button>
+            <button type="button" onClick={() => void save()} disabled={saving || busy} className={primaryButton}>
+              {saving ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+          </div>
+        )}
       </div>
     </Modal>
+  );
+}
+
+// Notes that would leave the piano stay on its last octave.
+function shifted(notes: ImportResult['notes'], octaves: number): ImportResult['notes'] {
+  if (!octaves) return notes;
+  return notes.map((n) => {
+    let midi = n.midi + octaves * 12;
+    while (midi < 21) midi += 12;
+    while (midi > 108) midi -= 12;
+    return { ...n, midi };
+  });
+}
+
+function Sound({ sensitivity, again, onSensitivity, onRun }: { sensitivity: number; again: boolean; onSensitivity(v: number): void; onRun(): void }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-neutral-600">
+        Le son peut être transcrit en notes, dans ton navigateur. Fiable sur du piano seul, approximatif avec une voix ou une batterie.
+      </p>
+      <label className="flex items-center gap-3 text-sm text-neutral-600">
+        Sensibilité
+        <input type="range" min={0} max={1} step={0.05} value={sensitivity} onChange={(e) => onSensitivity(Number(e.target.value))} className="flex-1 accent-neutral-900" />
+        <span className="w-24 text-right text-xs text-neutral-400">{sensitivity < 0.35 ? 'notes sûres' : sensitivity > 0.65 ? 'toutes les notes' : 'équilibrée'}</span>
+      </label>
+      <button type="button" onClick={onRun} className={secondaryButton}>{again ? 'Retranscrire' : 'Transcrire le son'}</button>
+    </div>
   );
 }

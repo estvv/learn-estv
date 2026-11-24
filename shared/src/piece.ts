@@ -29,11 +29,7 @@ export const pieceTrackSchema = z.object({
 });
 export type PieceTrack = z.infer<typeof pieceTrackSchema>;
 
-// Who plays what: worked out, or as the file says. Not set: whichever makes sense.
-export const pieceHands = ['auto', 'file'] as const;
-export type PieceHands = (typeof pieceHands)[number];
-
-export const pieceSources = ['midi', 'musicxml', 'audio', 'manual'] as const;
+export const pieceSources = ['midi', 'musicxml', 'audio', 'video', 'manual'] as const;
 
 // How hard a piece feels to its owner, easiest first.
 export const pieceDifficulties = ['easy', 'medium', 'hard', 'impossible'] as const;
