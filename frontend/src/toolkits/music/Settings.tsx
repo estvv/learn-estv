@@ -10,6 +10,7 @@ import { disableMic, enableMic, micState } from './input/mic';
 import { disableMidi, enableMidi, midiState } from './input/midi';
 import { inputSettings, updateSettings } from './input/settings';
 import { PianoKeyboard } from './PianoKeyboard';
+import { StageFields, StagePreview } from './stage/StageFields';
 
 const statusText = { off: 'désactivé', pending: 'autorisation…', on: 'actif', denied: 'refusé par le navigateur' } as const;
 
@@ -32,6 +33,13 @@ export function MusicSettings() {
           {lastSource && <span className="ml-2 text-neutral-400">via {sourceLabels[lastSource]}</span>}
         </div>
         <PianoKeyboard from={48} to={83} labels="names" height={140} />
+      </Section>
+
+      <Section title="Notes qui tombent" description="Pour les morceaux. Les couleurs des mains se choisissent dans Général.">
+        <div className="grid gap-5 lg:grid-cols-2">
+          <StageFields />
+          <StagePreview />
+        </div>
       </Section>
 
       <Section title="Son" description="Piano échantillonné (Salamander Grand Piano).">

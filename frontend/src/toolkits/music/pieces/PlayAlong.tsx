@@ -3,13 +3,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RepeatIcon, ShuffleIcon } from '../../../components/icons';
 import { readJson, writeJson } from '../../../lib/storage';
 import { useObservable } from '../../../lib/store';
-import { COMPACT, PHONE, SHORT, TOUCH, useMedia } from '../../../lib/useMedia';
+import { COMPACT, SHORT, TOUCH, useMedia } from '../../../lib/useMedia';
 import { useWakeLock } from '../../../lib/useWakeLock';
 import { useNoteInput } from '../input/hooks';
 import { PianoKeyboard, type KeyLabels, type KeyMark, type Sticker } from '../PianoKeyboard';
+import { stage } from '../stage/settings';
+import { KeyLight } from '../stage/StageFields';
 import { piecesApi } from './api';
 import { layoutOf, levelNotes, levelOf, playedSpan } from './derive';
 import { FallingNotes } from './FallingNotes';
+import { LyricsBanner } from './LyricsBanner';
+import { LyricsModal } from './LyricsModal';
+import { FullscreenControls, FullscreenIcon } from './FullscreenControls';
 import { FINGER_KEY, scrollToKeys } from './keyScroll';
 import { numberPiece, partAt } from './numbers';
 import { Numbers } from './Numbers';
@@ -39,13 +44,14 @@ const NAMED_KEY = 18;
 
 // Numbers on or off: kept on this device.
 const NUMBERS_KEY = 'learn.numbers.v1';
+const LYRICS_KEY = 'learn.lyrics.v1';
 const PANEL_KEY = 'learn.numbers-panel.v1';
 
 // A piece with falling notes above the keyboard: listen to it, or let it wait
 // for the right notes, with the piece as numbers above (see numbers.ts).
 //
 // The title and the player on top, the rest in "Réglages".
-export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
+export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, onExtract, onChange }: {
   piece: StoredPiece;
   labels: KeyLabels;
   nav: PieceNav;
@@ -53,6 +59,10 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
   autoPlay: boolean;
   // The piece is changed on a page of its own.
   onEdit(what?: 'cells' | 'numbers' | 'notes'): void;
+  // Only the lyrics, the notes and the keyboard.
+  fullscreen: { full: boolean; enter(): void; exit(): void };
+  // A new piece from parts of this one.
+  onExtract(): void;
   // Already saved, or being saved.
   onChange(change: Partial<StoredPiece>): void;
 }) {
@@ -79,16 +89,20 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
   const [rate, setRate] = useState(1);
   const [, setFrame] = useState(0);
   const compact = useMedia(COMPACT);
-  const phone = useMedia(PHONE);
   const short = useMedia(SHORT);
   const touch = useMedia(TOUCH);
   const [options, setOptions] = useState(false);
   const closeOptions = useCallback(() => setOptions(false), []);
   useWakeLock(state.playing);
+  const styled = useObservable(stage).style !== 'classic';
+  const keyLight = useRef<HTMLCanvasElement>(null);
   const [from, to] = useMemo(() => pieceRange(notes.length ? notes : piece.notes), [notes, piece.notes]);
   const [partsError, setPartsError] = useState('');
 
   const [numbersOn, setNumbersOn] = useState(() => readJson(NUMBERS_KEY, { on: true }).on);
+  const [lyricsOn, setLyricsOn] = useState(() => readJson(LYRICS_KEY, { on: true }).on);
+  const lyrics = piece.lyrics?.some((l) => l.time !== null) ? piece.lyrics : null;
+  const [karaoke, setKaraoke] = useState(false);
   // Beside the notes on a computer, over them on a smaller screen.
   const [panel, setPanel] = useState(() => !compact && readJson(PANEL_KEY, { open: true }).open);
   const [big, setBig] = useState(false);
@@ -126,13 +140,28 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
     return () => clearInterval(id);
   }, [state.playing]);
 
-  // Space bar: play / pause. Escape: stop looping.
+  const { full } = fullscreen;
+  const enterFull = () => {
+    setOptions(false);
+    setBig(false);
+    fullscreen.enter();
+  };
+  const toggleFull = useRef(() => {});
+  // Not under the windows opened over the piece.
+  toggleFull.current = () => {
+    if (full) fullscreen.exit();
+    else if (!document.querySelector('[aria-modal="true"]')) enterFull();
+  };
+
+  // Space bar: play / pause. F: full screen. Escape: stop looping.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat || (e.target as HTMLElement).tagName === 'INPUT') return;
       if (e.code === 'Space') {
         e.preventDefault();
         player.toggle();
+      } else if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey && !['TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
+        toggleFull.current();
       } else if (e.key === 'Escape' && player.loop) {
         setLoop(null);
         player.setLoop(null);
@@ -272,8 +301,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
   const optionsButton = (
     <button
       type="button"
-      data-options
-      onClick={() => setOptions(!options)}
+      onClick={() => setOptions(true)}
       aria-expanded={options}
       title="Réglages"
       aria-label="Réglages"
@@ -303,6 +331,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
       {timeline}
       <span className={`w-9 shrink-0 text-xs tabular-nums text-neutral-400 ${compact ? 'phone:hidden' : ''}`}>{clock(end - start)}</span>
       {loopButton}
+      <ControlButton title="Plein écran (F)" onClick={enterFull}><FullscreenIcon /></ControlButton>
     </div>
   );
 
@@ -312,16 +341,16 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
   const inline = short || !compact;
   return (
     <div className="relative flex h-full flex-col">
-      <div className="flex h-17 shrink-0 items-center gap-4 pl-16 pr-36 text-sm phone:h-15 phone:gap-2 phone:pl-14 phone:pr-14 short:h-13">
+      {full && <FullscreenControls playing={state.playing} onToggle={() => player.toggle()} onExit={fullscreen.exit} />}
+      {!full && <div className="flex h-17 shrink-0 items-center gap-4 pl-16 pr-36 text-sm phone:h-15 phone:gap-2 phone:pl-14 phone:pr-14 short:h-13">
         <div className={short ? 'w-28 shrink-0 md:w-40' : inline ? 'w-56 shrink-0' : 'min-w-0 flex-1'}>{heading}</div>
         {inline && <div className={`flex min-w-0 flex-1 ${short ? '' : 'mx-auto max-w-4xl'}`}>{bar}</div>}
         {optionsButton}
-      </div>
-      {!inline && <div className="flex shrink-0 px-3 pb-2.5 sm:px-5">{bar}</div>}
+      </div>}
+      {!full && !inline && <div className="flex shrink-0 px-3 pb-2.5 sm:px-5">{bar}</div>}
 
       {options && (
         <PieceOptions
-          floating={!phone}
           mode={mode}
           level={level}
           rate={rate}
@@ -341,9 +370,37 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
           onBigKeys={setBigKeys}
           onEdit={score ? undefined : () => onEdit('notes')}
           onEditNumbers={() => onEdit()}
+          lyrics={lyrics && lyricsOn}
+          onLyrics={(on) => {
+            setLyricsOn(on);
+            writeJson(LYRICS_KEY, { on });
+          }}
+          onKaraoke={() => {
+            setOptions(false);
+            player.pause();
+            setKaraoke(true);
+          }}
+          onExtract={() => {
+            setOptions(false);
+            player.pause();
+            onExtract();
+          }}
           onClose={closeOptions}
         />
       )}
+
+      {karaoke && (
+        <LyricsModal
+          piece={piece}
+          onSaved={(next) => {
+            setKaraoke(false);
+            if (next) setLyricsOn(true);
+            onChange({ lyrics: next });
+          }}
+          onClose={() => setKaraoke(false)}
+        />
+      )}
+      {lyrics && lyricsOn && <LyricsBanner lines={lyrics} player={player} short={short} />}
 
       {mode === 'wait' && state.expected.length > 0 && (
         <div className="pb-2 text-center text-xs text-neutral-500">Joue {state.expected.length > 1 ? 'les notes en surbrillance' : 'la note en surbrillance'} pour continuer</div>
@@ -375,11 +432,12 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
       )}
 
       <div className={`relative flex overflow-hidden ${big ? 'shrink-0' : 'min-h-0 flex-1'}`}>
-        <div ref={scroller} className={`min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-contain bg-white ${big ? '' : 'border-t border-neutral-100'}`}>
+        <div ref={scroller} className={`min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-contain ${styled ? 'bg-black' : 'bg-white'} ${big || styled ? '' : 'border-t border-neutral-100'}`}>
           <div className="flex h-full flex-col" style={{ minWidth: fingers ? whites * FINGER_KEY : undefined }}>
             {!big && <div className="relative min-h-0 flex-1 px-2 sm:px-4">
               <FallingNotes
                 player={player}
+                keyLight={keyLight}
                 from={from}
                 to={to}
                 numbers={numbersOn ? numbered.numbers : undefined}
@@ -387,11 +445,14 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
               />
             </div>}
             <div className={`px-2 sm:px-4 ${big ? 'border-t border-neutral-100 pt-2' : ''} ${short ? 'pb-2' : ''}`}>
-              <PianoKeyboard from={from} to={to} labels={named && !numbersOn ? labels : 'none'} marks={marks} stickers={numbersOn ? stickers : undefined} height={keyboardHeight} />
+              <div className="relative">
+                <PianoKeyboard from={from} to={to} labels={named && !numbersOn ? labels : 'none'} marks={marks} stickers={numbersOn ? stickers : undefined} height={keyboardHeight} />
+                {!big && <KeyLight canvas={keyLight} />}
+              </div>
             </div>
           </div>
         </div>
-        {part && !big && (
+        {part && !big && !full && (
           <NumbersPanel
             title={piece.title}
             parts={shownParts}

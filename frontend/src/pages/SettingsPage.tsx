@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../app/auth';
+import { HandColorsField, ThemeField } from '../components/AppearanceFields';
 import { ConfirmModal } from '../components/Modal';
 import { Section } from '../components/settings';
 import { Page, PageHeader, secondaryButton } from '../components/ui';
@@ -58,6 +59,15 @@ function GeneralSettings() {
 
   return (
     <div className="space-y-6">
+      <Section title="Apparence" description="Auto suit le mode sombre de l’appareil. Chaque thème a ses couleurs.">
+        <div className="space-y-5">
+          <ThemeField />
+          <div className="grid gap-5 sm:grid-cols-2">
+            <HandColorsField theme="light" label="Mains · thème clair" />
+            <HandColorsField theme="dark" label="Mains · thème nuit" />
+          </div>
+        </div>
+      </Section>
       <Section title="Progression">
         {user ? (
           <p className="text-sm text-neutral-600">

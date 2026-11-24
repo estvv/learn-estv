@@ -28,7 +28,7 @@ export function Modal({ title, subtitle, onClose, children, footer, width = 'sm'
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-neutral-900/40 backdrop-blur-[2px] sm:p-4 animate-[fade-in_120ms_ease-out]"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-[2px] sm:p-4 animate-[fade-in_120ms_ease-out]"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div

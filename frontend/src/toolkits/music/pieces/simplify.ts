@@ -39,8 +39,18 @@ function line(notes: PieceNote[], better: (a: PieceNote, b: PieceNote) => boolea
       start = n.time;
     }
   }
-  return picked.map((n, i) => {
-    const next = picked[i + 1];
-    return next && n.time + n.duration > next.time ? { ...n, duration: Math.max(MIN_DURATION, next.time - n.time) } : n;
-  });
+  return oneByOne(picked);
+}
+
+// Each hand's notes last at most until its next one.
+export function oneByOne(notes: PieceNote[]): PieceNote[] {
+  const next = new Map<Hand, PieceNote>();
+  const out = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi);
+  for (let i = out.length - 1; i >= 0; i--) {
+    const n = out[i];
+    const after = next.get(handOf(n));
+    if (after && after.time - n.time > CHORD_WINDOW && n.time + n.duration > after.time) out[i] = { ...n, duration: Math.max(MIN_DURATION, after.time - n.time) };
+    next.set(handOf(n), n);
+  }
+  return out;
 }

@@ -16,8 +16,8 @@ const LETTERS = 24; // the hands' letters
 const ROW = 1.6; // em
 const HEAD = 0.7; // em
 
-export const TEXT: Record<Hand, string> = { left: 'text-amber-700', right: 'text-sky-700' };
-const LIT: Record<Hand, string> = { left: 'bg-amber-500 text-white', right: 'bg-sky-500 text-white' };
+export const TEXT: Record<Hand, string> = { left: 'text-hand-l-ink', right: 'text-hand-r-ink' };
+const LIT: Record<Hand, string> = { left: 'bg-hand-l text-hand-l-on', right: 'bg-hand-r text-hand-r-on' };
 
 const ghost = 'h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium transition-colors';
 

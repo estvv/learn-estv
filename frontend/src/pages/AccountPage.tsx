@@ -188,7 +188,7 @@ function PhotoPicker() {
     <div className="flex items-center gap-4">
       <button type="button" onClick={() => input.current?.click()} disabled={busy} title="Changer la photo" className="group relative rounded-full">
         <Avatar url={user.avatar_url} name={user.display_name} size="lg" />
-        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-neutral-900/50 text-[10px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
+        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-[10px] font-semibold text-[#fff] opacity-0 transition-opacity group-hover:opacity-100">
           {busy ? '…' : 'Changer'}
         </span>
       </button>

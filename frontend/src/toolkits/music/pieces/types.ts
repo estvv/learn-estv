@@ -1,4 +1,4 @@
-import type { Piece, PieceDifficulty, PieceEdits, PieceLevel, PieceNumber, PieceSection, Score } from '@learn/shared';
+import type { LyricLine, Piece, PieceDifficulty, PieceEdits, PieceLevel, PieceNumber, PieceSection, Score } from '@learn/shared';
 
 export interface ImportResult extends Piece {
   // Things the user should know about the conversion.
@@ -26,6 +26,7 @@ export interface PieceSummary {
 export interface StoredPiece extends Piece {
   id: number;
   subject: string;
+  folder_id?: number | null;
   difficulty?: PieceDifficulty | null;
   cover?: string | null;
   description?: string | null;
@@ -36,6 +37,8 @@ export interface StoredPiece extends Piece {
   numbers?: PieceNumber[] | null;
   // Changes made by hand to the easier levels (see levelEdits.ts).
   edits?: PieceEdits | null;
+  // Sung along (see lyrics.ts).
+  lyrics?: LyricLine[] | null;
   // Pieces written by hand; null: imported.
   score?: Score | null;
 }

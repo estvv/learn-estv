@@ -11,6 +11,8 @@ const BEAM = 48;
 const COST = { register: 0.08, move: 0.02, jump: 0.006, held: 1, first: 0.8, swap: 0.5, cross: 0.7 };
 // Windows the register of both hands is measured on, seconds.
 const WINDOW = 3;
+// Those both hands should have as many notes in.
+const EVEN_WINDOW = 8;
 // A hand plays alone what it can cover.
 const ONE_HAND = 14;
 
@@ -43,7 +45,8 @@ const lowest = (list: { midi: number }[]) => list.reduce((m, n) => Math.min(m, n
 const highest = (list: { midi: number }[]) => list.reduce((m, n) => Math.max(m, n.midi), -Infinity);
 
 // Notes with their hand. Those `fixed` keep theirs.
-export function assignHands(notes: PieceNote[], fixed: (n: PieceNote) => boolean = () => false): PieceNote[] {
+// `even`: how much each hand should have as many notes as the other, all along.
+export function assignHands(notes: PieceNote[], fixed: (n: PieceNote) => boolean = () => false, even = 0): PieceNote[] {
   if (!notes.length) return notes;
   const sorted = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi);
   const groups: PieceNote[][] = [];
@@ -53,7 +56,8 @@ export function assignHands(notes: PieceNote[], fixed: (n: PieceNote) => boolean
     else groups.push([n]);
   }
   for (const g of groups) g.sort((a, b) => a.midi - b.midi);
-  const middles = registerMiddles(sorted, groups);
+  const middles = even ? evenMiddles(sorted, groups) : registerMiddles(sorted, groups);
+  const register = even || COST.register;
 
   let beam: State[] = [{ cost: 0, left: IDLE, right: IDLE, given: [], from: null }];
   groups.forEach((group, i) => {
@@ -67,7 +71,7 @@ export function assignHands(notes: PieceNote[], fixed: (n: PieceNote) => boolean
         const l = play(left, group.filter((_, k) => given[k] === 'left'), time);
         const r = play(right, group.filter((_, k) => given[k] === 'right'), time);
         const cost = state.cost + l.cost + r.cost
-          + registerCost(l.state, r.state, middles[i], time)
+          + register * registerCost(l.state, r.state, middles[i], time)
           + crossing(l.state, r.state)
           + (swapped(state.given, given) ? COST.swap : 0);
         next.push({ cost, left: l.state, right: r.state, given, from: state });
@@ -145,8 +149,8 @@ function play(hand: HandState, notes: PieceNote[], time: number): { state: HandS
 // Each hand on its side of the music.
 function registerCost(left: HandState, right: HandState, middle: number, time: number): number {
   let cost = 0;
-  if (left.center !== null && left.time === time) cost += COST.register * Math.max(0, left.center - middle);
-  if (right.center !== null && right.time === time) cost += COST.register * Math.max(0, middle - right.center);
+  if (left.center !== null && left.time === time) cost += Math.max(0, left.center - middle);
+  if (right.center !== null && right.time === time) cost += Math.max(0, middle - right.center);
   return cost;
 }
 
@@ -173,6 +177,20 @@ function registerMiddles(sorted: PieceNote[], groups: PieceNote[][]): number[] {
   const known = local.filter((m) => m !== null).sort((a, b) => a - b);
   const usual = known.length ? known[known.length >> 1] : 60;
   return local.map((m) => m ?? usual);
+}
+
+// Half the notes around are lower, half are higher.
+function evenMiddles(sorted: PieceNote[], groups: PieceNote[][]): number[] {
+  let from = 0;
+  let to = 0;
+  return groups.map((g) => {
+    const t = g[0].time;
+    while (sorted[from].time < t - EVEN_WINDOW) from++;
+    while (to < sorted.length && sorted[to].time <= t + EVEN_WINDOW) to++;
+    const around = sorted.slice(from, to).map((n) => n.midi).sort((a, b) => a - b);
+    const half = around.length >> 1;
+    return around.length % 2 ? around[half] : (around[half - 1] + around[half]) / 2;
+  });
 }
 
 // --- One line for two hands ----------------------------------------------------------
@@ -215,6 +233,58 @@ export function shareHands(notes: PieceNote[], fixed: (n: PieceNote) => boolean 
     const hand: Hand = n.midi < cut ? 'left' : 'right';
     return fixed(n) || n.hand === hand ? n : { ...n, hand };
   });
+}
+
+// --- An easier level ------------------------------------------------------------------
+
+const EVEN = [0.1, 0.2, 0.4];
+// A hand is at ease with a note every so many seconds.
+const EASY = 0.3;
+const SHORTEST = 0.06;
+// Two hands taking turns within a line are harder than one.
+const TURN = 0.15;
+
+// How tiring it is: notes that come fast in one hand, and jumps.
+function strain(notes: PieceNote[]): number {
+  const sorted = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi);
+  let total = 0;
+  for (const hand of ['left', 'right'] as const) {
+    let last: PieceNote | null = null;
+    for (const n of sorted) {
+      if (n.hand !== hand) continue;
+      if (last && n.time - last.time > CHORD_WINDOW) {
+        const gap = Math.max(SHORTEST, n.time - last.time);
+        total += Math.min(4, (EASY / gap) ** 2) + Math.max(0, Math.abs(n.midi - last.midi) - 7) * 0.05 * Math.min(4, EASY / gap);
+      }
+      last = n;
+    }
+  }
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = sorted[i].time - sorted[i - 1].time;
+    if (sorted[i].hand !== sorted[i - 1].hand && gap > CHORD_WINDOW && gap < EASY) total += TURN;
+  }
+  return total;
+}
+
+// What is left of a piece, given to the hands anew: those it had there may have
+// lost all their notes, or kept nearly all of them. Several ways are tried, the
+// least tiring one is kept.
+export function rebalanceHands(notes: PieceNote[]): PieceNote[] {
+  const asIs = shareHands(notes);
+  if (notes.length < 4 || highest(notes) - lowest(notes) <= ONE_POSITION) return asIs;
+  const both = (list: PieceNote[]) => {
+    const left = list.filter((n) => n.hand === 'left').length;
+    return Math.min(left, list.length - left) >= list.length * IDLE_SHARE;
+  };
+  let best = asIs;
+  let least = strain(asIs);
+  for (const even of [0, ...EVEN]) {
+    const other = assignHands(notes, undefined, even);
+    if (both(asIs) && !both(other)) continue;
+    const cost = strain(other);
+    if (cost < least) [best, least] = [other, cost];
+  }
+  return best;
 }
 
 // --- What the file says -----------------------------------------------------------

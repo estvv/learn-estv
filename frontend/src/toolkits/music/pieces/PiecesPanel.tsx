@@ -8,6 +8,7 @@ import { ConfirmModal, Modal } from '../../../components/Modal';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
 import { TOUCH, useMedia } from '../../../lib/useMedia';
 import { foldersApi, piecesApi } from './api';
+import { ExtractModal } from './ExtractModal';
 import { foldersToReveal, type FolderKey } from './folderPath';
 import { ImportModal } from './ImportModal';
 import { CopyModal, PasteModal } from './PasteModal';
@@ -55,6 +56,8 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
   const [said, setSaid] = useState('');
   const [copying, setCopying] = useState<string | null>(null);
   const [pasting, setPasting] = useState<string | null>(null);
+  // A new piece from parts of this one.
+  const [extracting, setExtracting] = useState<PieceSummary | null>(null);
   useEffect(() => {
     if (!said) return;
     const id = setTimeout(() => setSaid(''), 4000);
@@ -80,7 +83,7 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
     const text = await navigator.clipboard.readText().catch(() => '');
     setPasting(looksLikePieces(text) ? text : '');
   };
-  const dialog = importing || editing || removing || naming || removingFolder || copying !== null || pasting !== null;
+  const dialog = importing || editing || removing || naming || removingFolder || copying !== null || pasting !== null || extracting;
   // Ctrl+V anywhere in the list.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -203,7 +206,7 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
   const hasFolders = folders.length > 0;
 
   return (
-    <div className="fixed inset-0 z-30 flex justify-end bg-neutral-900/20" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-30 flex justify-end bg-black/30" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside className="flex h-full w-full max-w-sm flex-col border-l border-neutral-200 bg-white shadow-2xl animate-[fade-in_120ms_ease-out]">
         <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-5 py-4">
           <h2 className="text-lg font-bold text-neutral-900">Morceaux</h2>
@@ -342,6 +345,17 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
           }}
         />
       )}
+      {extracting && (
+        <ExtractModal
+          id={extracting.id}
+          subject={subject}
+          onClose={() => setExtracting(null)}
+          onSaved={(id) => {
+            setExtracting(null);
+            onPick(id);
+          }}
+        />
+      )}
       {editing && (
         <EditModal
           piece={editing}
@@ -452,6 +466,7 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
     const active = current === p.id;
     const actions: Action[] = [
       { label: 'Modifier (titre, artiste, dossier, difficulté)', icon: <PencilIcon className="h-4 w-4" />, onClick: () => setEditing(p) },
+      { label: 'Nouveau morceau avec des parties de celui-ci', icon: <ScissorsIcon />, onClick: () => setExtracting(p) },
       { label: 'Copier le morceau', icon: <CopyIcon />, onClick: () => void copyPieces([p]) },
       { label: 'Supprimer', icon: <TrashIcon />, danger: true, onClick: () => setRemoving(p) },
     ];
@@ -520,6 +535,12 @@ const FolderPlusIcon = () => (
 const CopyIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
     <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+  </svg>
+);
+
+const ScissorsIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+    <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12" />
   </svg>
 );
 

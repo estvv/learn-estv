@@ -85,7 +85,7 @@ const Lines = memo(function Lines({ part, lit, onSeek }: { part: Part; lit: stri
                     <button
                       type="button"
                       onClick={() => onSeek(m.time)}
-                      className={`rounded-sm hover:underline ${TEXT[row.hand]} ${on.includes(`${r}:${m.step}`) ? `font-bold ${row.hand === 'left' ? 'bg-amber-200' : 'bg-sky-200'}` : ''}`}
+                      className={`rounded-sm hover:underline ${TEXT[row.hand]} ${on.includes(`${r}:${m.step}`) ? `font-bold ${row.hand === 'left' ? 'bg-hand-l-pale' : 'bg-hand-r-pale'}` : ''}`}
                     >
                       {m.texts[r]}
                     </button>

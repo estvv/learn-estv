@@ -1,6 +1,6 @@
 import type { Hand, PieceNote } from '@learn/shared';
 import { describe, expect, it } from 'vitest';
-import { assignHands, credible, shareHands } from './hands';
+import { assignHands, credible, rebalanceHands, shareHands } from './hands';
 
 const n = (midi: number, time: number, hand: Hand | null = null, duration = 0.4): PieceNote => ({ midi, time, duration, velocity: 0.7, hand });
 // Share of the notes given to the hand that plays them.
@@ -86,5 +86,19 @@ describe('hands', () => {
     const small = Array.from({ length: 20 }, (_, i) => n(60 + (i % 5) * 2, i, 'right'));
     expect(shareHands(small)).toBe(small);
     expect(shareHands(arpeggios)).toBe(arpeggios);
+  });
+
+  it('share out again an easier level, where one hand had nearly everything', () => {
+    // A fast wide melody over one bass note a bar, all said to be the right hand's but the bass.
+    const line = Array.from({ length: 240 }, (_, i) => n(66 + Math.round(9 * Math.sin(i / 5)), i * 0.15, 'right', 0.15));
+    const alone = rebalanceHands(line).filter((x) => x.hand === 'left').length / line.length;
+    expect(alone).toBeGreaterThan(0.3);
+    expect(alone).toBeLessThan(0.7);
+    const bass = Array.from({ length: 20 }, (_, i) => n(43 + (i % 4), i * 1.8, 'left', 1.7));
+    const out = rebalanceHands([...line, ...bass]);
+    expect(out.filter((x) => x.hand === 'left').length).toBeGreaterThan(bass.length * 2);
+    // Nothing to share under five fingers.
+    const small = Array.from({ length: 20 }, (_, i) => n(60 + (i % 5) * 2, i, 'right'));
+    expect(rebalanceHands(small)).toBe(small);
   });
 });

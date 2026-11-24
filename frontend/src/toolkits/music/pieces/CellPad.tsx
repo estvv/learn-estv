@@ -9,7 +9,7 @@ import type { Key } from './numbers';
 // Fills the cell picked: type its numbers, or touch the numbers already known
 // (as on the keyboard, the sound comes with it).
 
-const COLOR: Record<Hand, string> = { left: 'text-amber-700 hover:bg-amber-50', right: 'text-sky-700 hover:bg-sky-50' };
+const COLOR: Record<Hand, string> = { left: 'text-hand-l-ink hover:bg-hand-l-soft', right: 'text-hand-r-ink hover:bg-hand-r-soft' };
 
 export function playKey(midi: number) {
   inputBus.noteOn(midi, 'virtual');

@@ -16,7 +16,7 @@ export function PracticePage() {
   const back = isPracticeOnly(pack) ? { to: '/', label: 'Retour : accueil' } : { to: `/s/${pack.subject.id}`, label: `Retour : ${pack.subject.name}` };
 
   return (
-    <div className="fixed inset-0 bg-[#fafafa]">
+    <div className="fixed inset-0 bg-page">
       <Link
         to={back.to}
         title={back.label}

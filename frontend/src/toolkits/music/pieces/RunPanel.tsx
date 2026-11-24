@@ -79,7 +79,7 @@ export function RunPanel({ hand: initial, textOf, unknown, midiOf, onPlaceKeys, 
               e.preventDefault();
               tap();
             }}
-            className={`flex h-40 w-full touch-none select-none flex-col items-center justify-center rounded-2xl text-white ${hand === 'left' ? 'bg-amber-500 active:bg-amber-600' : 'bg-sky-500 active:bg-sky-600'}`}
+            className={`flex h-40 w-full touch-none select-none flex-col items-center justify-center rounded-2xl active:brightness-90 ${hand === 'left' ? 'bg-hand-l text-hand-l-on' : 'bg-hand-r text-hand-r-on'}`}
           >
             <span className="text-6xl font-bold tabular-nums">{run[taps.length]?.join('+') ?? '✓'}</span>
             <span className="mt-1 text-sm opacity-80">{taps.length} / {run.length}</span>

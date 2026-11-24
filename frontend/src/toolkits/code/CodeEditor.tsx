@@ -11,13 +11,15 @@ import type { File } from './engine/compile';
 import { languageSupport } from './languages';
 
 const theme = EditorView.theme({
-  '&': { height: '100%', fontSize: '13.5px', backgroundColor: 'white' },
+  '&': { height: '100%', fontSize: '13.5px', backgroundColor: 'var(--color-white)' },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', lineHeight: '1.6' },
-  '.cm-content': { padding: '12px 0' },
-  '.cm-gutters': { backgroundColor: 'white', color: '#a3a3a3', border: 'none' },
-  '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: '#f5f5f580' },
-  '.cm-tooltip': { border: '1px solid #e5e5e5', borderRadius: '8px', backgroundColor: 'white', boxShadow: '0 4px 12px rgb(0 0 0 / 0.08)', maxWidth: '520px', overflow: 'hidden' },
+  '.cm-content': { padding: '12px 0', caretColor: 'var(--color-neutral-900)' },
+  '.cm-cursor': { borderLeftColor: 'var(--color-neutral-900)' },
+  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--color-neutral-200) !important' },
+  '.cm-gutters': { backgroundColor: 'var(--color-white)', color: 'var(--color-neutral-400)', border: 'none' },
+  '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'color-mix(in srgb, var(--color-neutral-100) 50%, transparent)' },
+  '.cm-tooltip': { border: '1px solid var(--color-neutral-200)', borderRadius: '8px', backgroundColor: 'var(--color-white)', boxShadow: '0 4px 12px rgb(0 0 0 / 0.08)', maxWidth: '520px', overflow: 'hidden' },
   '.cm-diagnostic': { whiteSpace: 'pre-wrap', padding: '6px 10px', fontSize: '12.5px' },
 });
 

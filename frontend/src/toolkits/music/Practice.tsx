@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useAuth } from '../../app/auth';
 import { Segmented } from '../../components/Segmented';
+import { forceNight } from '../../lib/appearance';
 import { useObservable } from '../../lib/store';
+import { useFullscreen } from '../../lib/useFullscreen';
 import { PHONE, useMedia } from '../../lib/useMedia';
 import { NoteText } from './Accidentals';
 import { audioState, ensureAudio } from './audio';
@@ -11,6 +13,7 @@ import { sourceLabels, type SourceId } from './input/bus';
 import { useHeldNotes, useNoteInput } from './input/hooks';
 import { PianoKeyboard, type KeyLabels } from './PianoKeyboard';
 import { foldersApi, piecesApi } from './pieces/api';
+import { ExtractModal } from './pieces/ExtractModal';
 import { listOrder, neighbour } from './pieces/folderPath';
 import { NotesEditor } from './pieces/NotesEditor';
 import { PiecesPanel } from './pieces/PiecesPanel';
@@ -18,6 +21,7 @@ import { PlayAlong } from './pieces/PlayAlong';
 import { ScoreEditor, type ScoreDraft } from './pieces/ScoreEditor';
 import { currentOf, drop, next, previous, queueFrom, startQueue, type Queue } from './pieces/shuffle';
 import type { StoredPiece } from './pieces/types';
+import { stage } from './stage/settings';
 
 type Span = '1' | '2' | '4' | 'full';
 
@@ -41,6 +45,21 @@ export function MusicPractice({ subject }: { subject: string }) {
   const [version, setVersion] = useState(0);
   const [error, setError] = useState('');
   const [panel, setPanel] = useState(false);
+  // Kept from a piece to the next.
+  const fullscreen = useFullscreen();
+  const { full, exit } = fullscreen;
+  const played = !!pieceId && !error && !creating && !changing;
+  useEffect(() => {
+    if (full && !played) exit();
+  }, [full, played, exit]);
+  // Styles other than the classic one are seen in the dark.
+  const dark = useObservable(stage).style !== 'classic' && played;
+  useEffect(() => {
+    forceNight(dark);
+    return () => forceNight(false);
+  }, [dark]);
+  // A new piece from parts of this one.
+  const [extracting, setExtracting] = useState<number | null>(null);
   const [labels, setLabels] = useState<KeyLabels>('names');
 
   // The pieces in the order of the list; read again when the list closes.
@@ -113,8 +132,8 @@ export function MusicPractice({ subject }: { subject: string }) {
   }
 
   return (
-    <div className="h-full">
-      <button
+    <div className={full ? 'fixed inset-0 z-40 bg-page' : 'h-full'}>
+      {!full && <button
         type="button"
         onClick={() => setPanel(true)}
         aria-label="Morceaux"
@@ -124,7 +143,7 @@ export function MusicPractice({ subject }: { subject: string }) {
           <path d="M9 18V5.5l11-2V16" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="17.5" cy="16" r="2.5" />
         </svg>
         <span className="phone:hidden">Morceaux</span>
-      </button>
+      </button>}
 
       {pieceId ? (
         piece && piece.id === pieceId ? (
@@ -133,6 +152,7 @@ export function MusicPractice({ subject }: { subject: string }) {
             piece={piece}
             labels={labels}
             autoPlay={autoPlay.current}
+            fullscreen={fullscreen}
             nav={{
               next: (playing) => go(1, playing),
               previous: (playing) => go(-1, playing),
@@ -144,6 +164,7 @@ export function MusicPractice({ subject }: { subject: string }) {
               setQueue(null);
               setParams({ morceau: String(pieceId), modifier: { cells: '1', numbers: 'numeros', notes: 'notes' }[what] });
             }}
+            onExtract={() => setExtracting(piece.id)}
             onChange={(change) => setPiece((p) => (p && p.id === piece.id ? { ...p, ...change } : p))}
           />
         ) : (
@@ -153,6 +174,19 @@ export function MusicPractice({ subject }: { subject: string }) {
         <FreePlay labels={labels} setLabels={setLabels} />
       )}
 
+      {extracting !== null && (
+        <ExtractModal
+          id={extracting}
+          subject={subject}
+          onClose={() => setExtracting(null)}
+          onSaved={(id) => {
+            setExtracting(null);
+            autoPlay.current = false;
+            setQueue(null);
+            setParams({ morceau: String(id) });
+          }}
+        />
+      )}
       {panel && (
         <PiecesPanel
           subject={subject}

@@ -6,7 +6,7 @@ import type { StoredPiece } from './types';
 const piece: StoredPiece = {
   id: 7, subject: 'piano', title: 'Été ♯1', artist: 'Moi', source: 'midi', bpm: 120, difficulty: 'easy', cover: 'https://img.test/a.jpg', description: 'boucle', level: 'simplified',
   notes: Array.from({ length: 2000 }, (_, i) => ({ midi: 60 + (i % 12), time: i / 3, duration: 0.25, velocity: 0.7, hand: 'right' as const })),
-  sections: [{ start: 0, label: 'A' }], edits: { simplified: { removed: [{ midi: 60, time: 0 }], added: [] } }, numbers: [{ label: 'A', hand: 'right', midi: 60, number: 4 }],
+  sections: [{ start: 0, label: 'A' }], edits: { simplified: { removed: [{ midi: 60, time: 0 }], added: [] } }, numbers: [{ label: 'A', hand: 'right', midi: 60, number: 4 }], lyrics: [{ time: 1, text: 'la' }],
 };
 
 describe('pieces copied as text', () => {

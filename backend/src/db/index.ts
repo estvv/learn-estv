@@ -27,6 +27,7 @@ const addedColumns: [table: string, column: string, definition: string][] = [
   ['pieces', 'score', 'TEXT'],
   ['pieces', 'edits', 'TEXT'],
   ['pieces', 'numbers', 'TEXT'],
+  ['pieces', 'lyrics', 'TEXT'],
   ['piece_folders', 'parent_id', 'INTEGER REFERENCES piece_folders(id) ON DELETE CASCADE'],
 ];
 

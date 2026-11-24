@@ -2,6 +2,16 @@
 
 @theme {
   --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --color-page: #fafafa;
+
+  /* The two hands: set by lib/appearance.ts. */
+  --color-hand-l: #ef4444; --color-hand-l-on: #fff; --color-hand-l-soft: #fdecec; --color-hand-l-pale: #fac7c7; --color-hand-l-deep: #f7a2a2; --color-hand-l-ink: #942a2a;
+  --color-hand-l-key: #f9b4b4; --color-hand-l-key-ink: #942a2a; --color-hand-l-bright: #f58f8f;
+  --color-hand-r: #3b82f6; --color-hand-r-on: #fff; --color-hand-r-soft: #ebf3fe; --color-hand-r-pale: #c4dafc; --color-hand-r-deep: #9dc1fb; --color-hand-r-ink: #255199;
+  --color-hand-r-key: #b1cdfb; --color-hand-r-key-ink: #255199; --color-hand-r-bright: #89b4fa;
+
+  /* The piano keys. */
+  --color-key-white: #fff; --color-key-black: #262626; --color-key-line: #e5e5e5; --color-key-down: #e5e5e5; --color-key-name: #8a8a8a;
 }
 
 /* Same conditions as lib/useMedia.ts. */
@@ -10,13 +20,13 @@
 @custom-variant compact (@media (width < 80rem) or (height < 32rem));
 
 body {
-  background: #fafafa;
+  background: var(--color-page);
   @apply text-neutral-900 antialiased;
 }
 
 /* Visible keyboard focus everywhere, mouse clicks stay clean. */
 :focus-visible {
-  outline: 2px solid #171717;
+  outline: 2px solid var(--color-neutral-900);
   outline-offset: 2px;
 }
 

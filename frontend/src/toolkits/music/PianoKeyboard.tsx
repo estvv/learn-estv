@@ -25,11 +25,14 @@ interface Props {
   height?: number | string;
 }
 
+// The keyboard looks the same in every theme. A wrong key is hatched: whatever
+// the colours of the hands, it is none of them.
+const HATCHED = 'bg-[repeating-linear-gradient(45deg,#f59e0b_0_5px,#fef3c7_5px_10px)]';
 const markClass: Record<KeyMark, { white: string; black: string }> = {
-  target: { white: 'bg-sky-200', black: 'bg-sky-500' },
-  hint: { white: 'bg-amber-100', black: 'bg-amber-500' },
-  correct: { white: 'bg-emerald-200', black: 'bg-emerald-500' },
-  wrong: { white: 'bg-red-200', black: 'bg-red-500' },
+  target: { white: 'bg-hand-r-key', black: 'bg-hand-r' },
+  hint: { white: 'bg-hand-l-key', black: 'bg-hand-l' },
+  correct: { white: 'bg-[#a7f3d0]', black: 'bg-[#10b981]' },
+  wrong: { white: HATCHED, black: HATCHED },
 };
 
 
@@ -79,7 +82,7 @@ export function PianoKeyboard({ from, to, marks, labels = 'none', stickers, inte
   const stuck = (midi: number, black: boolean) => stickers?.get(midi)?.map((s) => (
     <span
       key={s.hand}
-      className={`font-bold leading-tight ${s.hand === 'left' ? (black ? 'text-amber-300' : 'text-amber-700') : black ? 'text-sky-300' : 'text-sky-700'}`}
+      className={`font-bold leading-tight ${s.hand === 'left' ? (black ? 'text-hand-l-bright' : 'text-hand-l-key-ink') : black ? 'text-hand-r-bright' : 'text-hand-r-key-ink'}`}
       style={{ fontSize: stickerSize }}
     >
       {s.number}
@@ -105,8 +108,8 @@ export function PianoKeyboard({ from, to, marks, labels = 'none', stickers, inte
             key={m}
             onPointerDown={(e) => press(e, m)}
             onPointerEnter={(e) => enter(e, m)}
-            className={`absolute top-0 bottom-0 flex flex-col items-center justify-end gap-0.5 rounded-b-md border border-neutral-200 pb-2 font-medium text-neutral-400 transition-colors ${
-              mark ? markClass[mark].white : down ? 'bg-neutral-200' : 'bg-white'
+            className={`absolute top-0 bottom-0 flex flex-col items-center justify-end gap-0.5 rounded-b-md border border-key-line pb-2 font-medium text-key-name transition-colors ${
+              mark ? markClass[mark].white : down ? 'bg-key-down' : 'bg-key-white'
             } ${interactive ? 'cursor-pointer' : ''}`}
             style={{ left: pct(k.x), width: pct(k.width), fontSize }}
             title={noteName(m)}
@@ -124,8 +127,8 @@ export function PianoKeyboard({ from, to, marks, labels = 'none', stickers, inte
             key={m}
             onPointerDown={(e) => press(e, m)}
             onPointerEnter={(e) => enter(e, m)}
-            className={`absolute top-0 z-10 flex flex-col items-center justify-end gap-0.5 rounded-b-md pb-1.5 font-medium text-white transition-colors ${
-              mark ? markClass[mark].black : down ? 'bg-neutral-600' : 'bg-neutral-800'
+            className={`absolute top-0 z-10 flex flex-col items-center justify-end gap-0.5 rounded-b-md pb-1.5 font-medium text-[#fff] transition-colors ${
+              mark ? markClass[mark].black : down ? 'bg-[#525252]' : 'bg-key-black'
             } ${interactive ? 'cursor-pointer' : ''}`}
             style={{ left: pct(k.x), width: pct(k.width), height: '62%', fontSize }}
             title={noteName(m)}

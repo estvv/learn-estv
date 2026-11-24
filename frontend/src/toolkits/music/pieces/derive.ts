@@ -1,11 +1,11 @@
-import { pieceDuration, renderScore, soundingSpan, trimSilence, type PieceEdits, type PieceLevel, type PieceNote, type PieceSection } from '@learn/shared';
+import { pieceDuration, renderScore, soundingSpan, trimSilence, type LyricLine, type PieceEdits, type PieceLevel, type PieceNote, type PieceNumber, type PieceSection } from '@learn/shared';
 import { BeatGrid, beatGrid } from './grid';
-import { assignHands, credible, shareHands } from './hands';
+import { assignHands, credible, rebalanceHands, shareHands } from './hands';
 import { applyEdit, editOf } from './levelEdits';
 import { givenByOwner, givenByScore, numberPiece, type Given, type NumberedPiece } from './numbers';
 import { fromSaved } from './parts';
 import { detectSections, type Section } from './sections';
-import { simplify } from './simplify';
+import { oneByOne, simplify } from './simplify';
 import type { StoredPiece } from './types';
 
 // From a stored piece to what is shown, in one direction only:
@@ -59,8 +59,21 @@ function voices(piece: StoredPiece): PieceNote[] {
 // shared out, at whatever level it is all there is.
 const twoHands = (piece: StoredPiece, notes: PieceNote[]) => (piece.score ? notes : shareHands(notes, (n) => !!n.pinned));
 export const played = (piece: StoredPiece): PieceNote[] => twoHands(piece, voices(piece));
-// The melody and the bass are picked before sharing.
-const plainLevel = (piece: StoredPiece) => twoHands(piece, simplify(voices(piece), levelOf(piece)));
+// The melody and the bass are picked first. What is left is another piece: who
+// plays what is looked at again, whatever was decided for the original.
+const levels = new WeakMap<StoredPiece, PieceNote[]>();
+function plainLevel(piece: StoredPiece): PieceNote[] {
+  const level = levelOf(piece);
+  if (level === 'original') return twoHands(piece, voices(piece));
+  let notes = levels.get(piece);
+  if (!notes) {
+    const left = simplify(voices(piece), level);
+    const given = rebalanceHands(left);
+    notes = given === left ? left : oneByOne(given);
+    levels.set(piece, notes);
+  }
+  return notes;
+}
 
 // The notes of the piece's level, as listened to.
 export function levelNotes(piece: StoredPiece): PieceNote[] {
@@ -80,6 +93,19 @@ function onParts(grid: BeatGrid, piece: StoredPiece): BeatGrid {
   return BeatGrid.regular(grid.toTime(late - 1), grid.beats[1] - grid.beats[0]);
 }
 
+// Each level has its own numbers: hands do not play the same keys.
+const ofLevel = (piece: StoredPiece) => (n: PieceNumber) => (n.level ?? 'original') === levelOf(piece);
+export const numbersAt = (piece: StoredPiece): PieceNumber[] =>
+  (piece.numbers ?? []).filter(ofLevel(piece)).map(({ label, hand, midi, number }) => ({ label, hand, midi, number }));
+// All of them, with those of this level changed.
+export function withNumbers(piece: StoredPiece, numbers: PieceNumber[]): PieceNumber[] {
+  const level = levelOf(piece);
+  return [
+    ...(piece.numbers ?? []).filter((n) => !ofLevel(piece)(n)),
+    ...(level === 'original' ? numbers : numbers.map((n) => ({ ...n, level }))),
+  ];
+}
+
 // Beats and parts. They come from the original notes: the same at every level.
 export interface Layout {
   grid: BeatGrid;
@@ -97,7 +123,7 @@ export function layoutOf(piece: StoredPiece): Layout {
   const duration = pieceDuration(piece.notes);
   const found = beatGrid(base, piece.bpm);
   const grid = found ?? BeatGrid.regular(base[0]?.time ?? 0, 0.5);
-  const given = givenByOwner(piece.numbers ?? []);
+  const given = givenByOwner(numbersAt(piece));
   if (piece.sections) return { grid: onParts(grid, piece), sections: fromSaved(piece.sections, duration), duration, given };
   const auto = detectSections(base, piece.bpm, found);
   return { grid, sections: auto.length ? auto : [{ start: 0, end: duration, label: 'A' }], duration, given };
@@ -128,7 +154,7 @@ export const visible = (piece: StoredPiece, edited: PieceNote[]) => (levelOf(pie
 export const untouched = (piece: StoredPiece) => (levelOf(piece) === 'original' ? piece.notes : plainLevel(piece));
 
 // `bpm`: the tempo changed with the notes.
-export type PieceChange = { bpm?: number; notes?: PieceNote[]; sections?: PieceSection[] | null; edits?: PieceEdits | null };
+export type PieceChange = { bpm?: number; notes?: PieceNote[]; sections?: PieceSection[] | null; edits?: PieceEdits | null; lyrics?: LyricLine[] | null };
 
 // What saving the edited notes changes in the piece.
 export function changeOf(piece: StoredPiece, edited: PieceNote[]): PieceChange {
@@ -141,11 +167,12 @@ export function changeOf(piece: StoredPiece, edited: PieceNote[]): PieceChange {
     return { edits: Object.keys(edits).length ? edits : null };
   }
   // No silence is left at the start.
-  const trimmed = trimSilence({ notes: edited, sections: piece.sections, edits: piece.edits });
+  const trimmed = trimSilence({ notes: edited, sections: piece.sections, edits: piece.edits, lyrics: piece.lyrics });
   if (trimmed.notes === edited) return { notes: edited };
   return {
     notes: trimmed.notes,
     ...(piece.sections ? { sections: trimmed.sections } : {}),
     ...(piece.edits ? { edits: trimmed.edits } : {}),
+    ...(piece.lyrics ? { lyrics: trimmed.lyrics } : {}),
   };
 }

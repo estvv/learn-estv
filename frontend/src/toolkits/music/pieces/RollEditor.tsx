@@ -19,8 +19,8 @@ const CLICK = 6;
 const AROUND = 12;
 
 const LOOK: Record<Hand, { note: string; picked: string }> = {
-  left: { note: 'bg-amber-200 text-amber-900', picked: 'bg-amber-400 text-amber-950 ring-2 ring-amber-700' },
-  right: { note: 'bg-sky-200 text-sky-900', picked: 'bg-sky-400 text-sky-950 ring-2 ring-sky-700' },
+  left: { note: 'bg-hand-l-pale text-hand-l-ink', picked: 'bg-hand-l text-hand-l-on ring-2 ring-hand-l-ink' },
+  right: { note: 'bg-hand-r-pale text-hand-r-ink', picked: 'bg-hand-r text-hand-r-on ring-2 ring-hand-r-ink' },
 };
 
 type Drag =

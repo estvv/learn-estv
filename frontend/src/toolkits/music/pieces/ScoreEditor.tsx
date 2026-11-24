@@ -20,6 +20,7 @@ import { changeFrom, openPiece, renderImported, renderPlain, sameLengths, shareK
 import { ImportModal } from './ImportModal';
 import { LabelInput, Small } from './Numbers';
 import { handName } from './numbers';
+import { movedLyrics } from './lyrics';
 import { DifficultyPicker, FolderSelect } from './pieceFields';
 import { edgeRange, locate, moveEdge, moveNote, offsetsOf, sheetOf, spill, type Placed } from './roll';
 import { OrderChips } from './OrderChips';
@@ -290,7 +291,7 @@ export function ScoreEditor({ subject, piece, from: given, firstStep, onSaved, o
     try {
       const { notes, numbers } = changeFrom(source!, score);
       if (notes) await piecesApi.saveChange(source!.piece.id, notes);
-      if (numbers) await piecesApi.update(source!.piece.id, { numbers: numbers.length ? numbers : null });
+      if (numbers) await piecesApi.update(source!.piece.id, { numbers });
       done(source!.piece.id);
     } catch (e) {
       setError((e as Error).message);
@@ -308,6 +309,11 @@ export function ScoreEditor({ subject, piece, from: given, firstStep, onSaved, o
     setSaving(true);
     try {
       await piecesApi.saveScore(piece.id, score);
+      // Lyrics follow the parts they are sung in.
+      if (piece.lyrics?.length && piece.score) {
+        const lyrics = movedLyrics(piece.lyrics, renderPlain(piece.score).spans, renderPlain(score).spans, piece.score.bpm / score.bpm);
+        await piecesApi.update(piece.id, { lyrics });
+      }
       done(piece.id);
     } catch (e) {
       setError((e as Error).message);
@@ -494,7 +500,7 @@ export function ScoreEditor({ subject, piece, from: given, firstStep, onSaved, o
           </p>
           <div className="flex flex-wrap gap-2">
             {keys.map((k) => (
-              <span key={k.number} className={`flex h-12 items-center rounded-xl ${hand === 'left' ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-800'}`}>
+              <span key={k.number} className={`flex h-12 items-center rounded-xl ${hand === 'left' ? 'bg-hand-l-soft text-hand-l-ink' : 'bg-hand-r-soft text-hand-r-ink'}`}>
                 <button type="button" onClick={() => playKey(k.midi)} title="Écouter" className="flex h-12 items-center gap-2 pl-4 pr-2">
                   <b className="text-xl tabular-nums">{k.number}</b>
                   <span className="text-sm opacity-75"><NoteText text={frenchName(k.midi)} /></span>

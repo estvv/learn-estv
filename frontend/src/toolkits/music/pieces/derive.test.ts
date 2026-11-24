@@ -1,6 +1,6 @@
 import type { Hand, PieceNote } from '@learn/shared';
 import { describe, expect, it } from 'vitest';
-import { changeOf, editable, layoutOf, levelNotes, numbersOf, playedSpan, trusted, untouched, visible } from './derive';
+import { changeOf, editable, layoutOf, levelNotes, numbersAt, numbersOf, playedSpan, trusted, untouched, visible, withNumbers } from './derive';
 import type { StoredPiece } from './types';
 
 const n = (midi: number, beat: number, hand: Hand = 'left', track?: number): PieceNote =>
@@ -155,5 +155,31 @@ describe('from a piece to its numbers', () => {
     const { parts } = numbersOf(levelNotes(p), layoutOf(p));
     expect(parts[0].rows.map((r) => r.hand)).toEqual(['left', 'right']);
     expect(Math.max(...parts[0].keys.map((k) => k.number))).toBeLessThan(7);
+  });
+
+  it('gives the hands anew at an easier level, even those that were chosen', () => {
+    const line = Array.from({ length: 80 }, (_, i) => ({ ...n(66 + Math.round(9 * Math.sin(i / 5)), i / 4, 'right'), pinned: true }));
+    const p = piece([...line, n(43, 0), n(45, 8)]);
+    expect(levelNotes(p).filter((x) => x.hand === 'left')).toHaveLength(2);
+    const melody = levelNotes({ ...p, level: 'melody' });
+    expect(melody).toHaveLength(80);
+    expect(melody.filter((x) => x.hand === 'left').length).toBeGreaterThan(20);
+    // One note at a time in each hand.
+    for (const hand of ['left', 'right']) {
+      const own = levelNotes({ ...p, level: 'simplified' }).filter((x) => x.hand === hand);
+      for (let i = 1; i < own.length; i++) expect(own[i - 1].time + own[i - 1].duration).toBeLessThanOrEqual(own[i].time + 1e-9);
+    }
+  });
+
+  it('keeps the numbers of each level apart', () => {
+    const p = piece(chords, { numbers: [{ label: 'A', hand: 'left', midi: 48, number: 9 }] });
+    const easy = { ...p, level: 'simplified' as const };
+    expect(numbers(p)).toContain('48=9');
+    expect(numbers(easy)).toBe('48=1 53=2 48=1');
+    const own = [{ label: 'A', hand: 'left' as const, midi: 53, number: 5 }];
+    const both = withNumbers(easy, own);
+    expect(numbersAt({ ...easy, numbers: both })).toEqual(own);
+    expect(numbersAt({ ...p, numbers: both })).toEqual(p.numbers);
+    expect(withNumbers({ ...p, numbers: both }, [])).toEqual([{ ...own[0], level: 'simplified' }]);
   });
 });

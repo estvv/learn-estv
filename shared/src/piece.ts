@@ -56,8 +56,18 @@ export const pieceNumbersSchema = z.array(z.object({
   hand: z.enum(hands),
   midi: z.number().int().min(0).max(127),
   number: z.number().int().min(0).max(99),
+  // Of an easier level; left out: the original.
+  level: z.enum(['simplified', 'melody']).optional(),
 })).max(5000);
 export type PieceNumber = z.infer<typeof pieceNumbersSchema>[number];
+
+// Lyrics, line by line: when each is sung, in seconds (null: not known yet). A
+// line with no text: nobody sings.
+export const pieceLyricsSchema = z.array(z.object({
+  time: z.number().min(0).nullable(),
+  text: z.string().trim().max(300),
+})).max(500);
+export type LyricLine = z.infer<typeof pieceLyricsSchema>[number];
 
 // Changes made by hand to an easier level, kept apart from the piece's notes.
 export const pieceLevelEditSchema = z.object({
@@ -93,6 +103,7 @@ export interface PieceContent {
   notes: PieceNote[];
   sections?: PieceSection[] | null;
   edits?: PieceEdits | null;
+  lyrics?: LyricLine[] | null;
 }
 
 // Less than this is no silence.
@@ -114,7 +125,16 @@ export function cutStart<T extends PieceContent>(content: T, by: number): T {
     }
     out.edits = edits;
   }
+  if (content.lyrics) out.lyrics = shiftLyrics(content.lyrics, by);
   return out;
+}
+
+// Of the lines now before the start, only the last one may still be sung.
+export function shiftLyrics(lyrics: LyricLine[], by: number): LyricLine[] {
+  const gone = lyrics.filter((l) => l.time !== null && l.time < by - 1e-6);
+  return lyrics
+    .filter((l) => !gone.includes(l) || l === gone[gone.length - 1])
+    .map((l) => ({ ...l, time: l.time === null ? null : Math.max(0, l.time - by) }));
 }
 
 export function shiftSections(sections: PieceSection[], by: number): PieceSection[] {

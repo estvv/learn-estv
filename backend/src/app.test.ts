@@ -33,6 +33,7 @@ beforeEach(() => {
       if (images.length > 1) throw new AiError('Illisible');
       return { kind: 'nothing', reason: 'test' };
     },
+    findLyrics: async (title) => [{ id: 1, title, artist: 'A', album: '', duration: 10, synced: '[00:01.00] la', plain: null }],
     findCover: async (title, artist) => (title === 'Inconnu' ? null : `https://img.test/${artist ?? '-'}/${title}`),
   });
 });
@@ -192,6 +193,17 @@ describe('auth and progress', () => {
     await me.patch(`/api/pieces/${id}`).send({ sections: [parts[0], { start: 0, label: 'B' }] }).expect(400);
     await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, sections: [parts[0]] }).expect(200);
     expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sections).toEqual([parts[0]]);
+    // Lyrics: found, saved, taken off.
+    const lyrics = [{ time: 1.5, text: 'la la' }, { time: null, text: '' }];
+    expect((await me.get('/api/pieces/lyrics?title=Chanson').expect(200)).body.data[0].title).toBe('Chanson');
+    await me.get('/api/pieces/lyrics').expect(400);
+    await me.patch(`/api/pieces/${id}`).send({ lyrics }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.lyrics).toEqual(lyrics);
+    await me.patch(`/api/pieces/${id}`).send({ lyrics: [{ time: -1, text: 'x' }] }).expect(400);
+    await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, lyrics: lyrics.slice(0, 1) }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.lyrics).toEqual(lyrics.slice(0, 1));
+    await me.patch(`/api/pieces/${id}`).send({ lyrics: null }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.lyrics).toBeNull();
     // The tempo only changes when it is sent.
     const bpm = (await me.get(`/api/pieces/${id}`).expect(200)).body.data.bpm;
     await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, bpm: 87.5 }).expect(200);
@@ -215,13 +227,13 @@ describe('auth and progress', () => {
 
     // Copied from elsewhere: as its owner had set it.
     const copied = {
-      subject: 'piano', piece: { ...piece, title: 'Copie' }, level: 'simplified', sections: [{ start: 0, label: 'A' }], cover: 'https://cdn-images.dzcdn.net/images/cover/x.jpg',
+      subject: 'piano', piece: { ...piece, title: 'Copie' }, level: 'simplified', lyrics: [{ time: 0.25, text: 'la' }, { time: null, text: 'pas placée' }], sections: [{ start: 0, label: 'A' }], cover: 'https://cdn-images.dzcdn.net/images/cover/x.jpg',
       edits: { simplified: { removed: [], added: [{ ...piece.notes[0], time: 0.25 }] } }, numbers: [{ label: 'A', hand: 'right', midi: 62, number: 3 }], difficulty: 'hard', description: 'boucle',
     };
     const copyId = (await me.post('/api/pieces').send(copied).expect(201)).body.data.id;
-    const { level, sections, cover, edits: copiedEdits, numbers: copiedNumbers, difficulty, description } = (await me.get(`/api/pieces/${copyId}`).expect(200)).body.data;
-    expect({ level, sections, cover, edits: copiedEdits, numbers: copiedNumbers, difficulty, description }).toEqual({
-      level: copied.level, sections: copied.sections, cover: copied.cover, edits: copied.edits, numbers: copied.numbers, difficulty: 'hard', description: 'boucle',
+    const { level, sections, cover, lyrics: copiedLyrics, edits: copiedEdits, numbers: copiedNumbers, difficulty, description } = (await me.get(`/api/pieces/${copyId}`).expect(200)).body.data;
+    expect({ level, sections, cover, lyrics: copiedLyrics, edits: copiedEdits, numbers: copiedNumbers, difficulty, description }).toEqual({
+      level: copied.level, sections: copied.sections, cover: copied.cover, lyrics: copied.lyrics, edits: copied.edits, numbers: copied.numbers, difficulty: 'hard', description: 'boucle',
     });
     await me.post('/api/pieces').send({ ...copied, cover: 'https://evil.test/x.jpg' }).expect(400);
     await me.delete(`/api/pieces/${copyId}`).expect(200);

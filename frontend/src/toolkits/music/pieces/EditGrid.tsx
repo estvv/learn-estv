@@ -18,8 +18,8 @@ export interface Cell {
 }
 
 const LOOK: Record<Hand, { text: string; on: string; lit: string; range: string }> = {
-  left: { text: 'text-amber-700', on: 'ring-amber-500 bg-amber-50', lit: 'bg-amber-200', range: 'bg-amber-100' },
-  right: { text: 'text-sky-700', on: 'ring-sky-500 bg-sky-50', lit: 'bg-sky-200', range: 'bg-sky-100' },
+  left: { text: 'text-hand-l-ink', on: 'ring-hand-l bg-hand-l-soft', lit: 'bg-hand-l-pale', range: 'bg-hand-l-soft' },
+  right: { text: 'text-hand-r-ink', on: 'ring-hand-r bg-hand-r-soft', lit: 'bg-hand-r-pale', range: 'bg-hand-r-soft' },
 };
 
 export function EditGrid({ part, selected, range, column, small, onSelect, onRange }: {

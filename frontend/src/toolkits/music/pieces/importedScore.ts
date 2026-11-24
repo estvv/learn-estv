@@ -1,5 +1,5 @@
-import { renderScore, scoreDivisions, stepsHeld, trimSilence, type Hand, type PieceEdits, type PieceNote, type PieceNumber, type PieceSection, type RenderedScore, type Score, type ScoreNote, type ScorePart } from '@learn/shared';
-import { changeOf, editable, layoutOf, levelNotes, levelOf, numbersOf, visible, type PieceChange } from './derive';
+import { renderScore, scoreDivisions, stepsHeld, trimSilence, type Hand, type LyricLine, type PieceEdits, type PieceNote, type PieceNumber, type PieceSection, type RenderedScore, type Score, type ScoreNote, type ScorePart } from '@learn/shared';
+import { changeOf, editable, layoutOf, levelNotes, levelOf, numbersAt, numbersOf, visible, withNumbers, type PieceChange } from './derive';
 import type { BeatGrid } from './grid';
 import { keysOf } from './ownNumbers';
 import { HANDS, partOf, withKeys } from './score';
@@ -162,7 +162,10 @@ export function renderImported(src: Imported, score: Score): Rendering {
   const track = src.piece.tracks ? Math.max(0, src.piece.tracks.findIndex((t) => t.enabled)) : undefined;
   const made = new Set<PieceNote>();
   const notes: PieceNote[] = [];
-  for (const { part, start, scale, time } of spans) {
+  for (const [i, { part, start, end, scale, time }] of spans.entries()) {
+    const next = spans[i + 1]?.part.origin;
+    // What runs over the next part only does when it did in the piece.
+    const runs = kept || !part.origin || !spans[i + 1] || next?.index === part.origin.index + 1;
     for (const n of part.notes as KeptNote[]) {
       const at = n.step / score.division;
       // Since the start of the piece.
@@ -173,7 +176,8 @@ export function renderImported(src: Imported, score: Score): Rendering {
       const held = !!was && near(was.length, length);
       // Put on the grid, it is still where it was.
       const beside = !!was && (even ? Math.abs(was.at - place) < 0.75 / score.division : near(was.at, place));
-      const unmoved = beside && was.midi === n.midi && was.hand === n.hand;
+      const sameKey = !!was && was.midi === n.midi && was.hand === n.hand;
+      const unmoved = beside && sameKey;
       if (original && kept && unmoved && held) {
         notes.push(original);
         continue;
@@ -184,9 +188,10 @@ export function renderImported(src: Imported, score: Score): Rendering {
         hand: n.hand,
         time: Math.max(0, start + time(at)),
         duration: Math.max(MIN_DURATION, original && held && !even ? original.duration * scale : (time(at + length) - time(at)) * LENGTH),
-        // Placed by the owner.
-        ...(unmoved ? {} : { pinned: true }),
+        // Its hand was chosen.
+        ...(sameKey ? {} : { pinned: true }),
       };
+      if (!runs) note.duration = Math.max(MIN_DURATION, Math.min(note.duration, end - note.time));
       if (!unmoved || !held || even) made.add(note);
       notes.push(note);
     }
@@ -246,7 +251,7 @@ export const sameLengths = (before: Score, after: Score): Score => ({
 
 // The owner's numbers, with those given or changed here.
 function numbersIn(src: Imported, score: Score): PieceNumber[] {
-  const own = src.piece.numbers ?? [];
+  const own = numbersAt(src.piece);
   const out: PieceNumber[] = [];
   const done = new Set<string>();
   for (const p of score.parts) {
@@ -273,9 +278,9 @@ export interface ImportedChange {
 export function changeFrom(src: Imported, score: Score): ImportedChange {
   const { piece } = src;
   const numbers = numbersIn(src, score);
-  const own = piece.numbers ?? [];
+  const own = numbersAt(piece);
   const id = (list: PieceNumber[]) => list.map((n) => `${n.label}|${n.hand}|${n.midi}|${n.number}`).sort().join('\n');
-  return { notes: notesChange(src, score), numbers: id(numbers) === id(own) ? null : numbers };
+  return { notes: notesChange(src, score), numbers: id(numbers) === id(own) ? null : withNumbers(piece, numbers) };
 }
 
 function notesChange(src: Imported, score: Score): PieceChange | null {
@@ -293,14 +298,14 @@ function notesChange(src: Imported, score: Score): PieceChange | null {
   if (levelOf(piece) !== 'original') return changeOf(piece, notes);
 
   // What is not shown follows the parts it is in.
-  const carry = <N extends { time: number; duration?: number }>(items: N[]): N[] => (kept ? items : spans.flatMap(({ part, start, scale, time }) => {
+  const carry = <N extends { time: number; duration?: number }>(items: N[], snapped = even): N[] => (kept ? items : spans.flatMap(({ part, start, scale, time }) => {
     const { origin } = part;
     if (!origin) return [];
     return items.flatMap((n) => {
       const at = src.grid.toBeats(n.time) - origin.beat;
       const early = origin.index > 0 && at < -EARLY;
       if (early || at >= origin.beats - EARLY || at >= part.beats) return [];
-      const column = even ? Math.round(at * score.division) / score.division : at;
+      const column = snapped ? Math.round(at * score.division) / score.division : at;
       return [{ ...n, time: Math.max(0, start + time(column)), ...(n.duration === undefined ? {} : { duration: n.duration * scale }) }];
     });
   }).sort((a, b) => a.time - b.time));
@@ -313,11 +318,14 @@ function notesChange(src: Imported, score: Score): PieceChange | null {
     ? piece.sections ?? null
     : spans.map(({ start }, i) => ({ start: i ? start : 0, label: letters[i] }));
   const all = [...notes, ...carry(src.hidden)].sort((a, b) => a.time - b.time || a.midi - b.midi);
-  const trimmed = trimSilence({ notes: all, sections, edits });
+  const sung = (piece.lyrics ?? []).flatMap((l) => (l.time === null ? [] : [{ ...l, time: l.time }]));
+  const lyrics: LyricLine[] | null = !piece.lyrics ? null : (kept ? piece.lyrics : carry(sung, false));
+  const trimmed = trimSilence({ notes: all, sections, edits, lyrics });
   return {
     notes: trimmed.notes,
     sections: trimmed.sections ?? null,
     edits: trimmed.edits ?? null,
+    ...(piece.lyrics ? { lyrics: trimmed.lyrics } : {}),
     ...(even ? { bpm: (60 * score.bpm) / (src.beat * src.score.bpm) } : piece.bpm && score.bpm !== src.score.bpm ? { bpm: (piece.bpm * score.bpm) / src.score.bpm } : {}),
   };
 }

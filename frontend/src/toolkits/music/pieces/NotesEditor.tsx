@@ -11,7 +11,7 @@ import { piecesApi } from './api';
 import { CellPad, playKey } from './CellPad';
 import { commit, redo, startHistory, undo, type History } from './edit';
 import { EditGrid, type Cell } from './EditGrid';
-import { changeOf, editable, layoutOf, levelNames, levelNotes, levelOf, numbersOf, untouched, visible } from './derive';
+import { changeOf, editable, layoutOf, levelNames, levelNotes, levelOf, numbersAt, numbersOf, untouched, visible, withNumbers } from './derive';
 import { clearRange, copyRange, pasteClip, targetOf, type Clip, type Range } from './gridClip';
 import { setStep } from './numberEdit';
 import { Small } from './Numbers';
@@ -37,7 +37,7 @@ export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
   onSaved(id: number): void;
   onClose(): void;
 }) {
-  const [history, setHistory] = useState<History<Edited>>(() => startHistory({ notes: editable(piece), numbers: piece.numbers ?? [] }));
+  const [history, setHistory] = useState<History<Edited>>(() => startHistory({ notes: editable(piece), numbers: numbersAt(piece) }));
   const { notes, numbers } = history.present;
   const editNotes = (change: (notes: PieceNote[]) => PieceNote[]) => {
     setError('');
@@ -214,7 +214,7 @@ export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
     try {
       const before = history.past[0] ?? history.present;
       if (notes !== before.notes) await piecesApi.saveChange(piece.id, changeOf(piece, notes));
-      if (numbers !== before.numbers) await piecesApi.update(piece.id, { numbers: numbers.length ? numbers : null });
+      if (numbers !== before.numbers) await piecesApi.update(piece.id, { numbers: withNumbers(piece, numbers) });
       onSaved(piece.id);
     } catch (e) {
       setError((e as Error).message);

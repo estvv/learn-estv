@@ -1,29 +1,39 @@
 import type { PieceNote } from '@learn/shared';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
+import { look, shadesOf, type Shades, type Theme } from '../../../lib/appearance';
 import { keyLayout } from '../keyGeometry';
-import type { PiecePlayer } from './player';
+import { Scene, type SeenNote } from '../stage/scene';
+import { stage } from '../stage/settings';
 
 // Notes falling towards the keyboard below: a note reaches the bottom edge
-// when it must be played. Drawn on a canvas every animation frame.
+// when it must be played. Drawn on a canvas every animation frame, the classic way
+// here, the others by their style (stage/).
 
 const LOOKAHEAD = 3; // seconds visible above the keyboard, at normal tempo
 // Pale while they come, strong while they sound; a little darker on black keys.
-const COLORS = {
-  right: { fill: '#bae6fd', black: '#7dd3fc', active: '#0ea5e9', text: '#0c4a6e' }, // sky
-  left: { fill: '#fde68a', black: '#fcd34d', active: '#f59e0b', text: '#78350f' }, // amber
-  none: { fill: '#ddd6fe', black: '#c4b5fd', active: '#8b5cf6', text: '#4c1d95' }, // violet
-};
+// These: of no known hand.
+const NONE: Record<Theme, Shades> = { light: shadesOf('#8b5cf6', 'light'), dark: shadesOf('#a78bfa', 'dark') };
 // White keys' notes leave room to the black keys' ones.
 const WHITE_INSET = 0.16;
 const FONT = (size: number) => `700 ${size}px "Plus Jakarta Sans", sans-serif`;
 
-export function FallingNotes({ player, from, to, numbers, parts }: {
-  player: PiecePlayer;
+// What is played: a PiecePlayer, or what looks like one.
+export interface NoteSource {
+  readonly position: number;
+  readonly rate: number;
+  readonly notes: PieceNote[];
+  readonly state: { get(): { expected: { midi: number }[]; playing: boolean } };
+}
+
+export function FallingNotes({ player, from, to, numbers, parts, keyLight }: {
+  player: NoteSource;
   from: number;
   to: number;
   // Written on the notes, and where they start again at 1 (see numbers.ts).
   numbers?: ReadonlyMap<PieceNote, number>;
   parts?: { start: number; label: string }[];
+  // Over the keyboard below, for the light of the notes.
+  keyLight?: RefObject<HTMLCanvasElement | null>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   // Read by the drawing loop without restarting it.
@@ -34,6 +44,9 @@ export function FallingNotes({ player, from, to, numbers, parts }: {
     const ctx = el.getContext('2d')!;
     const layout = keyLayout(from, to);
     let raf = 0;
+    const scene = new Scene();
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let before = { at: performance.now(), position: player.position };
 
     // Where a note is drawn, in CSS pixels; null when out of view.
     const place = (n: PieceNote) => {
@@ -50,7 +63,7 @@ export function FallingNotes({ player, from, to, numbers, parts }: {
       const x = keyBox.x * w + gap;
       const width = Math.max(3, keyBox.width * w - 2 * gap);
       const y = Math.max(-4, top);
-      return { x, y, width, height: Math.max(4, Math.min(h, bottom) - y) };
+      return { x, y, width, height: Math.max(4, Math.min(h, bottom) - y), top, bottom };
     };
 
     const draw = () => {
@@ -63,14 +76,49 @@ export function FallingNotes({ player, from, to, numbers, parts }: {
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
+      const chosen = stage.get();
+      const classic = chosen.style === 'classic';
+      const at = performance.now();
 
       // Faint guide on every C.
-      ctx.fillStyle = 'rgba(0,0,0,0.035)';
-      for (const [midi, b] of layout) if (midi % 12 === 0) ctx.fillRect(b.x * w, 0, 1, h);
+      const colors = look.get();
+      const line = (share: number) => (colors.theme === 'dark' ? `rgba(255,255,255,${share * 1.5})` : `rgba(0,0,0,${share})`);
+      if (classic) {
+        ctx.fillStyle = line(0.035);
+        for (const [midi, b] of layout) if (midi % 12 === 0) ctx.fillRect(b.x * w, 0, 1, h);
+      }
 
       const pos = player.position;
       const span = LOOKAHEAD * player.rate;
       const expected = new Set(player.state.get().expected.map((n) => n.midi));
+
+      if (!classic) {
+        const notes: SeenNote[] = [];
+        for (const n of player.notes) {
+          if (n.time > pos + span) break;
+          const r = place(n);
+          if (!r) continue;
+          notes.push({
+            id: n, midi: n.midi, hand: n.hand,
+            box: { x: r.x, y: Math.min(r.top, r.bottom - 6), w: r.width, h: Math.max(6, r.bottom - r.top) },
+            active: n.time <= pos + 0.001 && (expected.size === 0 || expected.has(n.midi)),
+          });
+        }
+        const settings = calm.matches ? { ...chosen, effects: 'off' as const } : chosen;
+        scene.draw(ctx, {
+          w, h, layout, notes,
+          moving: player.state.get().playing && pos > before.position,
+          hands: { left: colors.left.strong, right: colors.right.strong },
+        }, settings, (at - before.at) / 1000);
+        const over = keyLight?.current;
+        const keys = over?.getContext('2d');
+        if (over && keys) {
+          const [kw, kh] = [over.clientWidth, over.clientHeight];
+          if (over.width !== kw || over.height !== kh) Object.assign(over, { width: kw, height: kh });
+          scene.drawKeys(keys, kw, kh, layout);
+        }
+      }
+      before = { at, position: pos };
 
       // Where a part begins.
       const { numbers: numbered, parts: cuts } = numbersRef.current;
@@ -78,9 +126,9 @@ export function FallingNotes({ player, from, to, numbers, parts }: {
       for (const cut of cuts ?? []) {
         if (cut.start <= pos || cut.start > pos + span) continue;
         const y = h - (cut.start - pos) * (h / span);
-        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+        ctx.fillStyle = line(0.12);
         ctx.fillRect(0, y, w, 1);
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillStyle = line(0.4);
         ctx.font = FONT(12);
         ctx.textAlign = 'left';
         ctx.fillText(cut.label, 2, y - 9);
@@ -91,7 +139,7 @@ export function FallingNotes({ player, from, to, numbers, parts }: {
         if (n.time > pos + span) break;
         const r = place(n);
         if (!r) continue;
-        const color = COLORS[n.hand ?? 'none'];
+        const color = n.hand ? colors[n.hand] : NONE[colors.theme];
         const active = n.time <= pos + 0.001 && (expected.size === 0 || expected.has(n.midi));
         const number = numbered?.get(n);
         const size = Math.round(Math.min(17, Math.max(10, r.width * 0.5)));
@@ -100,12 +148,14 @@ export function FallingNotes({ player, from, to, numbers, parts }: {
           r.y -= size + 6 - r.height;
           r.height = size + 6;
         }
-        ctx.fillStyle = active ? color.active : layout.get(n.midi)!.black ? color.black : color.fill;
-        ctx.beginPath();
-        ctx.roundRect(r.x, r.y, r.width, r.height, Math.min(6, r.width / 3));
-        ctx.fill();
+        if (classic) {
+          ctx.fillStyle = active ? color.strong : layout.get(n.midi)!.black ? color.deep : color.pale;
+          ctx.beginPath();
+          ctx.roundRect(r.x, r.y, r.width, r.height, Math.min(6, r.width / 3));
+          ctx.fill();
+        }
         if (number !== undefined) {
-          labels.push({ text: String(number), x: r.x + r.width / 2, y: r.y + r.height - size * 0.55 - 3, size, color: active ? '#fff' : color.text });
+          labels.push({ text: String(number), x: r.x + r.width / 2, y: r.y + r.height - size * 0.55 - 3, size, color: !classic ? '#ffffff' : active ? color.on : color.ink });
         }
       }
       ctx.globalAlpha = 1;
@@ -114,6 +164,13 @@ export function FallingNotes({ player, from, to, numbers, parts }: {
       ctx.textAlign = 'center';
       for (const l of labels) {
         ctx.font = FONT(l.size);
+        // Whatever is behind.
+        if (!classic) {
+          ctx.lineWidth = 4;
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.strokeText(l.text, l.x, l.y);
+        }
         ctx.fillStyle = l.color;
         ctx.fillText(l.text, l.x, l.y);
       }
@@ -123,7 +180,7 @@ export function FallingNotes({ player, from, to, numbers, parts }: {
     raf = requestAnimationFrame(draw);
 
     return () => cancelAnimationFrame(raf);
-  }, [player, from, to]);
+  }, [player, from, to, keyLight]);
 
   return <canvas ref={canvas} className="block h-full w-full" />;
 }

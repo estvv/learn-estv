@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Hand, PieceLevel, PieceNote, PieceTrack } from '@learn/shared';
-import { PencilIcon } from '../../../components/icons';
+import { PencilIcon, PlusIcon } from '../../../components/icons';
 import { Modal } from '../../../components/Modal';
 import { Segmented } from '../../../components/Segmented';
 import { Toggle } from '../../../components/settings';
+import { StageFields, StagePreview } from '../stage/StageFields';
+import { HandColorsField, ThemeField } from '../../../components/AppearanceFields';
 import { Field } from '../../../components/Field';
-import { secondaryButton } from '../../../components/ui';
 import type { PlayMode } from './player';
 import { TrackList } from './PlayerControls';
 
@@ -13,10 +14,12 @@ export type HandChoice = 'both' | Hand;
 
 export const RATES = [0.5, 0.75, 1, 1.25];
 
-// Everything that is not needed while playing. A panel over the notes, seen
-// changing; a sheet on a phone.
-export function PieceOptions({ floating, mode, level, rate, hand, bothHands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onClose }: {
-  floating: boolean;
+type Tab = 'play' | 'look' | 'edit';
+// Opened again where it was left.
+let lastTab: Tab = 'play';
+
+// Everything that is not needed while playing, in a window.
+export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onExtract, lyrics, onLyrics, onKaraoke, onClose }: {
   mode: PlayMode;
   level: PieceLevel;
   rate: number;
@@ -39,41 +42,38 @@ export function PieceOptions({ floating, mode, level, rate, hand, bothHands, num
   // Left out for pieces written by hand: they only have one editor.
   onEdit?(): void;
   onEditNumbers(): void;
+  // A new piece from parts of this one.
+  onExtract(): void;
+  // Shown or not; null: the piece has none.
+  lyrics: boolean | null;
+  onLyrics(on: boolean): void;
+  // Finding them, putting them in their place.
+  onKaraoke(): void;
   onClose(): void;
 }) {
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!floating) return;
-    const outside = (e: PointerEvent) => !box.current?.contains(e.target as Node) && !(e.target as Element).closest('[data-options]') && onClose();
-    const escape = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('pointerdown', outside);
-    window.addEventListener('keydown', escape);
-    return () => {
-      window.removeEventListener('pointerdown', outside);
-      window.removeEventListener('keydown', escape);
-    };
-  }, [floating, onClose]);
+  const [tab, setTab] = useState<Tab>(lastTab);
+  const show = (next: Tab) => {
+    lastTab = next;
+    setTab(next);
+  };
 
-  const body = (
-      <div className="space-y-5">
-        {hand && (
-          <Field label="Mains" hint={!bothHands ? 'Une seule main joue avec ce niveau et ces pistes.' : hand === 'both' ? undefined : 'L’autre main n’est ni jouée ni affichée.'}>
-            <div className={bothHands ? '' : 'pointer-events-none opacity-40'} inert={!bothHands}>
-              <Segmented<HandChoice> full value={hand} onChange={onHand} options={[{ value: 'left', label: 'Gauche' }, { value: 'both', label: 'Les deux' }, { value: 'right', label: 'Droite' }]} />
-            </div>
-          </Field>
-        )}
-        {mode && (
-          <>
+  return (
+    <Modal title="Réglages" onClose={onClose} width="lg">
+      <div className="mb-5">
+        <Segmented<Tab> full value={tab} onChange={show} options={[{ value: 'play', label: 'Jouer' }, { value: 'look', label: 'Apparence' }, { value: 'edit', label: 'Modifier' }]} />
+      </div>
+      {/* As tall whatever the tab, so that they do not move under the mouse. */}
+      <div className="sm:min-h-104">
+        {tab === 'play' && (
+          <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
             <Field label="Mode" hint={mode === 'wait' ? 'Le morceau attend que tu joues les bonnes notes.' : 'Le morceau se joue tout seul.'}>
               <Segmented<PlayMode> full value={mode} onChange={onMode} options={[{ value: 'listen', label: 'Écouter' }, { value: 'wait', label: 'Attente' }]} />
             </Field>
-            {mode === 'wait' && bigKeys !== null && (
-              <div>
-                <Toggle checked={bigKeys} onChange={onBigKeys} label="Grandes touches" />
-                <p className="mt-1 text-xs text-neutral-400">Pour jouer sur l’écran : le clavier suit les notes, et glisse si tu tires la zone au-dessus.</p>
+            <Field label="Mains" hint={!bothHands ? 'Une seule main joue avec ce niveau et ces pistes.' : hand === 'both' ? undefined : 'L’autre main n’est ni jouée ni affichée.'}>
+              <div className={bothHands ? '' : 'pointer-events-none opacity-40'} inert={!bothHands}>
+                <Segmented<HandChoice> full value={hand} onChange={onHand} options={[{ value: 'left', label: 'Gauche' }, { value: 'both', label: 'Les deux' }, { value: 'right', label: 'Droite' }]} />
               </div>
-            )}
+            </Field>
             <Field label="Niveau">
               <Segmented<PieceLevel>
                 full
@@ -82,31 +82,64 @@ export function PieceOptions({ floating, mode, level, rate, hand, bothHands, num
                 options={[{ value: 'original', label: 'Original' }, { value: 'simplified', label: 'Simplifié' }, { value: 'melody', label: 'Mélodie' }]}
               />
             </Field>
-          </>
+            <Field label="Vitesse">
+              <Segmented<number> full value={rate} onChange={onRate} options={RATES.map((r) => ({ value: r, label: `${Math.round(r * 100)} %` }))} />
+            </Field>
+            <div className="space-y-3 sm:col-span-2">
+              <Toggle checked={numbered} onChange={onNumbered} label="Chiffres sur les notes et les touches" />
+              {lyrics !== null && <Toggle checked={lyrics} onChange={onLyrics} label="Paroles au-dessus des notes" />}
+              {mode === 'wait' && bigKeys !== null && (
+                <div>
+                  <Toggle checked={bigKeys} onChange={onBigKeys} label="Grandes touches" />
+                  <p className="mt-1 text-xs text-neutral-400">Pour jouer sur l’écran : le clavier suit les notes, et glisse si tu tires la zone au-dessus.</p>
+                </div>
+              )}
+            </div>
+            {tracks.length > 1 && (
+              <div className="sm:col-span-2">
+                <Field label="Pistes">
+                  <div className="-mx-2 max-h-52 overflow-y-auto overscroll-contain"><TrackList tracks={tracks} notes={notes} enabled={enabled} onChange={onTracks} /></div>
+                </Field>
+              </div>
+            )}
+          </div>
         )}
-        <Field label="Vitesse">
-          <Segmented<number> full value={rate} onChange={onRate} options={RATES.map((r) => ({ value: r, label: `${Math.round(r * 100)} %` }))} />
-        </Field>
-        <Toggle checked={numbered} onChange={onNumbered} label="Chiffres sur les notes et les touches" />
-        {tracks.length > 1 && (
-          <Field label="Pistes">
-            <div className="-mx-2"><TrackList tracks={tracks} notes={notes} enabled={enabled} onChange={onTracks} /></div>
-          </Field>
+        {tab === 'look' && (
+          <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
+            <StageFields />
+            <div className="space-y-5">
+              <StagePreview />
+              <ThemeField full />
+              <HandColorsField />
+            </div>
+          </div>
         )}
-        <button type="button" onClick={onEditNumbers} className={`${secondaryButton} w-full`}>
-          <PencilIcon className="h-4 w-4" />Modifier en chiffres
-        </button>
-        {onEdit && (
-          <button type="button" onClick={onEdit} className={`${secondaryButton} w-full`}>
-            <PencilIcon className="h-4 w-4" />Modifier les notes
-          </button>
+        {tab === 'edit' && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {onEdit && <Choice title="Modifier les notes" text="Poser, déplacer et allonger les notes au-dessus du clavier." icon={<PencilIcon className="h-4 w-4" />} onClick={onEdit} />}
+            <Choice title="Modifier en chiffres" text={onEdit ? 'Les numéros de chaque touche, et les cases une par une.' : 'Les numéros de chaque touche, et les notes.'} icon={<PencilIcon className="h-4 w-4" />} onClick={onEditNumbers} />
+            <Choice
+              title={lyrics === null ? 'Ajouter les paroles' : 'Paroles'}
+              text="Karaoké : les trouver, et les caler sur le morceau."
+              icon={lyrics === null ? <PlusIcon className="h-4 w-4" /> : <PencilIcon className="h-4 w-4" />}
+              onClick={onKaraoke}
+            />
+            <Choice title="Nouveau morceau avec des parties" text="Garder seulement quelques parties. Celui-ci ne change pas." icon={<PlusIcon className="h-4 w-4" />} onClick={onExtract} />
+          </div>
         )}
       </div>
+    </Modal>
   );
-  if (!floating) return <Modal title="Réglages" onClose={onClose}>{body}</Modal>;
+}
+
+function Choice({ title, text, icon, onClick }: { title: string; text: string; icon: ReactNode; onClick(): void }) {
   return (
-    <div ref={box} role="dialog" aria-label="Réglages" className="absolute right-4 top-16 z-20 max-h-[calc(100dvh-5rem)] w-80 overflow-y-auto overscroll-contain rounded-xl border border-neutral-200 bg-white p-5 shadow-xl">
-      {body}
-    </div>
+    <button type="button" onClick={onClick} className="flex items-start gap-3 rounded-xl border border-neutral-200 p-4 text-left transition-colors hover:border-neutral-400 hover:bg-neutral-50">
+      <span className="mt-0.5 shrink-0 text-neutral-500">{icon}</span>
+      <span>
+        <span className="block text-sm font-semibold text-neutral-900">{title}</span>
+        <span className="mt-0.5 block text-xs text-neutral-500">{text}</span>
+      </span>
+    </button>
   );
 }

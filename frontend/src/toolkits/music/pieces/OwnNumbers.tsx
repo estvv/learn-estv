@@ -18,7 +18,7 @@ export function OwnNumbers({ hand, keys, assign, onNumber, onHear }: {
       </p>
       <div className="flex flex-wrap gap-2">
         {keys.map((k) => (
-          <span key={k.midi} className={`flex h-12 items-center rounded-xl ${hand === 'left' ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-800'}`}>
+          <span key={k.midi} className={`flex h-12 items-center rounded-xl ${hand === 'left' ? 'bg-hand-l-soft text-hand-l-ink' : 'bg-hand-r-soft text-hand-r-ink'}`}>
             <NumberInput value={k.number} label={`Numéro de ${frenchName(k.midi)}`} onChange={(v) => onNumber(k.midi, v)} />
             <button type="button" onClick={() => onHear(k.midi)} title="Écouter" className="h-12 pl-1.5 pr-4 text-sm opacity-75 hover:opacity-100">
               <NoteText text={frenchName(k.midi)} />
