@@ -315,6 +315,13 @@ export function setDivision(score: Score, division: Score['division'], exact = f
 export const addToOrder = (score: Score, label: string): Score => ({ ...score, order: [...score.order, label] });
 export const removeFromOrder = (score: Score, i: number): Score =>
   (score.order.length > 1 ? { ...score, order: score.order.filter((_, k) => k !== i) } : score);
+// The `from`-th one played, taken to another place.
+export function placeInOrder(score: Score, from: number, to: number): Score {
+  if (from === to) return score;
+  const order = [...score.order];
+  order.splice(to, 0, ...order.splice(from, 1));
+  return { ...score, order };
+}
 export function moveInOrder(score: Score, i: number, by: 1 | -1): Score {
   const to = i + by;
   if (to < 0 || to >= score.order.length) return score;

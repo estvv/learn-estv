@@ -21,11 +21,12 @@ import { ImportModal } from './ImportModal';
 import { LabelInput, Small } from './Numbers';
 import { handName } from './numbers';
 import { DifficultyPicker, FolderSelect } from './pieceFields';
-import { locate, moveNote, offsetsOf, sheetOf, spill, type Placed } from './roll';
+import { edgeRange, locate, moveEdge, moveNote, offsetsOf, sheetOf, spill, type Placed } from './roll';
+import { OrderChips } from './OrderChips';
 import { otherHand, RollEditor, samePlace } from './RollEditor';
 import { RunPanel } from './RunPanel';
 import {
-  addFree, addNotes, addPart, addRecorded, addToOrder, assignKey, emptyScore, HANDS, MAX_BEATS, midiOf, moveInOrder, numberKey, partOf, placeRun, placeTaps,
+  addFree, addNotes, addPart, addRecorded, addToOrder, assignKey, emptyScore, HANDS, MAX_BEATS, midiOf, moveInOrder, numberKey, partOf, placeInOrder, placeRun, placeTaps,
   removeFromOrder, removeKey, removeNote, removePart, renamePart, runText, setBeats, setDivision, shiftHand, tappedBpm, unknownNumbers,
 } from './score';
 import { pieceRange } from './player';
@@ -544,6 +545,15 @@ export function ScoreEditor({ subject, piece, from: given, firstStep, onSaved, o
             playhead={playhead}
             picked={picked}
             shown={shown}
+            edge={(index) => (structure ? edgeRange(score, index) : null)}
+            onEdge={(index, by) => {
+              preview.stop();
+              setPicked(null);
+              const next = moveEdge(score, index, by);
+              if (fill) setCursor(offsetsOf(sheetOf(next), next.division)[seen] ?? 0);
+              edit((s) => moveEdge(s, index, by));
+            }}
+            onGo={(index) => sheet[index] && showPart(sheet[index].label, score, index)}
             onSeen={onSeen}
             onPick={setPicked}
             onAdd={({ index, note }) => {
@@ -568,20 +578,20 @@ export function ScoreEditor({ subject, piece, from: given, firstStep, onSaved, o
       {step === 'piece' && (
         <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-neutral-200 bg-white px-3 py-2 sm:px-5">
           <span className="mr-2 text-xs text-neutral-500">Ordre</span>
-          {score.order.map((l, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => {
-                showPart(l, score, i);
-                if (structure) setOrderAt(orderAt === i ? null : i);
-              }}
-              aria-pressed={orderAt === i}
-              className={`h-8 min-w-8 rounded-lg px-2 text-sm font-semibold ${orderAt === i ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'}`}
-            >
-              {l}
-            </button>
-          ))}
+          <OrderChips
+            order={score.order}
+            selected={orderAt}
+            onPick={(i) => {
+              showPart(score.order[i], score, i);
+              if (structure) setOrderAt(orderAt === i ? null : i);
+            }}
+            onMove={structure ? (a, b) => {
+              const next = placeInOrder(score, a, b);
+              edit(() => next);
+              setOrderAt(b);
+              showPart(next.order[b], next, b);
+            } : null}
+          />
           {orderAt !== null && orderAt < score.order.length ? (
             <>
               <Small onClick={() => { edit((s) => moveInOrder(s, orderAt, -1)); setOrderAt(Math.max(0, orderAt - 1)); }} title="Plus tôt">←</Small>

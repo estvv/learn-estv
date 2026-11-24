@@ -10,13 +10,14 @@ import type { StoredPiece } from './types';
 // Those left alone come back untouched; only what is changed is worked out.
 
 // Where a part comes from. `label`: its name when opened, as the same letter
-// may come back; once renamed or copied, its own name is its letter.
-interface Origin { index: number; label: string; letter: string; beat: number }
-interface FromPiece extends ScorePart { origin?: Origin }
+// may come back; once redrawn or copied, its own name is its letter.
+// `beat` and `beats`: what it covers of the piece.
+interface Origin { index: number; label: string; letter: string; beat: number; beats: number }
+export interface FromPiece extends ScorePart { origin?: Origin }
 interface KeptNote extends ScoreNote { from?: number }
 
-// A note of the piece as it was opened, in beats.
-interface Place { index: number; at: number; length: number; midi: number; hand: Hand }
+// A note of the piece as it was opened, in beats since its start.
+interface Place { at: number; length: number; midi: number; hand: Hand }
 
 export interface Imported {
   piece: StoredPiece;
@@ -39,6 +40,8 @@ const MIN_DURATION = 0.05;
 const ON_COLUMN = 0.02;
 // A note a hair early belongs to the part it opens (see numberPiece).
 const EARLY = 1 / 8;
+// The last part covers all that comes after.
+const ENDLESS = 1e9;
 const isEven = (score: Imported['score']) => !!score.even;
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 
@@ -67,13 +70,14 @@ export function openPiece(piece: StoredPiece): Imported {
   const scoreParts = parts.map((p, index): FromPiece => {
     const label = unused(p.label);
     const kept = p.rows.flatMap((row) => row.steps.flatMap((s) => s.notes).map((n): KeptNote => {
-      const at = grid.toBeats(n.time) - p.beat;
-      const played = grid.toBeats(n.time + n.duration) - p.beat - at;
+      const start = grid.toBeats(n.time);
+      const at = start - p.beat;
+      const played = grid.toBeats(n.time + n.duration) - start;
       // Written on the grid, it stops just short of its last column's end.
       const full = Math.round((played / LENGTH) * division);
       const length = full && Math.abs((played / LENGTH) * division - full) < ON_COLUMN ? full / division : played;
       const from = place.get(n)!;
-      places[from] = { index, at, length, midi: n.midi, hand: row.hand };
+      places[from] = { at: start, length, midi: n.midi, hand: row.hand };
       return { hand: row.hand, midi: n.midi, step: at * division, length: length * division, from };
     }));
     const beats = p.columns / division;
@@ -82,10 +86,10 @@ export function openPiece(piece: StoredPiece): Imported {
       beats: index + 1 === parts.length ? Math.max(beats, last - p.beat) : beats,
       keys: HANDS.flatMap((hand) => keysOf(parts, p.label, hand)),
       notes: kept,
-      origin: { index, label, letter: p.label, beat: p.beat },
+      origin: { index, label, letter: p.label, beat: p.beat, beats: index + 1 === parts.length ? ENDLESS : parts[index + 1].beat - p.beat },
     };
   });
-  if (!scoreParts.length) scoreParts.push({ label: 'A', beats: Math.max(8, last), keys: [], notes: [], origin: { index: 0, label: 'A', letter: 'A', beat: 0 } });
+  if (!scoreParts.length) scoreParts.push({ label: 'A', beats: Math.max(8, last), keys: [], notes: [], origin: { index: 0, label: 'A', letter: 'A', beat: 0, beats: ENDLESS } });
 
   const b = grid.beats;
   const beat = (b[b.length - 1] - b[0]) / (b.length - 1);
@@ -109,13 +113,14 @@ interface Span {
   beats(time: number): number;
 }
 
-// Parts, order and tempo as they were: every note has its own place.
+// Parts, order and tempo as they were, wherever the parts start: every note has
+// its own place.
 function inPlace(src: Imported, score: Score): boolean {
   if (isEven(score) || score.bpm !== src.score.bpm || score.order.length !== src.score.order.length) return false;
-  return score.order.every((label, i) => {
-    const part: FromPiece = partOf(score, label);
-    return part.origin?.index === i && (i + 1 === score.order.length || part.beats === src.score.parts[i].beats);
-  });
+  const parts = score.order.map((label): FromPiece => partOf(score, label));
+  return parts.every(({ origin, beats }, i) => origin?.index === i && (i + 1 === parts.length
+    || (beats === src.score.parts[i].beats && origin.beat === (src.score.parts[i] as FromPiece).origin!.beat)
+    || parts[i + 1].origin?.beat === origin.beat + beats));
 }
 
 function spansOf(src: Imported, score: Score): Span[] {
@@ -160,13 +165,15 @@ export function renderImported(src: Imported, score: Score): Rendering {
   for (const { part, start, scale, time } of spans) {
     for (const n of part.notes as KeptNote[]) {
       const at = n.step / score.division;
+      // Since the start of the piece.
+      const place = (part.origin?.beat ?? NaN) + at;
       const length = stepsHeld(part, score.division, n) / score.division;
       const was = n.from === undefined ? undefined : src.places[n.from];
       const original = n.from === undefined ? undefined : src.heard[n.from];
       const held = !!was && near(was.length, length);
       // Put on the grid, it is still where it was.
-      const beside = !!was && (even ? Math.abs(was.at - at) < 0.75 / score.division : near(was.at, at));
-      const unmoved = beside && part.origin?.index === was.index && was.midi === n.midi && was.hand === n.hand;
+      const beside = !!was && (even ? Math.abs(was.at - place) < 0.75 / score.division : near(was.at, place));
+      const unmoved = beside && was.midi === n.midi && was.hand === n.hand;
       if (original && kept && unmoved && held) {
         notes.push(original);
         continue;
@@ -279,25 +286,20 @@ function notesChange(src: Imported, score: Score): PieceChange | null {
   const even = isEven(score);
   const spans = spansOf(src, score);
   const letters = spans.map((s) => letterOf(s.part));
-  const renamed = kept && letters.some((l, i) => l !== src.score.parts.map(letterOf)[i]);
-  if (kept && !renamed && notes.length === heard.size && notes.every((n) => heard.has(n))) return null;
+  const was = src.score.parts as FromPiece[];
+  const redrawn = kept && spans.some(({ part }, i) => letters[i] !== letterOf(was[i]) || part.origin!.beat !== was[i].origin!.beat);
+  if (kept && !redrawn && notes.length === heard.size && notes.every((n) => heard.has(n))) return null;
   // The parts and the tempo of an easier level are those of the piece.
   if (levelOf(piece) !== 'original') return changeOf(piece, notes);
 
   // What is not shown follows the parts it is in.
-  const starts = src.score.parts.map((p) => (p as FromPiece).origin!.beat);
-  const partAt = (beat: number) => {
-    let i = 0;
-    while (i + 1 < starts.length && beat >= starts[i + 1] - EARLY) i++;
-    return i;
-  };
   const carry = <N extends { time: number; duration?: number }>(items: N[]): N[] => (kept ? items : spans.flatMap(({ part, start, scale, time }) => {
     const { origin } = part;
     if (!origin) return [];
     return items.flatMap((n) => {
-      const beat = src.grid.toBeats(n.time);
-      if (partAt(beat) !== origin.index || beat - origin.beat >= part.beats) return [];
-      const at = beat - origin.beat;
+      const at = src.grid.toBeats(n.time) - origin.beat;
+      const early = origin.index > 0 && at < -EARLY;
+      if (early || at >= origin.beats - EARLY || at >= part.beats) return [];
       const column = even ? Math.round(at * score.division) / score.division : at;
       return [{ ...n, time: Math.max(0, start + time(column)), ...(n.duration === undefined ? {} : { duration: n.duration * scale }) }];
     });
@@ -307,7 +309,7 @@ function notesChange(src: Imported, score: Score): PieceChange | null {
   if (edits && !kept) {
     edits = Object.fromEntries(Object.entries(edits).map(([level, e]) => [level, e && { removed: carry(e.removed), added: carry(e.added) }]));
   }
-  const sections: PieceSection[] | null = kept && !renamed
+  const sections: PieceSection[] | null = kept && !redrawn
     ? piece.sections ?? null
     : spans.map(({ start }, i) => ({ start: i ? start : 0, label: letters[i] }));
   const all = [...notes, ...carry(src.hidden)].sort((a, b) => a.time - b.time || a.midi - b.midi);

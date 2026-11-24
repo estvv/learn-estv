@@ -25,13 +25,15 @@ const LOOK: Record<Hand, { note: string; picked: string }> = {
 
 type Drag =
   | { kind: 'new'; y: number; moved: boolean; to: Placed }
+  // Where a part starts, in beats from where it did.
+  | { kind: 'edge'; y: number; moved: boolean; index: number; by: number }
   | { kind: 'move' | 'size'; x: number; y: number; moved: boolean; from: Placed; to: Placed; held: number };
 
 export const otherHand = (hand: Hand): Hand => (hand === 'left' ? 'right' : 'left');
 const sameNote = (a: ScoreNote, b: ScoreNote) => a.hand === b.hand && a.step === b.step && a.midi === b.midi;
 export const samePlace = (a: Placed | null, b: Placed) => !!a && a.index === b.index && sameNote(a.note, b.note);
 
-export function RollEditor({ parts, division, from, to, hand, length, extend, cursor, playhead, picked, shown, onSeen, onPick, onAdd, onChange, onRemove }: {
+export function RollEditor({ parts, division, from, to, hand, length, extend, cursor, playhead, picked, shown, edge, onEdge, onGo, onSeen, onPick, onAdd, onChange, onRemove }: {
   // In the order they are played: the same one may come back.
   parts: ScorePart[];
   division: Score['division'];
@@ -49,6 +51,11 @@ export function RollEditor({ parts, division, from, to, hand, length, extend, cu
   picked: Placed | null;
   // The part to go to, every time `times` changes.
   shown: { index: number; times: number };
+  // How far the start of a part can be moved, in beats; null: it cannot.
+  edge(index: number): [number, number] | null;
+  onEdge(index: number, by: number): void;
+  // A part's letter was clicked.
+  onGo(index: number): void;
   // The part just above the keyboard.
   onSeen(index: number): void;
   onPick(note: Placed | null): void;
@@ -131,8 +138,19 @@ export function RollEditor({ parts, division, from, to, hand, length, extend, cu
     sheet.current!.setPointerCapture(e.pointerId);
     setDrag({ kind, x: e.clientX, y: e.clientY, moved: false, from: at, to: at, held: stepsHeld(parts[at.index], division, at.note) });
   };
+  const downEdge = (e: PointerEvent, index: number) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    sheet.current!.setPointerCapture(e.pointerId);
+    setDrag({ kind: 'edge', y: e.clientY, moved: false, index, by: 0 });
+  };
   const move = (e: PointerEvent) => {
     if (!drag) return;
+    if (drag.kind === 'edge') {
+      const range = edge(drag.index);
+      if (!range || (!drag.moved && Math.abs(e.clientY - drag.y) <= CLICK)) return;
+      return setDrag({ ...drag, moved: true, by: Math.max(range[0], Math.min(range[1], Math.round((drag.y - e.clientY) / BEAT))) });
+    }
     const far = Math.abs(e.clientY - drag.y) > CLICK || (drag.kind !== 'new' && Math.abs(e.clientX - drag.x) > CLICK);
     if (!drag.moved && !far) return;
     const to = (index: number, note: ScoreNote) => setDrag({ ...drag, moved: true, to: { index, note } });
@@ -152,6 +170,11 @@ export function RollEditor({ parts, division, from, to, hand, length, extend, cu
   const up = () => {
     if (!drag) return;
     setDrag(null);
+    if (drag.kind === 'edge') {
+      if (!drag.moved) onGo(drag.index);
+      else if (drag.by) onEdge(drag.index, drag.by);
+      return;
+    }
     if (drag.kind === 'new') {
       if (picked && !drag.moved) return onPick(null);
       hear(drag.to.note.midi);
@@ -178,14 +201,14 @@ export function RollEditor({ parts, division, from, to, hand, length, extend, cu
 
   const low = Math.max(0, view - AROUND) * division;
   const high = Math.min(columns + blank, (view + Math.ceil(height / BEAT) + AROUND) * division);
-  const lines: { at: number; local: number; label: string | null; after: boolean }[] = [];
+  const lines: { at: number; local: number; after: boolean }[] = [];
   for (let at = low; at < high; at++) {
     const there = locate(offsets, at);
-    lines.push({ at, local: there.step, label: there.step === 0 ? parts[there.index].label : null, after: at >= columns });
+    lines.push({ at, local: there.step, after: at >= columns });
   }
   const notes = parts.flatMap((p, index) => (offsets[index] >= high ? [] : p.notes.flatMap((note, i) => {
     const place: Placed = { index, note };
-    const to = drag && drag.kind !== 'new' && samePlace(drag.from, place) ? drag.to : place;
+    const to = drag && (drag.kind === 'move' || drag.kind === 'size') && samePlace(drag.from, place) ? drag.to : place;
     const start = offsets[to.index] + to.note.step;
     const seen = start < high && start + stepsHeld(parts[to.index], division, to.note) > low;
     return seen || to !== place || samePlace(picked, place) ? [{ id: `${index}-${i}`, place, to }] : [];
@@ -209,13 +232,12 @@ export function RollEditor({ parts, division, from, to, hand, length, extend, cu
         {[...layout].filter(([m]) => m % 12 === 0).map(([m, b]) => (
           <div key={m} className="pointer-events-none absolute inset-y-0 w-px bg-neutral-200" style={{ left: `${b.x * 100}%` }} />
         ))}
-        {lines.map(({ at, local, label, after }) => (
+        {lines.map(({ at, local, after }) => (
           <div
             key={at}
-            className={`pointer-events-none absolute inset-x-0 ${label !== null ? 'border-t-2 border-neutral-500' : `border-t ${local % (BAR * division) === 0 ? 'border-neutral-400' : local % division === 0 ? 'border-neutral-200' : 'border-neutral-100'}`}`}
+            className={`pointer-events-none absolute inset-x-0 border-t ${local % (BAR * division) === 0 ? 'border-neutral-400' : local % division === 0 ? 'border-neutral-200' : 'border-neutral-100'}`}
             style={{ bottom: at * step - 1 }}
           >
-            {label !== null && <span className="absolute -top-7 right-2 text-base font-bold text-neutral-400">{label}</span>}
             {local % division === 0 && <span className="absolute -top-4 left-1 text-[10px] tabular-nums text-neutral-400">{((local / division) % BAR) + 1}</span>}
             {after && at === columns && <span className="absolute -top-5 left-6 text-[11px] text-neutral-400">Fin</span>}
           </div>
@@ -267,6 +289,27 @@ export function RollEditor({ parts, division, from, to, hand, length, extend, cu
                   </button>
                 </>
               )}
+            </div>
+          );
+        })}
+        {/* Where parts start. */}
+        {parts.map((p, index) => {
+          const dragged = drag?.kind === 'edge' && drag.index === index;
+          const at = offsets[index] + (dragged ? drag.by * division : 0);
+          if (!dragged && (at < low || at >= high)) return null;
+          const movable = edge(index) !== null;
+          return (
+            <div key={index} className={`pointer-events-none absolute inset-x-0 z-10 border-t-2 ${dragged ? 'border-neutral-900' : 'border-neutral-500'}`} style={{ bottom: at * step - 1 }}>
+              <button
+                type="button"
+                onPointerDown={(e) => downEdge(e, index)}
+                onClick={(e) => e.detail === 0 && onGo(index)}
+                title={movable ? `Glisser pour changer le début de la partie ${p.label}` : `Partie ${p.label}`}
+                className={`pointer-events-auto absolute -top-9 right-2 flex h-8 min-w-8 touch-none items-center justify-center gap-1 rounded-lg px-2 text-sm font-bold shadow-sm ring-1 ${movable ? 'cursor-ns-resize' : 'cursor-pointer'} ${dragged ? 'bg-neutral-900 text-white ring-neutral-900' : 'bg-white text-neutral-700 ring-neutral-200 hover:bg-neutral-100'}`}
+              >
+                {p.label}
+                {movable && <span aria-hidden className="text-xs font-normal opacity-50">↕</span>}
+              </button>
             </div>
           );
         })}

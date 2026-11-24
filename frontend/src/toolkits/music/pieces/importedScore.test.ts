@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layoutOf, levelNotes } from './derive';
 import { changeFrom, openPiece, renderImported, sameLengths, shareKeys } from './importedScore';
 import { addNotes, addPart, addToOrder, assignKey, moveInOrder, partOf, removeNote, renamePart, replaceNote, setBeats, setDivision } from './score';
+import { moveEdge } from './roll';
 import type { StoredPiece } from './types';
 
 const n = (midi: number, beat: number, hand: Hand = 'right', more: Partial<PieceNote> = {}): PieceNote =>
@@ -127,6 +128,34 @@ describe('an imported piece in the editor', () => {
     expect(numbers!.filter((x) => x.hand === 'left' || x.label === 'B')).toEqual([]);
     expect(numbers).toContainEqual({ label: 'A', hand: 'right', midi: 60, number: 9 });
     expect(layoutOf({ ...src.piece, numbers }).given.keys!.get('A')).toBeDefined();
+  });
+
+  it('moves where a part starts without touching a note', () => {
+    const src = openPiece(piece());
+    const moved = moveEdge(moveEdge(src.score, 1, 2), 2, -1);
+    expect(renderImported(src, moved).notes.every((x) => notes.includes(x))).toBe(true);
+    const change = changeFrom(src, moved).notes!;
+    expect(change.notes).toEqual(notes);
+    expect(change.sections).toEqual([{ start: 0, label: 'A' }, { start: 3, label: 'B' }, { start: 3.5, label: 'A' }]);
+    const again = openPiece(piece({ ...change } as Partial<StoredPiece>));
+    // The silence after the last note is not kept.
+    const shape = (parts: typeof moved.parts) => parts.map((p, i) => [i === 2 ? null : p.beats, p.notes.length]);
+    expect(shape(again.score.parts)).toEqual(shape(moved.parts));
+    // And back.
+    expect(changeFrom(src, moveEdge(moveEdge(moved, 2, 1), 1, -2)).notes).toBeNull();
+  });
+
+  it('moves the parts so cut, with what is not shown', () => {
+    const hidden = [n(30, 5, 'left', { track: 1 })];
+    const src = openPiece(piece({
+      notes: [...notes.map((x) => ({ ...x, track: 0 })), ...hidden],
+      tracks: [{ name: 'a', instrument: null, enabled: true }, { name: 'b', instrument: null, enabled: false }],
+    }));
+    // The first beat of B is now in A, then B comes first.
+    const change = changeFrom(src, moveInOrder(moveEdge(src.score, 1, 1), 0, 1)).notes!;
+    expect(change.sections!.map((x) => x.start)).toEqual([0, 1.5, 4]);
+    expect(change.notes!.filter((x) => x.track === 1).map((x) => x.time)).toEqual([0]);
+    expect(change.notes!.filter((x) => x.track === 0)).toHaveLength(notes.length);
   });
 
   it('renames a part', () => {
