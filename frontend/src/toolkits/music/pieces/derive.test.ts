@@ -1,6 +1,6 @@
 import type { Hand, PieceNote } from '@learn/shared';
 import { describe, expect, it } from 'vitest';
-import { changeOf, editable, layoutOf, levelNotes, numbersOf, playedSpan, untouched, visible } from './derive';
+import { changeOf, editable, handsOf, layoutOf, levelNotes, numbersOf, playedSpan, untouched, visible } from './derive';
 import type { StoredPiece } from './types';
 
 const n = (midi: number, beat: number, hand: Hand = 'left', track?: number): PieceNote =>
@@ -96,5 +96,54 @@ describe('from a piece to its numbers', () => {
     expect(playedSpan(p, levelNotes(p), 10.45)).toEqual([2, 3.45]);
     expect(playedSpan(piece(notes), notes, 10.45)).toEqual([0, 10.45]);
     expect(playedSpan(piece([]), [], 5)).toEqual([0, 5]);
+  });
+
+  it('works out the hands of files that do not say them, and keeps the owner’s choices', () => {
+    // One track cut at middle C: a left-hand arpeggio going over it, a melody above.
+    const left = [48, 55, 60, 64, 60, 55];
+    const notes = Array.from({ length: 24 }, (_, i) => {
+      const midi = left[i % 6];
+      return n(midi, i / 2, midi >= 60 ? 'right' : 'left');
+    }).concat(Array.from({ length: 12 }, (_, i) => n(76 + (i % 3), i, 'right')));
+    const p = piece(notes);
+    expect(handsOf(p)).toBe('auto');
+    expect(levelNotes(p).every((x) => (x.hand === 'left') === x.midi < 70)).toBe(true);
+    expect(levelNotes({ ...p, hands: 'file' })).toEqual(notes);
+    const pinned = notes.map((x, i) => (i === 0 ? { ...x, hand: 'right' as const, pinned: true } : x));
+    expect(levelNotes(piece(pinned))[0].hand).toBe('right');
+    // Editing starts from the hands shown.
+    expect(editable(p).map((x) => x.hand)).toEqual(levelNotes(p).map((x) => x.hand));
+  });
+
+  it('believes a file that gives playable hands', () => {
+    const notes = [n(48, 0), n(62, 1), n(64, 1, 'right'), n(50, 2), n(72, 3, 'right')];
+    expect(handsOf(piece(notes))).toBe('file');
+    expect(levelNotes(piece(notes))).toEqual(notes);
+    // But not all in one hand.
+    expect(handsOf(piece(notes.map((x) => ({ ...x, hand: 'right' }))))).toBe('auto');
+  });
+
+  it('shares the hands out again when the tracks change', () => {
+    // Right hand, left hand, and a third track cut at middle C when imported.
+    const bars = [0, 1, 2, 3, 4, 5, 6, 7];
+    const notes = bars.flatMap((b) => [
+      n(76 + (b % 3), b, 'right', 0),
+      n(43 + (b % 4), b, 'left', 1),
+      n(58 + (b % 5), b + 0.5, 58 + (b % 5) >= 60 ? 'right' : 'left', 2),
+    ]);
+    const tracks = (...on: boolean[]) => on.map((enabled, i) => ({ name: String(i), instrument: null, enabled }));
+    const withTracks = (...on: boolean[]) => piece(notes, { tracks: tracks(...on) });
+    // The two tracks of a piano: as written.
+    expect(handsOf(withTracks(true, true, false))).toBe('file');
+    // One more, or one less: worked out.
+    expect(handsOf(withTracks(true, true, true))).toBe('auto');
+    expect(handsOf(withTracks(true, false, false))).toBe('auto');
+    expect(handsOf(withTracks(false, true, true))).toBe('auto');
+    const handsOfThird = (p: StoredPiece) => new Set(levelNotes(p).filter((x) => x.track === 2).map((x) => x.hand));
+    // Over a bass, the third track is the right hand; under a melody, the left one.
+    expect([...handsOfThird(withTracks(false, true, true))]).toEqual(['right']);
+    expect([...handsOfThird(withTracks(true, false, true))]).toEqual(['left']);
+    // The owner's choice stays.
+    expect(handsOf({ ...withTracks(true, true, true), hands: 'file' })).toBe('file');
   });
 });

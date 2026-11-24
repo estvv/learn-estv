@@ -7,17 +7,13 @@ import type { Section } from './sections';
 
 export const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-const SIZES = { md: 'h-8 w-8', lg: 'h-11 w-11' };
-const ICON_SIZES = { md: 'h-4 w-4', lg: 'h-5 w-5' };
-export type ControlSize = keyof typeof SIZES;
-export const controlIcon = (size: ControlSize) => ICON_SIZES[size];
+export const controlIcon = 'h-4 w-4';
 
-export function ControlButton({ title, active, pressed, size = 'md', onClick, children }: {
+export function ControlButton({ title, active, pressed, onClick, children }: {
   title: string;
   active?: boolean;
   // For the buttons that stay on or off.
   pressed?: boolean;
-  size?: ControlSize;
   onClick(): void;
   children: ReactNode;
 }) {
@@ -28,7 +24,7 @@ export function ControlButton({ title, active, pressed, size = 'md', onClick, ch
       title={title}
       aria-label={title}
       aria-pressed={pressed}
-      className={`flex shrink-0 items-center justify-center rounded-lg transition-colors ${SIZES[size]} ${
+      className={`flex shrink-0 items-center justify-center rounded-lg transition-colors h-8 w-8 compact:h-10 compact:w-10 ${
         active ? 'bg-sky-100 text-sky-700 hover:bg-sky-200' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'
       }`}
     >
@@ -37,28 +33,27 @@ export function ControlButton({ title, active, pressed, size = 'md', onClick, ch
   );
 }
 
-export function PlayButton({ playing, size = 'md', onClick }: { playing: boolean; size?: ControlSize; onClick(): void }) {
+export function PlayButton({ playing, onClick }: { playing: boolean; onClick(): void }) {
   const title = playing ? 'Pause (Espace)' : 'Lecture (Espace)';
-  const icon = size === 'lg' ? 'h-6 w-6' : 'h-4 w-4';
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
       aria-label={title}
-      className={`flex shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-800 ${size === 'lg' ? 'h-14 w-14' : 'h-9 w-9'}`}
+      className={`flex shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-800 h-9 w-9 compact:h-10 compact:w-10`}
     >
       {playing
-        ? <svg viewBox="0 0 24 24" className={icon} fill="currentColor" aria-hidden><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
-        : <svg viewBox="0 0 24 24" className={`ml-0.5 ${icon}`} fill="currentColor" aria-hidden><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" /></svg>}
+        ? <svg viewBox="0 0 24 24" className={controlIcon} fill="currentColor" aria-hidden><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+        : <svg viewBox="0 0 24 24" className={`ml-0.5 ${controlIcon}`} fill="currentColor" aria-hidden><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" /></svg>}
     </button>
   );
 }
 
-export function SkipButton({ title, flip, size = 'md', onClick }: { title: string; flip?: boolean; size?: ControlSize; onClick(): void }) {
+export function SkipButton({ title, flip, onClick }: { title: string; flip?: boolean; onClick(): void }) {
   return (
-    <ControlButton title={title} size={size} onClick={onClick}>
-      <svg viewBox="0 0 24 24" fill="currentColor" className={`${ICON_SIZES[size]} ${flip ? '-scale-x-100' : ''}`} aria-hidden><path d="M5 5.3v13.4a.8.8 0 0 0 1.2.7l10.3-6.7a.8.8 0 0 0 0-1.4L6.2 4.6a.8.8 0 0 0-1.2.7Z" /><rect x="17" y="4.5" width="2.5" height="15" rx="1" /></svg>
+    <ControlButton title={title} onClick={onClick}>
+      <svg viewBox="0 0 24 24" fill="currentColor" className={`${controlIcon} ${flip ? '-scale-x-100' : ''}`} aria-hidden><path d="M5 5.3v13.4a.8.8 0 0 0 1.2.7l10.3-6.7a.8.8 0 0 0 0-1.4L6.2 4.6a.8.8 0 0 0-1.2.7Z" /><rect x="17" y="4.5" width="2.5" height="15" rx="1" /></svg>
     </ControlButton>
   );
 }

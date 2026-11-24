@@ -223,5 +223,61 @@ export function partText(part: Part): string {
 }
 
 // The whole piece, part after part.
-export const pieceText = (title: string, parts: Part[]) =>
-  [title, ...parts.map((p) => `Partie ${p.label}\n${partText(p)}`)].join('\n\n');
+export const pieceText = (title: string, parts: Part[], text: (p: Part) => string = partText) =>
+  [title, ...parts.map((p) => `Partie ${p.label}\n${text(p)}`)].join('\n\n');
+
+// --- Compact: only what is played, close together ------------------------------------
+
+// One moment: what each hand of the part plays then (empty: nothing).
+export interface Moment {
+  step: number;
+  time: number;
+  texts: string[];
+  // In characters, the space after it included.
+  width: number;
+}
+
+const SPACE = 2;
+const BAR_SPACE = 2;
+
+// Moments one after the other, whatever the time between them; as many bars on
+// a line as fit in `limit` characters. A longer bar is cut.
+export function compactLines(part: Part, limit: number): Moment[][] {
+  const bar = BEATS_PER_BAR * part.division;
+  const steps = [...new Set(part.rows.flatMap((r) => r.steps.map((s) => s.step)))].sort((a, b) => a - b);
+  const bars = new Map<number, Moment[]>();
+  for (const step of steps) {
+    const found = part.rows.map((r) => r.steps.find((s) => s.step === step));
+    const texts = found.map((s) => (s ? s.chords.map((c) => c.join('+')).join(' ') : ''));
+    const moment = { step, time: Math.min(...found.flatMap((s) => (s ? [s.time] : []))), texts, width: Math.max(...texts.map((t) => t.length)) + SPACE };
+    const at = Math.floor(step / bar);
+    bars.set(at, [...(bars.get(at) ?? []), moment]);
+  }
+  const width = (list: Moment[]) => list.reduce((sum, m) => sum + m.width, 0);
+  const lines: Moment[][] = [];
+  for (const moments of bars.values()) {
+    const line = lines[lines.length - 1];
+    if (line && width(line) + BAR_SPACE + width(moments) - SPACE <= limit) {
+      const last = line[line.length - 1];
+      line[line.length - 1] = { ...last, width: last.width + BAR_SPACE };
+      line.push(...moments);
+      continue;
+    }
+    let rest: Moment[] = [];
+    for (const m of moments) {
+      if (rest.length && width(rest) + m.width - SPACE > limit) {
+        lines.push(rest);
+        rest = [];
+      }
+      rest.push(m);
+    }
+    lines.push(rest);
+  }
+  return lines;
+}
+
+//   G :  1     3     5
+//   D :  4     4  6  2
+export const compactText = (part: Part, limit = 60): string =>
+  compactLines(part, limit).map((line) => part.rows.map((row, r) =>
+    (`${handLetter(row.hand)} :  ` + line.map((m) => m.texts[r].padEnd(m.width)).join('')).trimEnd()).join('\n')).join('\n\n');

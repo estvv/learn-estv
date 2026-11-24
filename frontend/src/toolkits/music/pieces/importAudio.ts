@@ -78,6 +78,6 @@ export async function importAudio(file: File, { sensitivity, onProgress }: Trans
     source: 'audio',
     bpm: null,
     notes,
-    warnings: ['Transcription automatique : des notes peuvent manquer ou être en trop. Les mains sont devinées (au-dessus ou en dessous du Do central).'],
+    warnings: ['Transcription automatique : des notes peuvent manquer ou être en trop. Les mains sont réparties automatiquement.'],
   };
 }

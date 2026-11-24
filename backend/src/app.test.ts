@@ -200,6 +200,12 @@ describe('auth and progress', () => {
     expect((await me.get(`/api/pieces/${lateId}`).expect(200)).body.data.notes.map((n: { time: number }) => n.time)).toEqual([0, 0.5]);
     await me.delete(`/api/pieces/${lateId}`).expect(200);
 
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.hands).toBeNull();
+    await me.patch(`/api/pieces/${id}`).send({ hands: 'auto' }).expect(200);
+    await me.patch(`/api/pieces/${id}`).send({ hands: 'both' }).expect(400);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.hands).toBe('auto');
+    await me.patch(`/api/pieces/${id}`).send({ hands: null }).expect(200);
+
     // Changes to an easier level: the piece's notes stay.
     const edits = { simplified: { removed: [{ midi: 60, time: 0 }], added: [{ midi: 64, time: 1, duration: 0.5, velocity: 0.7, hand: 'left' }] } };
     await me.patch(`/api/pieces/${id}`).send({ edits }).expect(200);

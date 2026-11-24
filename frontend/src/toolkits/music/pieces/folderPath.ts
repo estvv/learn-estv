@@ -23,3 +23,33 @@ export function foldersToReveal(
   }
   return path.reverse();
 }
+
+// Ids of the pieces from top to bottom of the list, every folder open: the
+// order "previous" and "next" follow.
+export function listOrder(
+  pieces: { id: number; folder_id: number | null }[],
+  folders: { id: number; parent_id: number | null }[],
+): number[] {
+  const known = new Set(folders.map((f) => f.id));
+  const out: number[] = [];
+  const seen = new Set<number>();
+  const walk = (parent: number | null) => {
+    for (const f of folders) {
+      if (f.parent_id !== parent || seen.has(f.id)) continue;
+      seen.add(f.id);
+      walk(f.id);
+      for (const p of pieces) if (p.folder_id === f.id) out.push(p.id);
+    }
+  };
+  walk(null);
+  for (const p of pieces) if (p.folder_id === null || !known.has(p.folder_id)) out.push(p.id);
+  return out;
+}
+
+// The piece `by` places away, round and round.
+export function neighbour(ids: number[], current: number, by: 1 | -1): number | null {
+  if (!ids.length) return null;
+  const at = ids.indexOf(current);
+  if (at < 0) return ids[0];
+  return ids[(at + by + ids.length) % ids.length];
+}

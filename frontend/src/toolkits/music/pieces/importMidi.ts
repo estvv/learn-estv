@@ -46,7 +46,7 @@ export async function importMidi(file: File): Promise<ImportResult> {
     : undefined;
 
   const warnings: string[] = [];
-  if (on.length === 1) warnings.push('Une seule piste de piano : les mains sont devinées (au-dessus ou en dessous du Do central).');
+  if (on.length === 1) warnings.push('Une seule piste de piano : les mains sont réparties automatiquement.');
   if (multi) {
     warnings.push(pianos.length && pianos.length < tracks.length
       ? `${tracks.length} pistes : ${pianos.length} de piano activée${pianos.length > 1 ? 's' : ''}, les autres désactivées. Tu peux les changer dans le lecteur (bouton « Pistes »).`

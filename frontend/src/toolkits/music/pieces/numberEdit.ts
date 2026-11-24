@@ -27,7 +27,7 @@ export function setStep(notes: PieceNote[], part: Part, grid: BeatGrid, hand: Ha
     ...notes.filter((n) => !gone.has(n)),
     ...added.map((midi): PieceNote => {
       const t = like ? like.track : track;
-      return { midi, time, duration, velocity: like?.velocity ?? VELOCITY, hand, ...(t === undefined ? {} : { track: t }) };
+      return { midi, time, duration, velocity: like?.velocity ?? VELOCITY, hand, pinned: true, ...(t === undefined ? {} : { track: t }) };
     }),
   ].sort((a, b) => a.time - b.time || a.midi - b.midi);
 }

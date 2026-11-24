@@ -1,5 +1,6 @@
-import { cutStart, pieceDuration, renderScore, soundingSpan, trimSilence, type PieceContent, type PieceEdits, type PieceLevel, type PieceNote, type PieceSection } from '@learn/shared';
+import { cutStart, pieceDuration, renderScore, soundingSpan, trimSilence, type PieceContent, type PieceEdits, type PieceHands, type PieceLevel, type PieceNote, type PieceSection } from '@learn/shared';
 import { BeatGrid, beatGrid } from './grid';
+import { assignHands, credible } from './hands';
 import { applyEdit, editOf } from './levelEdits';
 import { givenByScore, numberPiece, type Given, type NumberedPiece } from './numbers';
 import { fromSaved } from './parts';
@@ -8,7 +9,7 @@ import { simplify } from './simplify';
 import type { StoredPiece } from './types';
 
 // From a stored piece to what is shown, in one direction only:
-//   notes -> tracks on -> level -> changes by hand -> numbers.
+//   notes -> tracks on -> hands -> level -> changes by hand -> numbers.
 // Nothing in between is stored, so the numbers follow any change above them.
 
 export const levelNames: Record<PieceLevel, string> = { original: 'Original', simplified: 'Simplifié', melody: 'Mélodie' };
@@ -23,12 +24,44 @@ export function tracksOn(piece: StoredPiece, notes: PieceNote[] = piece.notes): 
   return piece.tracks ? notes.filter((n) => on(n.track)) : notes;
 }
 
-const plainLevel = (piece: StoredPiece) => simplify(tracksOn(piece), levelOf(piece));
+// Files with several instruments: their hands only mean something when two
+// tracks are on, one for each hand. Any other choice of tracks is played by the
+// two hands together, so it is shared out again.
+function oneTrackPerHand(piece: StoredPiece, notes: PieceNote[]): boolean {
+  if (!piece.tracks) return true;
+  const hands = new Map<number | undefined, Set<string | null>>();
+  for (const n of notes) {
+    if (n.pinned) continue;
+    const set = hands.get(n.track) ?? new Set();
+    hands.set(n.track, set.add(n.hand));
+  }
+  const sets = [...hands.values()];
+  return sets.length === 2 && sets.every((s) => s.size === 1) && [...sets[0]][0] !== [...sets[1]][0];
+}
+
+// Whether hands are worked out or taken from the file.
+export function handsOf(piece: StoredPiece): PieceHands {
+  if (piece.hands) return piece.hands;
+  const notes = tracksOn(piece);
+  return oneTrackPerHand(piece, notes) && credible(notes, !!piece.tracks) ? 'file' : 'auto';
+}
+
+// The notes of the tracks turned on, each with its hand. The owner's choices
+// are kept; notes of no known hand get one in any case.
+export function played(piece: StoredPiece): PieceNote[] {
+  const notes = tracksOn(piece);
+  if (piece.score) return notes;
+  const file = handsOf(piece) === 'file';
+  if (file && notes.every((n) => n.hand)) return notes;
+  return assignHands(notes, (n) => !!n.hand && (file || !!n.pinned));
+}
+
+const plainLevel = (piece: StoredPiece) => simplify(played(piece), levelOf(piece));
 
 // The notes of the piece's level, as listened to.
 export function levelNotes(piece: StoredPiece): PieceNote[] {
   const level = levelOf(piece);
-  return level === 'original' ? tracksOn(piece) : applyEdit(plainLevel(piece), piece.edits?.[level], trackOn(piece));
+  return level === 'original' ? played(piece) : applyEdit(plainLevel(piece), piece.edits?.[level], trackOn(piece));
 }
 
 // Beats and parts. They come from the original notes: the same at every level.
@@ -65,7 +98,14 @@ export const playedSpan = (piece: StoredPiece, notes: PieceNote[], duration: num
 
 // What an editor works on: the piece's own notes, hidden tracks included, at
 // the original level; what the level shows at the others.
-export const editable = (piece: StoredPiece) => (levelOf(piece) === 'original' ? piece.notes : levelNotes(piece));
+// Hands stay put while editing.
+export function editable(piece: StoredPiece): PieceNote[] {
+  if (levelOf(piece) !== 'original') return levelNotes(piece);
+  const on = tracksOn(piece);
+  const withHands = played(piece);
+  const given = new Map(on.map((n, i) => [n, withHands[i]]));
+  return piece.notes.map((n) => given.get(n) ?? n);
+}
 export const visible = (piece: StoredPiece, edited: PieceNote[]) => (levelOf(piece) === 'original' ? tracksOn(piece, edited) : edited);
 // The level without the changes made to it.
 export const untouched = (piece: StoredPiece) => (levelOf(piece) === 'original' ? piece.notes : plainLevel(piece));

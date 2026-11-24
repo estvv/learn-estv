@@ -21,6 +21,11 @@ export function startQueue(ids: number[], random = Math.random): Queue | null {
   return ids.length ? { ids: shuffled(ids, random), index: 0, turn: 0 } : null;
 }
 
+// From the piece already there, which goes on.
+export function queueFrom(ids: number[], current: number, turn: number, random = Math.random): Queue {
+  return { ids: [current, ...shuffled(ids.filter((id) => id !== current), random)], index: 0, turn };
+}
+
 export const currentOf = (q: Queue) => q.ids[q.index];
 
 export function next(q: Queue, random = Math.random): Queue {

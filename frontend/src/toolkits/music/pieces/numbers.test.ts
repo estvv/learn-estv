@@ -1,7 +1,7 @@
 import type { Hand, PieceNote } from '@learn/shared';
 import { describe, expect, it } from 'vitest';
 import { BeatGrid } from './grid';
-import { numberPiece, partAt, partText } from './numbers';
+import { compactText, numberPiece, partAt, partText } from './numbers';
 
 const n = (midi: number, beat: number, hand: Hand | null = 'left'): PieceNote => ({ midi, time: beat * 0.5, duration: 0.4, velocity: 0.7, hand });
 const grid = BeatGrid.regular(0, 0.5);
@@ -62,5 +62,19 @@ describe('numbers', () => {
     expect(parts.map((p) => p.columns / p.division)).toEqual([2, 4, 4]);
     expect(parts[1].rows).toEqual([]);
     expect(partText(parts[0])).toBe('    1  2\nG : 1');
+  });
+
+  it('writes it compact: hands aligned, time left out', () => {
+    // As written by hand: 1 3 5 under 4 - 4 6 2 5 3.
+    const notes = [n(43, 0), n(50, 1), n(55, 2), ...[0, 1.5, 2, 2.5, 3, 3.5].map((b, i) => n(70 + (i % 5), b, 'right'))];
+    const [p] = numberPiece(notes, [], grid).parts;
+    expect(compactText(p)).toBe('G :  1  2     3\nD :  1     2  3  4  5  1');
+  });
+
+  it('fills lines with whole bars, and cuts the bars that are too long', () => {
+    const two = numberPiece([0, 1, 2, 3, 4, 5].map((b) => n(60, b)), [], grid).parts[0];
+    expect(compactText(two, 40)).toBe('G :  1  1  1  1    1  1');
+    expect(compactText(two, 12)).toBe('G :  1  1  1  1\n\nG :  1  1');
+    expect(compactText(two, 5)).toBe('G :  1  1\n\nG :  1  1\n\nG :  1  1');
   });
 });

@@ -14,6 +14,8 @@ export const pieceNoteSchema = z.object({
   velocity: z.number().min(0).max(1),
   // Unknown for most audio transcriptions and single-track MIDI files.
   hand: z.enum(hands).nullable(),
+  // Hand chosen by the owner: never guessed again.
+  pinned: z.boolean().optional(),
   // Index in the piece's `tracks`, for files with several instruments.
   track: z.number().int().min(0).max(63).optional(),
 });
@@ -26,6 +28,10 @@ export const pieceTrackSchema = z.object({
   enabled: z.boolean(),
 });
 export type PieceTrack = z.infer<typeof pieceTrackSchema>;
+
+// Who plays what: worked out, or as the file says. Not set: whichever makes sense.
+export const pieceHands = ['auto', 'file'] as const;
+export type PieceHands = (typeof pieceHands)[number];
 
 export const pieceSources = ['midi', 'musicxml', 'audio', 'manual'] as const;
 

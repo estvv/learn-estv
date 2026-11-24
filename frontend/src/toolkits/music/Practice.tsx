@@ -1,6 +1,7 @@
 import { frenchName, MIDI_MAX, MIDI_MIN, noteName } from '@learn/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
+import { useAuth } from '../../app/auth';
 import { Segmented } from '../../components/Segmented';
 import { useObservable } from '../../lib/store';
 import { PHONE, useMedia } from '../../lib/useMedia';
@@ -9,12 +10,13 @@ import { audioState, ensureAudio } from './audio';
 import { sourceLabels, type SourceId } from './input/bus';
 import { useHeldNotes, useNoteInput } from './input/hooks';
 import { PianoKeyboard, type KeyLabels } from './PianoKeyboard';
-import { piecesApi } from './pieces/api';
+import { foldersApi, piecesApi } from './pieces/api';
+import { listOrder, neighbour } from './pieces/folderPath';
 import { NotesEditor } from './pieces/NotesEditor';
 import { PiecesPanel } from './pieces/PiecesPanel';
 import { PlayAlong } from './pieces/PlayAlong';
 import { ScoreEditor } from './pieces/ScoreEditor';
-import { currentOf, drop, next, previous, startQueue, type Queue } from './pieces/shuffle';
+import { currentOf, drop, next, previous, queueFrom, startQueue, type Queue } from './pieces/shuffle';
 import type { StoredPiece } from './pieces/types';
 
 type Span = '1' | '2' | '4' | 'full';
@@ -38,6 +40,29 @@ export function MusicPractice({ subject }: { subject: string }) {
   const [error, setError] = useState('');
   const [panel, setPanel] = useState(false);
   const [labels, setLabels] = useState<KeyLabels>('names');
+
+  // The pieces in the order of the list; read again when the list closes.
+  const { user } = useAuth();
+  const [order, setOrder] = useState<number[]>([]);
+  useEffect(() => {
+    if (!user || panel) return;
+    let stale = false;
+    Promise.all([piecesApi.list(subject), foldersApi.list(subject)])
+      .then(([p, f]) => !stale && setOrder(listOrder(p, f)), () => {});
+    return () => {
+      stale = true;
+    };
+  }, [user, subject, panel]);
+  // Whether the piece arriving starts by itself; grows when the same one comes back.
+  const autoPlay = useRef(false);
+  const [again, setAgain] = useState(0);
+  const go = (by: 1 | -1, playing: boolean) => {
+    autoPlay.current = playing;
+    if (queue) return setQueue(by > 0 ? next(queue) : previous(queue));
+    const id = pieceId && neighbour(order, pieceId, by);
+    if (id && id !== pieceId) setParams({ morceau: String(id) });
+    else setAgain((n) => n + 1);
+  };
 
   useEffect(() => {
     setPiece(null);
@@ -92,14 +117,17 @@ export function MusicPractice({ subject }: { subject: string }) {
       {pieceId ? (
         piece && piece.id === pieceId ? (
           <PlayAlong
-            key={`${piece.id}-${turn.current}`}
+            key={`${piece.id}-${turn.current}-${again}`}
             piece={piece}
             labels={labels}
-            listening={queue ? {
-              next: () => setQueue((q) => q && next(q)),
-              previous: () => setQueue((q) => q && previous(q)),
-              stop: () => setQueue(null),
-            } : undefined}
+            autoPlay={autoPlay.current}
+            nav={{
+              next: (playing) => go(1, playing),
+              previous: (playing) => go(-1, playing),
+              shuffle: queue !== null,
+              // The piece goes on; the ones after it change.
+              onShuffle: (on) => setQueue(on ? queueFrom(order, piece.id, turn.current) : null),
+            }}
             onEditNumbers={() => {
               setQueue(null);
               setParams({ morceau: String(pieceId), modifier: '1' });
@@ -122,6 +150,7 @@ export function MusicPractice({ subject }: { subject: string }) {
             // Browsers only start the sound from a click.
             void ensureAudio().catch(() => {});
             setPanel(false);
+            autoPlay.current = true;
             const started = startQueue(ids);
             setQueue(started && { ...started, turn: turn.current + 1 });
           }}
@@ -132,6 +161,7 @@ export function MusicPractice({ subject }: { subject: string }) {
           }}
           onPick={(id) => {
             setPanel(false);
+            autoPlay.current = false;
             setQueue(null);
             setParams(id ? { morceau: String(id) } : {});
           }}

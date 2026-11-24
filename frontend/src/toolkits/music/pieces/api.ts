@@ -1,4 +1,4 @@
-import { renderScore, type Piece, type PieceEdits, type PieceLevel, type PieceNote, type PieceSection, type Score } from '@learn/shared';
+import { renderScore, type Piece, type PieceEdits, type PieceHands, type PieceLevel, type PieceNote, type PieceSection, type Score } from '@learn/shared';
 import { api } from '../../../lib/api';
 import type { PieceChange } from './derive';
 import type { PieceFolder, PieceMeta, PieceSummary, StoredPiece } from './types';
@@ -13,7 +13,7 @@ export const piecesApi = {
   saveScore: (id: number, score: Score) => api(`/pieces/${id}/score`, { method: 'PUT', json: { score } }),
   // Answers the cover, searched again when the title or artist changed.
   // cover: picked by hand (from a link); left out, it follows the title and artist.
-  update: (id: number, meta: Partial<PieceMeta> & { cover?: string | null; tracks_enabled?: boolean[]; level?: PieceLevel; sections?: PieceSection[] | null; edits?: PieceEdits | null }) => api<{ cover: string | null }>(`/pieces/${id}`, { method: 'PATCH', json: meta }),
+  update: (id: number, meta: Partial<PieceMeta> & { cover?: string | null; tracks_enabled?: boolean[]; level?: PieceLevel; hands?: PieceHands | null; sections?: PieceSection[] | null; edits?: PieceEdits | null }) => api<{ cover: string | null }>(`/pieces/${id}`, { method: 'PATCH', json: meta }),
   remove: (id: number) => api(`/pieces/${id}`, { method: 'DELETE' }),
   // Corrected notes replace the piece's.
   saveNotes: (id: number, change: { notes: PieceNote[]; sections?: PieceSection[] | null; edits?: PieceEdits | null }) => api(`/pieces/${id}/notes`, { method: 'PUT', json: change }),

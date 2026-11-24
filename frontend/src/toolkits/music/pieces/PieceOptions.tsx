@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { Hand, PieceLevel, PieceNote, PieceTrack } from '@learn/shared';
+import type { Hand, PieceHands, PieceLevel, PieceNote, PieceTrack } from '@learn/shared';
 import { PencilIcon } from '../../../components/icons';
 import { Modal } from '../../../components/Modal';
 import { Segmented } from '../../../components/Segmented';
@@ -15,15 +15,18 @@ export const RATES = [0.5, 0.75, 1, 1.25];
 
 // Everything that is not needed while playing. A panel over the notes, seen
 // changing; a sheet on a phone.
-export function PieceOptions({ floating, mode, level, rate, hand, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onClose }: {
+export function PieceOptions({ floating, mode, level, rate, hand, bothHands, hands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onHands, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onClose }: {
   floating: boolean;
   // Null while correcting the notes: they are the piece's own, only listened to.
   mode: PlayMode | null;
   level: PieceLevel;
-  // Null when it is already on screen.
-  rate: number | null;
-  // Null when the piece has a single hand.
+  rate: number;
+  // Null while correcting the notes.
   hand: HandChoice | null;
+  // Both play, at this level and with these tracks.
+  bothHands: boolean;
+  // Where the hands come from; null: the owner's own.
+  hands: PieceHands | null;
   // Null while correcting the notes: no numbers then.
   numbered: boolean | null;
   tracks: PieceTrack[];
@@ -35,6 +38,7 @@ export function PieceOptions({ floating, mode, level, rate, hand, numbered, trac
   onLevel(level: PieceLevel): void;
   onRate(rate: number): void;
   onHand(hand: HandChoice): void;
+  onHands(hands: PieceHands): void;
   onNumbered(on: boolean): void;
   onTracks(enabled: boolean[]): void;
   onBigKeys(on: boolean): void;
@@ -58,6 +62,13 @@ export function PieceOptions({ floating, mode, level, rate, hand, numbered, trac
 
   const body = (
       <div className="space-y-5">
+        {hand && (
+          <Field label="Mains" hint={!bothHands ? 'Une seule main joue avec ce niveau et ces pistes.' : hand === 'both' ? undefined : 'L’autre main n’est ni jouée ni affichée.'}>
+            <div className={bothHands ? '' : 'pointer-events-none opacity-40'} inert={!bothHands}>
+              <Segmented<HandChoice> full value={hand} onChange={onHand} options={[{ value: 'left', label: 'Gauche' }, { value: 'both', label: 'Les deux' }, { value: 'right', label: 'Droite' }]} />
+            </div>
+          </Field>
+        )}
         {mode && (
           <>
             <Field label="Mode" hint={mode === 'wait' ? 'Le morceau attend que tu joues les bonnes notes.' : 'Le morceau se joue tout seul.'}>
@@ -79,17 +90,15 @@ export function PieceOptions({ floating, mode, level, rate, hand, numbered, trac
             </Field>
           </>
         )}
-        {rate !== null && (
-          <Field label="Vitesse">
-            <Segmented<number> full value={rate} onChange={onRate} options={RATES.map((r) => ({ value: r, label: `${Math.round(r * 100)} %` }))} />
+        <Field label="Vitesse">
+          <Segmented<number> full value={rate} onChange={onRate} options={RATES.map((r) => ({ value: r, label: `${Math.round(r * 100)} %` }))} />
+        </Field>
+        {numbered !== null && <Toggle checked={numbered} onChange={onNumbered} label="Chiffres sur les notes et les touches" />}
+        {hands && (
+          <Field label="Répartition des mains" hint={hands === 'auto' ? 'Selon ce que chaque main peut jouer. Tes corrections sont gardées.' : 'Telle qu’elle est écrite dans le fichier.'}>
+            <Segmented<PieceHands> full value={hands} onChange={onHands} options={[{ value: 'auto', label: 'Automatique' }, { value: 'file', label: 'Du fichier' }]} />
           </Field>
         )}
-        {hand && (
-          <Field label="Mains" hint={hand === 'both' ? undefined : 'L’autre main n’est ni jouée ni affichée.'}>
-            <Segmented<HandChoice> full value={hand} onChange={onHand} options={[{ value: 'both', label: 'Les deux' }, { value: 'left', label: 'Gauche' }, { value: 'right', label: 'Droite' }]} />
-          </Field>
-        )}
-        {numbered !== null && <Toggle checked={numbered} onChange={onNumbered} label="Afficher les chiffres" />}
         {tracks.length > 1 && (
           <Field label="Pistes">
             <div className="-mx-2"><TrackList tracks={tracks} notes={notes} enabled={enabled} onChange={onTracks} /></div>

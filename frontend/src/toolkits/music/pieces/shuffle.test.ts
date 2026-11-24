@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { currentOf, drop, next, previous, startQueue, type Queue } from './shuffle';
+import { currentOf, drop, next, previous, queueFrom, startQueue, type Queue } from './shuffle';
 
 const sorted = (ids: number[]) => [...ids].sort((a, b) => a - b);
 
@@ -27,6 +27,13 @@ describe('shuffled listening', () => {
     const again = next(q);
     expect(currentOf(again)).toBe(7);
     expect(again.turn).not.toBe(q.turn);
+  });
+
+  it('starts from the piece being played', () => {
+    const q = queueFrom([1, 2, 3, 4], 3, 8);
+    expect([currentOf(q), q.turn]).toEqual([3, 8]);
+    expect(sorted(q.ids)).toEqual([1, 2, 3, 4]);
+    expect(queueFrom([], 3, 0).ids).toEqual([3]);
   });
 
   it('has nothing to play without pieces', () => expect(startQueue([])).toBe(null));

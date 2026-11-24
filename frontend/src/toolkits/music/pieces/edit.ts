@@ -53,7 +53,7 @@ export function switchHand(notes: EditNote[], ids: Set<number>): EditNote[] {
   const selected = notes.filter((n) => ids.has(n.id));
   if (!selected.length) return notes;
   const hand = selected.every((n) => n.hand === 'right') ? 'left' : 'right';
-  return notes.map((n) => (ids.has(n.id) ? { ...n, hand } : n));
+  return notes.map((n) => (ids.has(n.id) ? { ...n, hand, pinned: true } : n));
 }
 
 // Drop what starts before `at` and bring the rest back to the start.

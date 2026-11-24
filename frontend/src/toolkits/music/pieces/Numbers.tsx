@@ -6,19 +6,17 @@ import { BEATS_PER_BAR } from './grid';
 import { breakLines, lineWidth, type LineBox, type Sizing } from './numberLines';
 import { handLetter, handName, pieceText, stepText, type Part } from './numbers';
 
-// The piece as numbers (see numbers.ts). Above the falling notes: the line
-// being played and the next one. "Big": the whole piece, part by part.
+// The piece as numbers with its rhythm, instead of the falling notes: for who
+// wants the detail (NumbersPanel.tsx is what one learns from).
 
-const STRIP: Sizing = { font: 19, char: 12, min: 24, beat: 76, cap: 132 };
-const STRIP_SMALL: Sizing = { font: 15, char: 9.5, min: 18, beat: 40, cap: 96 };
-const BIG: Sizing = { font: 22, char: 14, min: 28, beat: 84, cap: 140 };
-const BIG_SMALL: Sizing = { font: 17, char: 10.5, min: 18, beat: 44, cap: 110 };
+const LARGE: Sizing = { font: 17, char: 11, min: 24, beat: 64, cap: 110 };
+const SMALL: Sizing = { font: 15, char: 9.5, min: 18, beat: 40, cap: 96 };
 const GUTTER = 40; // the part's letter
 const LETTERS = 24; // the hands' letters
 const ROW = 1.6; // em
 const HEAD = 0.7; // em
 
-const TEXT: Record<Hand, string> = { left: 'text-amber-700', right: 'text-sky-700' };
+export const TEXT: Record<Hand, string> = { left: 'text-amber-700', right: 'text-sky-700' };
 const LIT: Record<Hand, string> = { left: 'bg-amber-500 text-white', right: 'bg-sky-500 text-white' };
 
 const ghost = 'h-8 shrink-0 rounded-lg px-2.5 text-xs font-medium transition-colors';
@@ -33,7 +31,7 @@ export interface PartEditing {
   error: string;
 }
 
-export function Numbers({ title, parts, part: current, column, position, loop, big, compact, short, editing, onEdit, onSeek, onLoop, onBig }: {
+export function Numbers({ title, parts, part: current, column, position, loop, compact, editing, onEdit, onSeek, onLoop, onClose }: {
   title: string;
   // Already without the hand that is turned off.
   parts: Part[];
@@ -42,16 +40,14 @@ export function Numbers({ title, parts, part: current, column, position, loop, b
   column: number;
   position: number;
   loop: [number, number] | null;
-  big: boolean;
   compact: boolean;
-  short: boolean;
   // Null when the parts are the owner's, changed with the piece.
   editing: PartEditing | null;
   onEdit(): void;
   onSeek(time: number): void;
   // Null: stop looping.
   onLoop(part: number | null): void;
-  onBig(on: boolean): void;
+  onClose(): void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -64,10 +60,10 @@ export function Numbers({ title, parts, part: current, column, position, loop, b
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [big]);
+  }, []);
 
-  const sizing = big ? (compact ? BIG_SMALL : BIG) : compact ? STRIP_SMALL : STRIP;
-  const room = width - GUTTER - LETTERS - (big ? 32 : 60);
+  const sizing = compact ? SMALL : LARGE;
+  const room = width - GUTTER - LETTERS - 32;
   const lines = useMemo(() => parts.map((p) => breakLines(p, room, sizing)), [parts, room, sizing]);
 
   // The same functions for every line, whatever the render.
@@ -80,11 +76,11 @@ export function Numbers({ title, parts, part: current, column, position, loop, b
   // The line being played stays in view.
   useEffect(() => {
     const el = box.current;
-    const target = big ? el?.querySelector<HTMLElement>(`[data-line="${current}-${line}"]`) : null;
+    const target = el?.querySelector<HTMLElement>(`[data-line="${current}-${line}"]`);
     if (!el || !target) return;
     const top = target.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
     el.scrollTo({ top: top - el.clientHeight * 0.3, behavior: 'smooth' });
-  }, [current, line, big, width]);
+  }, [current, line, width]);
 
   const looped = (i: number) => loop !== null && i >= loop[0] && i <= loop[1];
   const draw = (i: number, k: number) => (
@@ -98,50 +94,14 @@ export function Numbers({ title, parts, part: current, column, position, loop, b
       lit={i === current ? litSteps(parts[i], position) : ''}
       column={i === current && k === line ? column : -1}
       onSeek={seek}
-      onCut={big && correcting ? cut : undefined}
+      onCut={correcting ? cut : undefined}
     />
   );
-
-  if (!big) {
-    // The line being played, then the one after it (the loop's first line at its end).
-    const after = (): [number, number] | null => {
-      if (lines[current]?.[line + 1]) return [current, line + 1];
-      const i = loop && current >= loop[1] ? loop[0] : current + 1;
-      return lines[i]?.[0] ? [i, 0] : null;
-    };
-    const shown = [[current, line] as [number, number], ...(short ? [] : [after()])].filter((x) => x !== null);
-    // The height does not change with what is in it.
-    const hands = Math.max(1, ...parts.map((p) => p.rows.length));
-    const height = sizing.font * (HEAD + ROW * hands) + 10;
-    return (
-      <div ref={box} className="relative shrink-0 border-t border-neutral-200 bg-white py-2 pl-3 sm:pl-5" style={{ height: height * (short ? 1 : 2) + 16 }}>
-        {shown.map(([i, k], n) => lines[i]?.[k] && (
-          <div key={n} className={`flex overflow-hidden ${n ? 'opacity-35' : ''}`} style={{ height }}>
-            <div className="shrink-0 text-sm font-bold text-neutral-400" style={{ width: GUTTER, paddingTop: sizing.font * HEAD + 4 }}>
-              {(k === 0 || n === 0) && parts[i].label}
-            </div>
-            <div className="min-w-0 flex-1 pr-12">
-              {parts[i].rows.length ? draw(i, k) : <p className="pt-4 text-sm text-neutral-300">Silence</p>}
-            </div>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => onBig(true)}
-          title="Voir tous les chiffres"
-          aria-label="Voir tous les chiffres"
-          className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 sm:right-4"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" /></svg>
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-neutral-200 bg-white">
       <div className="flex shrink-0 items-center gap-1 px-2 pt-2 sm:px-4">
-        <span className="min-w-0 flex-1 truncate pl-1 text-sm font-semibold text-neutral-900">{correcting ? 'Parties' : 'Chiffres'}</span>
+        <span className="min-w-0 flex-1 truncate pl-1 text-sm font-semibold text-neutral-900">{correcting ? 'Parties' : 'Chiffres et rythme'}</span>
         {correcting ? (
           <Small active onClick={() => setCorrecting(false)}>Terminé</Small>
         ) : (
@@ -149,7 +109,7 @@ export function Numbers({ title, parts, part: current, column, position, loop, b
             <CopyButton text={() => pieceText(title, parts)} />
             {editing && <Small onClick={() => setCorrecting(true)} title="Déplacer, couper, joindre ou renommer les parties">Parties</Small>}
             <Small onClick={onEdit} title="Changer, ajouter ou effacer des notes">Modifier</Small>
-            <Small onClick={() => onBig(false)} title="Revenir aux notes qui tombent">Fermer</Small>
+            <Small onClick={onClose} title="Revenir aux notes qui tombent">Fermer</Small>
           </>
         )}
       </div>
@@ -192,7 +152,7 @@ export function Numbers({ title, parts, part: current, column, position, loop, b
 }
 
 // "row:step" of the notes sounding now.
-function litSteps(part: Part, position: number): string {
+export function litSteps(part: Part, position: number): string {
   const out: string[] = [];
   part.rows.forEach((row, r) => {
     const started = row.steps.filter((x) => x.time <= position + 0.03);
@@ -285,7 +245,7 @@ function Stickers({ part }: { part: Part }) {
 }
 
 // The part's letter; a click repeats the part.
-function PartLetter({ label, on, current, onClick }: { label: string; on: boolean; current: boolean; onClick(): void }) {
+export function PartLetter({ label, on, current, onClick }: { label: string; on: boolean; current: boolean; onClick(): void }) {
   const title = on ? `Arrêter la boucle (partie ${label})` : `Répéter la partie ${label} en boucle`;
   return (
     <button
@@ -321,7 +281,7 @@ export function LabelInput({ label, onRename }: { label: string; onRename(label:
   );
 }
 
-function CopyButton({ text }: { text(): string }) {
+export function CopyButton({ text }: { text(): string }) {
   const [state, setState] = useState<'copied' | 'failed' | null>(null);
   useEffect(() => {
     if (!state) return;

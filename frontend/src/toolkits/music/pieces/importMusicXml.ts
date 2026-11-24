@@ -153,7 +153,7 @@ export async function importMusicXml(file: File): Promise<ImportResult> {
     notes,
     warnings: [
       ...(root.querySelector('repeat, segno, coda') ? ['Les reprises et renvois (D.C., D.S.) sont joués une seule fois, sans retour.'] : []),
-      ...(notes.every((n) => n.hand === null) ? ['Une seule portée : les mains ne sont pas distinguées.'] : []),
+      ...(notes.every((n) => n.hand === null) ? ['Une seule portée : les mains sont réparties automatiquement.'] : []),
     ],
   };
 }
