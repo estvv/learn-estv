@@ -173,7 +173,7 @@ export default function CodePlayer({ config, stepId, onComplete, onFinish }: Pla
       </div>
 
       <div className="min-w-0 space-y-3 lg:sticky lg:top-20">
-        <div className={`${panel} flex h-[70vh] flex-col overflow-hidden lg:h-[calc(100vh-11rem)]`}>
+        <div className={`${panel} flex h-[70dvh] flex-col overflow-hidden lg:h-[calc(100vh-11rem)]`}>
           <div className="flex items-center gap-2 border-b border-neutral-100 px-3 py-1.5">
             {tabs}
             {unsaved && <span className="shrink-0 text-xs text-red-600">Non enregistré</span>}

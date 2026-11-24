@@ -18,7 +18,7 @@ export const card = `${panel} hover:shadow-md hover:-translate-y-0.5 transition-
 
 export function Page({ children, width = 'md' }: { children: ReactNode; width?: 'sm' | 'md' | 'lg' | 'full' }) {
   const max = { sm: 'max-w-md', md: 'max-w-3xl', lg: 'max-w-5xl', full: 'max-w-[110rem]' }[width];
-  return <main className={`${max} mx-auto px-4 py-8 md:py-10`}>{children}</main>;
+  return <main className={`${max} mx-auto px-4 py-5 sm:py-8 md:py-10`}>{children}</main>;
 }
 
 export function PageHeader({ title, subtitle, icon, accent: a = 'neutral', actions, back }: {
@@ -30,11 +30,11 @@ export function PageHeader({ title, subtitle, icon, accent: a = 'neutral', actio
   back?: ReactNode;
 }) {
   return (
-    <div className="mb-8">
+    <div className="mb-6 sm:mb-8">
       {back && <div className="mb-3 text-sm">{back}</div>}
       <div className="flex flex-wrap items-start gap-4">
         {icon && <IconTile icon={icon} accent={a} size="lg" />}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 basis-60 min-w-0">
           <h1 className="text-2xl md:text-3xl font-bold text-neutral-900">{title}</h1>
           {subtitle && <p className="text-neutral-500 mt-1">{subtitle}</p>}
         </div>
@@ -86,7 +86,7 @@ export function Bar({ value, accent: a = 'neutral', className = '' }: { value: n
 // "Piano / Le clavier / Quiz" above activity pages.
 export function Breadcrumb({ items }: { items: { label: ReactNode; to?: string }[] }) {
   return (
-    <nav className="mb-6 flex flex-wrap items-center gap-x-2 text-sm text-neutral-500">
+    <nav className="mb-4 flex flex-wrap items-center gap-x-2 text-sm sm:mb-6 text-neutral-500">
       {items.map((item, i) => (
         <span key={i} className="flex items-center gap-2">
           {i > 0 && <span className="text-neutral-300">/</span>}

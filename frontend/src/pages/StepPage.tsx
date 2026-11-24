@@ -48,7 +48,7 @@ export function StepPage() {
       <Breadcrumb items={[{ label: pack.subject.name, to: `/s/${model.id}` }, { label: unitName, to: `/s/${model.id}` }, { label: current.step.title }]} />
 
       {result ? (
-        <div className={`${panel} flex flex-wrap justify-center gap-2 p-8`}>
+        <div className={`${panel} flex flex-wrap justify-center gap-2 p-5 sm:p-8`}>
           <div className="w-full text-center text-lg font-semibold">
             {result.passed ? 'Étape terminée' : 'Pas encore validée'}
             {result.score !== undefined && <span className="ml-2 text-neutral-500">({Math.round(result.score * 100)} %)</span>}

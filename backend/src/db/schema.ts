@@ -142,6 +142,10 @@ CREATE TABLE IF NOT EXISTS pieces (
   tracks TEXT,
   -- Level shown in the player (original, simplified, melody); NULL: original.
   level TEXT,
+  -- Practice parts set by hand, JSON [{ start, label }]; NULL: automatic.
+  sections TEXT,
+  -- Pieces written by hand, JSON (shared/src/score.ts): the notes come from it.
+  score TEXT,
   source TEXT NOT NULL,
   bpm REAL,
   data TEXT NOT NULL,

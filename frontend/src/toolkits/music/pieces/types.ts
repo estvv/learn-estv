@@ -1,4 +1,4 @@
-import type { Piece, PieceDifficulty, PieceLevel } from '@learn/shared';
+import type { Piece, PieceDifficulty, PieceLevel, PieceSection, Score } from '@learn/shared';
 
 export interface ImportResult extends Piece {
   // Things the user should know about the conversion.
@@ -30,6 +30,10 @@ export interface StoredPiece extends Piece {
   cover?: string | null;
   description?: string | null;
   level?: PieceLevel;
+  // Parts set by hand; null: found automatically.
+  sections?: PieceSection[] | null;
+  // Pieces written by hand; null: imported.
+  score?: Score | null;
 }
 
 export interface PieceFolder {
@@ -68,4 +72,5 @@ export const sourceLabels: Record<Piece['source'], string> = {
   midi: 'MIDI',
   musicxml: 'Partition',
   audio: 'Audio',
+  manual: 'Fait main',
 };

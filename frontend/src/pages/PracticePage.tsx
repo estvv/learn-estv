@@ -21,7 +21,7 @@ export function PracticePage() {
         to={back.to}
         title={back.label}
         aria-label="Retour"
-        className="absolute left-4 top-4 z-10 rounded-lg border border-neutral-200 bg-white p-2 text-neutral-500 shadow-sm transition-colors hover:text-neutral-900"
+        className="absolute left-4 top-4 z-10 phone:left-2.5 phone:top-2.5 rounded-lg border border-neutral-200 bg-white p-2 text-neutral-500 shadow-sm transition-colors hover:text-neutral-900"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden>
           <path d="M19 12H5M11 6l-6 6 6 6" />

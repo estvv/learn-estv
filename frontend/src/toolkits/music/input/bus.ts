@@ -1,9 +1,9 @@
 import { Observable } from '../../../lib/store';
 
-// Every note source (virtual keyboard, computer keyboard, MIDI, microphone)
+// Every note source (virtual keyboard, MIDI, microphone)
 // emits the same events; activities never know where a note came from.
 
-export type SourceId = 'virtual' | 'keyboard' | 'midi' | 'mic';
+export type SourceId = 'virtual' | 'midi' | 'mic';
 
 export interface NoteEvent {
   type: 'on' | 'off';
@@ -20,14 +20,12 @@ export interface SourceCapabilities {
 
 export const capabilities: Record<SourceId, SourceCapabilities> = {
   virtual: { polyphonic: true, velocity: false },
-  keyboard: { polyphonic: true, velocity: false },
   midi: { polyphonic: true, velocity: true },
   mic: { polyphonic: false, velocity: false },
 };
 
 export const sourceLabels: Record<SourceId, string> = {
   virtual: 'Clavier à l’écran',
-  keyboard: 'Clavier d’ordinateur',
   midi: 'Clavier MIDI',
   mic: 'Micro',
 };
@@ -48,8 +46,7 @@ class InputBus {
   // midi -> sources currently holding it
   private holders = new Map<number, Set<SourceId>>();
   readonly held = new Observable<ReadonlySet<number>>(new Set());
-  // Sources that read global devices (computer keyboard) only listen while
-  // some component asks for note input.
+  // How many components ask for note input: the sounds load with the first one.
   readonly demand = new Observable(0);
 
   emit(e: NoteEvent) {

@@ -40,7 +40,7 @@ export default function Playground() {
   const start = () => void run({ files, container: web ? preview.current : undefined });
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-[4.25rem] shrink-0 items-center gap-3 overflow-x-auto border-b border-neutral-200 bg-white pl-16 pr-4">
+      <div className="flex h-[4.25rem] shrink-0 items-center gap-2 overflow-x-auto border-b border-neutral-200 bg-white pl-16 pr-4 sm:gap-3">
         <span className="hidden font-semibold md:block">Bac à sable</span>
         <Segmented
           value={mode}
@@ -48,8 +48,8 @@ export default function Playground() {
           options={[{ value: 'js', label: 'JS' }, { value: 'ts', label: 'TS' }, { value: 'web', label: 'Web' }, { value: 'react', label: 'React' }]}
         />
         <span className="flex-1" />
-        {running && <button type="button" className={secondaryButton} onClick={stop}>Arrêter</button>}
-        <button type="button" className={primaryButton} onClick={start} title="Ctrl + Entrée"><PlayIcon className="h-4 w-4" />Exécuter</button>
+        {running && <button type="button" className={`${secondaryButton} shrink-0`} onClick={stop}>Arrêter</button>}
+        <button type="button" className={`${primaryButton} shrink-0 ${running ? 'max-sm:hidden' : ''}`} onClick={start} title="Ctrl + Entrée" aria-label="Exécuter"><PlayIcon className="h-4 w-4" /><span className="max-sm:hidden">Exécuter</span></button>
       </div>
       <div className="grid min-h-0 flex-1 grid-rows-2 lg:grid-cols-2 lg:grid-rows-1">
         <div className="flex min-h-0 min-w-0 flex-col">

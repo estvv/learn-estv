@@ -1,4 +1,4 @@
-import type { Piece, PieceLevel, PieceNote } from '@learn/shared';
+import { renderScore, type Piece, type PieceLevel, type PieceNote, type PieceSection, type Score } from '@learn/shared';
 import { api } from '../../../lib/api';
 import type { PieceFolder, PieceMeta, PieceSummary, StoredPiece } from './types';
 
@@ -7,12 +7,15 @@ export const piecesApi = {
   get: (id: number) => api<StoredPiece>(`/pieces/${id}`),
   create: (subject: string, piece: Piece, extra: Partial<Pick<PieceMeta, 'folder_id' | 'difficulty' | 'description'>> = {}) =>
     api<{ id: number }>('/pieces', { method: 'POST', json: { subject, piece, ...extra } }),
+  createScore: (subject: string, piece: Pick<Piece, 'title' | 'artist'>, score: Score, extra: Partial<Pick<PieceMeta, 'folder_id' | 'difficulty'>>) =>
+    api<{ id: number }>('/pieces', { method: 'POST', json: { subject, piece: { ...piece, source: 'manual', bpm: score.bpm, notes: renderScore(score).notes }, score, ...extra } }),
+  saveScore: (id: number, score: Score) => api(`/pieces/${id}/score`, { method: 'PUT', json: { score } }),
   // Answers the cover, searched again when the title or artist changed.
   // cover: picked by hand (from a link); left out, it follows the title and artist.
-  update: (id: number, meta: Partial<PieceMeta> & { cover?: string | null; tracks_enabled?: boolean[]; level?: PieceLevel }) => api<{ cover: string | null }>(`/pieces/${id}`, { method: 'PATCH', json: meta }),
+  update: (id: number, meta: Partial<PieceMeta> & { cover?: string | null; tracks_enabled?: boolean[]; level?: PieceLevel; sections?: PieceSection[] | null }) => api<{ cover: string | null }>(`/pieces/${id}`, { method: 'PATCH', json: meta }),
   remove: (id: number) => api(`/pieces/${id}`, { method: 'DELETE' }),
   // Corrected notes replace the piece's.
-  saveNotes: (id: number, notes: PieceNote[]) => api(`/pieces/${id}/notes`, { method: 'PUT', json: { notes } }),
+  saveNotes: (id: number, notes: PieceNote[], sections?: PieceSection[] | null) => api(`/pieces/${id}/notes`, { method: 'PUT', json: { notes, sections } }),
   coverFromLink: (link: string, signal?: AbortSignal) =>
     api<{ cover: string | null }>(`/pieces/cover?${new URLSearchParams({ link })}`, { signal }),
   findCover: (title: string, artist: string | null, signal?: AbortSignal) =>

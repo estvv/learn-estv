@@ -4,7 +4,7 @@ import { GearIcon, LogoutIcon } from '../components/icons';
 import { useAuth } from './auth';
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
-  `px-3 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-colors ${
+  `px-2 sm:px-3 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-colors ${
     isActive ? 'text-neutral-900 bg-neutral-100' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-50'
   }`;
 
@@ -16,7 +16,7 @@ export function Layout() {
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4">
-          <Link to="/" className="mr-3 shrink-0 font-bold text-neutral-900">Learn</Link>
+          <Link to="/" className="mr-1 shrink-0 sm:mr-3 font-bold text-neutral-900">Learn</Link>
           <nav className="flex min-w-0 items-center gap-1 overflow-x-auto">
             <NavLink to="/" end className={navClass}>Sujets</NavLink>
             {user?.is_admin && <NavLink to="/admin" className={navClass}>Admin</NavLink>}

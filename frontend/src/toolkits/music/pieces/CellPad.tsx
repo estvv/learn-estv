@@ -1,0 +1,113 @@
+import { frenchName, type Hand } from '@learn/shared';
+import { useEffect, useRef, useState } from 'react';
+import { NoteText } from '../Accidentals';
+import { inputBus } from '../input/bus';
+import { handName, type Key } from './numbers';
+
+// Fills the cell picked: type its numbers, or touch the numbers already known
+// (as on the keyboard, the sound comes with it).
+
+const COLOR: Record<Hand, string> = { left: 'bg-amber-100 text-amber-800 hover:bg-amber-200', right: 'bg-sky-100 text-sky-800 hover:bg-sky-200' };
+
+export function playKey(midi: number) {
+  inputBus.noteOn(midi, 'virtual');
+  setTimeout(() => inputBus.noteOff(midi, 'virtual'), 220);
+}
+
+export function CellPad({ id, hand, text, keys, chord, focus, onChord, onTyping, onText, onMove, onMoveKey }: {
+  // Of the cell: another cell, another text.
+  id: string;
+  hand: Hand;
+  text: string;
+  keys: Key[];
+  // Keys add up in the cell instead of going to the next one.
+  chord: boolean;
+  focus: boolean;
+  onChord(on: boolean): void;
+  // What is typed, before it is entered; empty once it is.
+  onTyping?(text: string): void;
+  // False when the text makes no sense: it stays there.
+  onText(text: string): boolean;
+  // To the cell before, after, or the other hand's.
+  onMove(to: 'previous' | 'next' | 'hand'): void;
+  // Puts a number on another key.
+  onMoveKey?(number: number): void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState(text);
+  const [moving, setMoving] = useState(false);
+  useEffect(() => {
+    setValue(text);
+    onTyping?.('');
+    if (focus) {
+      input.current?.focus();
+      input.current?.select();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, text, focus]);
+
+  const save = () => value.trim() === text || onText(value.trim());
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs font-semibold text-neutral-500">{handName(hand)}</span>
+      <input
+        ref={input}
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          onTyping?.(e.target.value);
+        }}
+        onBlur={save}
+        onKeyDown={(e) => {
+          const el = e.currentTarget;
+          const go = (to: 'previous' | 'next' | 'hand') => {
+            e.preventDefault();
+            if (save()) onMove(to);
+          };
+          if (e.key === 'Enter' || e.key === ' ') go('next');
+          else if (e.key === 'ArrowRight' && el.selectionEnd === value.length) go('next');
+          else if (e.key === 'ArrowLeft' && (el.selectionStart === 0 || value === '')) go('previous');
+          else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') go('hand');
+          else if (e.key === 'Backspace' && value === '') go('previous');
+        }}
+        placeholder="vide"
+        inputMode="decimal"
+        aria-label="Numéros de la case"
+        className="w-20 rounded-lg border border-neutral-300 px-2 py-1.5 text-center text-base font-semibold tabular-nums focus:border-neutral-500 focus:outline-none"
+      />
+      <div className="flex min-w-0 flex-1 basis-48 flex-wrap items-center gap-1">
+        {keys.map((k) => (
+          <button
+            key={k.number}
+            type="button"
+            onClick={() => {
+              if (moving && onMoveKey) {
+                setMoving(false);
+                onMoveKey(k.number);
+              } else playKey(k.midi);
+            }}
+            className={`flex h-9 items-center gap-1 rounded-lg px-2 text-sm ${moving ? 'bg-neutral-900 text-white' : COLOR[hand]}`}
+          >
+            <b className="tabular-nums">{k.number}</b>
+            <span className="text-xs opacity-75"><NoteText text={frenchName(k.midi)} /></span>
+          </button>
+        ))}
+        {!keys.length && <span className="text-xs text-neutral-400">Tape un numéro, ou joue une touche du clavier.</span>}
+        {onMoveKey && keys.length > 0 && (
+          <button type="button" onClick={() => setMoving(!moving)} className="px-2 text-xs text-neutral-500 underline">
+            {moving ? 'Annuler' : 'Changer la touche d’un numéro'}
+          </button>
+        )}
+      </div>
+      <label className="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-600" title="Les touches jouées s’ajoutent dans la même case">
+        <input type="checkbox" checked={chord} onChange={(e) => onChord(e.target.checked)} className="h-4 w-4 accent-neutral-900" />Accord
+      </label>
+      <button type="button" onClick={() => onText('')} disabled={!text} className="h-9 rounded-lg px-2 text-xs font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-35">Vider</button>
+      <div className="flex">
+        <button type="button" onClick={() => onMove('previous')} aria-label="Case précédente" className="h-9 w-9 rounded-lg text-neutral-600 hover:bg-neutral-100">←</button>
+        <button type="button" onClick={() => onMove('next')} aria-label="Case suivante" className="h-9 w-9 rounded-lg text-neutral-600 hover:bg-neutral-100">→</button>
+      </div>
+    </div>
+  );
+}

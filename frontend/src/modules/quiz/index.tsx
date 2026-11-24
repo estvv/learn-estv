@@ -158,7 +158,7 @@ function QuizPlayer({ subject, config, onReview, onFinish }: PlayerProps<QuizCon
             onChange={(e) => setTyped(e.target.value)}
             disabled={answered}
             placeholder="Ta réponse"
-            className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
+            className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
           />
           {!answered && <Button type="submit">Valider</Button>}
         </form>

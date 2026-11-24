@@ -4,6 +4,11 @@
   --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
 }
 
+/* Same conditions as lib/useMedia.ts. */
+@custom-variant phone (@media (width < 48rem) or (height < 32rem));
+@custom-variant short (@media (height < 32rem));
+@custom-variant compact (@media (width < 80rem) or (height < 32rem));
+
 body {
   background: #fafafa;
   @apply text-neutral-900 antialiased;
@@ -13,6 +18,15 @@ body {
 :focus-visible {
   outline: 2px solid #171717;
   outline-offset: 2px;
+}
+
+/* Two quick taps are two taps, not a zoom. */
+button, a, label, select { touch-action: manipulation; }
+
+/* Below 16px, phones zoom on a field when it gets the focus. */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px; }
+  .cm-editor { font-size: 16px !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -31,6 +45,7 @@ body {
 }
 
 /* Lesson / card Markdown. */
+.md { overflow-wrap: break-word; }
 .md > * + * { margin-top: 0.85rem; }
 .md h1 { @apply text-2xl font-bold; }
 .md h2 { @apply text-xl font-semibold mt-8; }

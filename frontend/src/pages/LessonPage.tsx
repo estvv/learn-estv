@@ -13,7 +13,7 @@ export function LessonPage() {
   return (
     <Page>
       <Breadcrumb items={[{ label: pack.subject.name, to: `/s/${pack.subject.id}` }, { label: 'Leçons' }]} />
-      <article className={`${panel} p-6 md:p-10`}>
+      <article className={`${panel} p-4 sm:p-6 md:p-10`}>
         <h1 className="mb-6 text-2xl font-bold md:text-3xl">{lesson.title}</h1>
         <Markdown>{lesson.markdown}</Markdown>
       </article>

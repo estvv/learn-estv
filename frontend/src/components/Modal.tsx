@@ -34,16 +34,16 @@ export function Modal({ title, subtitle, onClose, children, footer, width = 'sm'
       <div
         role="dialog"
         aria-modal="true"
-        className={`w-full ${WIDTHS[width]} max-h-[90vh] flex flex-col bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-neutral-200 animate-[pop-in_160ms_ease-out]`}
+        className={`w-full ${WIDTHS[width]} max-h-[90dvh] flex flex-col bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-neutral-200 animate-[pop-in_160ms_ease-out]`}
       >
-        <div className={`flex ${subtitle ? 'items-start' : 'items-center'} justify-between gap-4 px-6 pt-5 pb-4`}>
+        <div className={`flex ${subtitle ? 'items-start' : 'items-center'} justify-between gap-4 px-5 pt-5 pb-4 sm:px-6`}>
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-neutral-900 truncate">{title}</h2>
             {subtitle && <div className="text-sm text-neutral-500 mt-0.5">{subtitle}</div>}
           </div>
           <button
             onClick={onClose}
-            className="-mr-2 p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+            className="-mr-2 shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
             title="Fermer"
             type="button"
           >
@@ -52,8 +52,8 @@ export function Modal({ title, subtitle, onClose, children, footer, width = 'sm'
             </svg>
           </button>
         </div>
-        <div className="px-6 pb-6 overflow-y-auto min-h-0">{children}</div>
-        {footer && <div className="px-6 py-4 border-t border-neutral-100 flex justify-end gap-2">{footer}</div>}
+        <div className="px-5 pb-6 overflow-y-auto overscroll-contain min-h-0 sm:px-6">{children}</div>
+        {footer && <div className="px-5 py-4 sm:px-6 border-t border-neutral-100 flex justify-end gap-2">{footer}</div>}
       </div>
     </div>
   );

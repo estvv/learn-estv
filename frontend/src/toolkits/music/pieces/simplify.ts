@@ -1,4 +1,4 @@
-import type { PieceLevel, PieceNote } from '@learn/shared';
+import type { Hand, PieceLevel, PieceNote } from '@learn/shared';
 
 // Easier versions of a piece, worked out from its notes, the file untouched:
 // - simplified: the right hand keeps the melody (highest note of each
@@ -12,7 +12,8 @@ const CHORD_WINDOW = 0.04;
 const MIN_DURATION = 0.05;
 
 // Notes without a hand (audio transcriptions) go by pitch around middle C.
-const isRight = (n: PieceNote) => (n.hand ? n.hand === 'right' : n.midi >= 60);
+export const handOf = (n: PieceNote): Hand => n.hand ?? (n.midi >= 60 ? 'right' : 'left');
+const isRight = (n: PieceNote) => handOf(n) === 'right';
 
 export function simplify(notes: PieceNote[], level: PieceLevel): PieceNote[] {
   if (level === 'original') return notes;

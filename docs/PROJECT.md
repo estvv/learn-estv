@@ -11,7 +11,7 @@ Projet perso : un admin (moi), quelques comptes créés à la main, des invités
 1. **Un socle, des modules.** Le socle gère contenu, progression, séances, stats et IA. Tout ce qui est spécifique (lecture de notes, oreille, play-along, flashcards…) est un module d'activité.
 2. **Élément + facettes.** On ne suit pas « une note » mais « lire Do4 », « jouer Do4 », « reconnaître Do4 à l'oreille » : chaque facette a son propre suivi de répétition espacée.
 3. **Un format de contenu unique.** Seed, éditeur et Mistral produisent tous des *packs* au même format, validés par le même schéma.
-4. **Les entrées sont abstraites.** Clavier virtuel, clavier d'ordinateur, MIDI et micro émettent les mêmes événements de note ; un exercice ignore d'où vient la note.
+4. **Les entrées sont abstraites.** Clavier virtuel, MIDI et micro émettent les mêmes événements de note ; un exercice ignore d'où vient la note.
 5. **Simple d'abord.** SQLite, modules dans le code, pas de quotas ni de modération.
 
 ## 2. Utilisateurs
@@ -79,7 +79,6 @@ Bus d'événements commun : `noteOn(midi, velocity, t)` / `noteOff(midi, t)`, pl
 | Source | Polyphonie | Notes |
 |---|---|---|
 | Clavier virtuel | oui | Étendue adaptative (celle de l'exercice, 2 octaves par défaut, 88 touches possibles), clic/tactile. |
-| Clavier d'ordinateur | oui (limité) | Mapping configurable dans les réglages (préréglages AZERTY et QWERTY), changement d'octave. |
 | MIDI | oui | Web MIDI API (Chrome/Edge), branché à chaud. |
 | Micro | **non** | Détection de hauteur monophonique (`pitchy`, McLeod). Accords non fiables : les activités qui en exigent refusent cette source. |
 
@@ -119,9 +118,10 @@ Les **outils** (métronome, clavier, accordeur, enregistreur) suivent le même p
 ### 7.2 Play-along
 
 - **Affichage** : partition (portée + curseur) ou notes qui tombent vers le clavier, au choix.
+- **Chiffres** : au-dessus des notes qui tombent, le morceau écrit en nombres, une suite par main, sur une grille de temps. Dans chaque partie (A, B…), la première touche jouée vaut 1, la nouvelle suivante 2…, et une touche garde son numéro ; les parties de même lettre partagent leurs numéros. Les parties sont trouvées automatiquement et se corrigent à la main ; les temps sont suivis un par un quand le jeu ne respecte pas le tempo du fichier.
 - **Modes** : *attente* (le morceau s'arrête jusqu'à la bonne note), *tempo réel + score* (justesse + timing, tempo réglable), *boucle* sur une sélection de mesures avec tempo progressif.
 - **Prises** : les notes jouées sont toujours enregistrées (pas l'audio). On peut rejouer une prise et la superposer à l'original (notes en avance/retard/fausses). Le score et les conseils du coach s'appuient dessus.
-- **Morceaux** : import MIDI (`@tonejs/midi`), import MusicXML (rendu OpenSheetMusicDisplay, mains et doigtés conservés), ou enregistrés en jouant.
+- **Morceaux** : import MIDI (`@tonejs/midi`), import MusicXML (rendu OpenSheetMusicDisplay, mains et doigtés conservés), ou écrits à la main en chiffres : des parties sur une grille (numéros tapés, touches jouées, rythme tapé), puis leur ordre (`shared/src/score.ts`). Les numéros de ces morceaux sont ceux de leur auteur. Un morceau importé se modifie aussi case par case.
 
 ### 7.3 Pédagogie piano
 

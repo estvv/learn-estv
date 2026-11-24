@@ -17,6 +17,7 @@ const COLORS = {
   none: { fill: '#8b5cf6', active: '#7c3aed' }, // violet
 };
 const SELECTED = '#171717';
+const FONT = (size: number) => `700 ${size}px "Plus Jakarta Sans", sans-serif`;
 
 export interface NotePicking {
   selected: Set<number>;
@@ -29,11 +30,21 @@ export interface NotePicking {
 type Rect = { x: number; y: number; width: number; height: number };
 const idOf = (n: PieceNote) => (n as PieceNote & { id?: number }).id;
 
-export function FallingNotes({ player, from, to, edit }: { player: PiecePlayer; from: number; to: number; edit?: NotePicking }) {
+export function FallingNotes({ player, from, to, edit, numbers, parts }: {
+  player: PiecePlayer;
+  from: number;
+  to: number;
+  edit?: NotePicking;
+  // Written on the notes, and where they start again at 1 (see numbers.ts).
+  numbers?: ReadonlyMap<PieceNote, number>;
+  parts?: { start: number; label: string }[];
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   // Read by the drawing loop and the pointer handlers without restarting them.
   const editRef = useRef(edit);
   editRef.current = edit;
+  const numbersRef = useRef({ numbers, parts });
+  numbersRef.current = { numbers, parts };
   const box = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
   // Where a note is drawn, in CSS pixels; null when out of view.
@@ -54,15 +65,18 @@ export function FallingNotes({ player, from, to, edit }: { player: PiecePlayer; 
       const pps = h / span;
       const bottom = h - (n.time - pos) * pps;
       const top = bottom - n.duration * pps;
-      const x = keyBox.x * w + 1.5;
-      const width = Math.max(3, keyBox.width * w - 3);
+      // Thin keys (a whole keyboard on a phone) keep almost all their width.
+      const gap = Math.min(1.5, keyBox.width * w * 0.1);
+      const x = keyBox.x * w + gap;
+      const width = Math.max(3, keyBox.width * w - 2 * gap);
       const y = Math.max(-4, top);
       return { x, y, width, height: Math.max(4, Math.min(h, bottom) - y) };
     };
 
     const draw = () => {
-      const dpr = window.devicePixelRatio || 1;
       const { clientWidth: w, clientHeight: h } = el;
+      // A wide keyboard on a sharp phone screen would be a huge canvas.
+      const dpr = Math.min(window.devicePixelRatio || 1, Math.max(1, 5120 / w));
       if (el.width !== Math.round(w * dpr) || el.height !== Math.round(h * dpr)) {
         el.width = Math.round(w * dpr);
         el.height = Math.round(h * dpr);
@@ -78,6 +92,21 @@ export function FallingNotes({ player, from, to, edit }: { player: PiecePlayer; 
       const span = LOOKAHEAD * player.rate;
       const expected = new Set(player.state.get().expected.map((n) => n.midi));
       const selected = editRef.current?.selected;
+
+      // Where a part begins.
+      const { numbers: numbered, parts: cuts } = numbersRef.current;
+      ctx.textBaseline = 'middle';
+      for (const cut of cuts ?? []) {
+        if (cut.start <= pos || cut.start > pos + span) continue;
+        const y = h - (cut.start - pos) * (h / span);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(0, y, w, 1);
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.font = FONT(12);
+        ctx.textAlign = 'left';
+        ctx.fillText(cut.label, 2, y - 9);
+      }
+      const labels: { text: string; x: number; y: number; size: number; color: string }[] = [];
 
       for (const n of player.notes) {
         if (n.time > pos + span) break;
@@ -97,8 +126,26 @@ export function FallingNotes({ player, from, to, edit }: { player: PiecePlayer; 
           ctx.strokeStyle = SELECTED;
           ctx.stroke();
         }
+        const number = numbered?.get(n);
+        if (number !== undefined) {
+          const size = Math.round(Math.min(16, Math.max(10, r.width * 0.62)));
+          const y = Math.min(h - size * 0.65, r.y + r.height - size * 0.75);
+          labels.push({ text: String(number), x: r.x + r.width / 2, y, size, color: ctx.fillStyle as string });
+        }
       }
       ctx.globalAlpha = 1;
+
+      // Above all the notes; the outline keeps them readable on thin ones.
+      ctx.textAlign = 'center';
+      ctx.lineJoin = 'round';
+      for (const l of labels) {
+        ctx.font = FONT(l.size);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = l.color;
+        ctx.strokeText(l.text, l.x, l.y);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(l.text, l.x, l.y);
+      }
 
       const b = box.current;
       if (b) {

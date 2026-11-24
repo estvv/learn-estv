@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useAuth } from '../../../app/auth';
+import { ActionSheet, type Action } from '../../../components/ActionSheet';
 import { Field, inputClass } from '../../../components/Field';
 import { ChevronDownIcon, PencilIcon, PlusIcon, ShuffleIcon } from '../../../components/icons';
 import { ConfirmModal, Modal } from '../../../components/Modal';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
+import { TOUCH, useMedia } from '../../../lib/useMedia';
 import { foldersApi, piecesApi } from './api';
 import { foldersToReveal, type FolderKey } from './folderPath';
 import { ImportModal } from './ImportModal';
@@ -19,10 +21,11 @@ const INDENT = 14; // px per folder level
 // Side panel of the practice page: the account's pieces, sorted into a tree
 // of folders, and the import.
 // Folders start closed, except the way down to the current piece.
-export function PiecesPanel({ subject, current, listening, onPick, onShuffle, onUpdated, onClose }: {
+export function PiecesPanel({ subject, current, listening, onCreate, onPick, onShuffle, onUpdated, onClose }: {
   subject: string;
   current: number | null;
   listening: boolean;
+  onCreate(): void;
   onPick(id: number | null): void;
   // Plays these pieces in a random order, endlessly.
   onShuffle(ids: number[]): void;
@@ -42,6 +45,9 @@ export function PiecesPanel({ subject, current, listening, onPick, onShuffle, on
   const [dragged, setDragged] = useState<Dragged | null>(null);
   const [dropTarget, setDropTarget] = useState<FolderKey | null>(null);
   const [error, setError] = useState('');
+  // Fingers have no hover and do not drag rows: a menu per row.
+  const touch = useMedia(TOUCH);
+  const [menu, setMenu] = useState<{ title: string; actions: Action[] } | null>(null);
 
   // Read at the first load only: later reloads (after an edit) keep what the
   // user opened or closed.
@@ -171,7 +177,10 @@ export function PiecesPanel({ subject, current, listening, onPick, onShuffle, on
           <>
             <div className="flex gap-2 p-4 pb-2">
               <button type="button" onClick={() => setImporting(true)} className={`${primaryButton} min-w-0 flex-1`}>
-                <PlusIcon className="h-4 w-4" />Importer un morceau
+                <PlusIcon className="h-4 w-4" />Importer
+              </button>
+              <button type="button" onClick={onCreate} className={`${secondaryButton} min-w-0 flex-1`} title="Écrire un morceau à la main, en chiffres">
+                <PencilIcon className="h-4 w-4" />Créer
               </button>
               {pieces && (
                 <button
@@ -186,7 +195,7 @@ export function PiecesPanel({ subject, current, listening, onPick, onShuffle, on
               )}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
               <button
                 type="button"
                 onClick={() => onPick(null)}
@@ -214,12 +223,12 @@ export function PiecesPanel({ subject, current, listening, onPick, onShuffle, on
                   </span>
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold text-neutral-900">Lecture aléatoire</span>
-                    <span className="block text-xs text-neutral-500">{listening ? 'En cours · cliquer pour remélanger tout' : `${visible.length} morceau${visible.length > 1 ? 'x' : ''} au hasard, en boucle`}</span>
+                    <span className="block text-xs text-neutral-500">{listening ? `En cours · ${touch ? 'touche' : 'clique'} pour remélanger tout` : `${visible.length} morceau${visible.length > 1 ? 'x' : ''} au hasard, en boucle`}</span>
                   </span>
                 </button>
               )}
 
-              {pieces?.length === 0 && !hasFolders && <p className="px-3 py-4 text-sm text-neutral-400">Aucun morceau importé pour l’instant.</p>}
+              {pieces?.length === 0 && !hasFolders && <p className="px-3 py-4 text-sm text-neutral-400">Aucun morceau pour l’instant.</p>}
 
               {pieces && (
                 <div className="mt-2">
@@ -247,6 +256,7 @@ export function PiecesPanel({ subject, current, listening, onPick, onShuffle, on
         )}
       </aside>
 
+      {menu && <ActionSheet title={menu.title} actions={menu.actions} onClose={() => setMenu(null)} />}
       {importing && (
         <ImportModal
           subject={subject}
@@ -321,26 +331,33 @@ export function PiecesPanel({ subject, current, listening, onPick, onShuffle, on
     const isOpen = open.includes(f.id);
     const subfolders = childrenOf(f.id);
     const own = visible.filter((p) => folderOf(p) === f.id);
+    const actions: Action[] = [
+      ...(inside.length > 0 ? [{ label: 'Écouter ce dossier au hasard, en boucle', icon: <ShuffleIcon className="h-3.5 w-3.5" />, onClick: () => onShuffle(inside.map((p) => p.id)) }] : []),
+      { label: 'Monter', icon: '↑', disabled: index === 0, onClick: () => shift(f, -1) },
+      { label: 'Descendre', icon: '↓', disabled: index === siblings - 1, onClick: () => shift(f, 1) },
+      { label: 'Nouveau sous-dossier', icon: <PlusIcon className="h-3.5 w-3.5" />, onClick: () => setNaming({ folder: null, parent: f.id }) },
+      { label: 'Renommer', icon: <PencilIcon className="h-3.5 w-3.5" />, onClick: () => setNaming({ folder: f, parent: f.parent_id }) },
+      { label: 'Supprimer le dossier', icon: <TrashIcon />, danger: true, onClick: () => setRemovingFolder(f) },
+    ];
     return (
       <section
         key={f.id}
         {...dropProps(f.id)}
         className={`rounded-xl transition-colors ${dropTarget === f.id ? 'bg-sky-50 ring-2 ring-inset ring-sky-300' : ''} ${dragged?.kind === 'folder' && dragged.id === f.id ? 'opacity-40' : ''}`}
       >
-        <div {...dragProps({ kind: 'folder', id: f.id })} className="group/folder flex items-center gap-1 rounded-lg pr-1 hover:bg-neutral-50" style={{ paddingLeft: depth * INDENT }}>
+        <div {...(touch ? {} : dragProps({ kind: 'folder', id: f.id }))} className="group/folder flex items-center gap-1 rounded-lg pr-1 hover:bg-neutral-50" style={{ paddingLeft: depth * INDENT }}>
           <button type="button" onClick={() => toggle(f.id)} className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left">
             <ChevronDownIcon className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
             <span className="truncate text-sm font-semibold text-neutral-900">{f.name}</span>
             <span className="shrink-0 text-xs text-neutral-400">{inside.length}</span>
           </button>
-          <div className="hidden shrink-0 items-center group-hover/folder:flex">
-            {inside.length > 0 && <IconButton title="Écouter ce dossier au hasard, en boucle" onClick={() => onShuffle(inside.map((p) => p.id))}><ShuffleIcon className="h-3.5 w-3.5" /></IconButton>}
-            <IconButton title="Monter" disabled={index === 0} onClick={() => shift(f, -1)}>↑</IconButton>
-            <IconButton title="Descendre" disabled={index === siblings - 1} onClick={() => shift(f, 1)}>↓</IconButton>
-            <IconButton title="Nouveau sous-dossier" onClick={() => setNaming({ folder: null, parent: f.id })}><PlusIcon className="h-3.5 w-3.5" /></IconButton>
-            <IconButton title="Renommer" onClick={() => setNaming({ folder: f, parent: f.parent_id })}><PencilIcon className="h-3.5 w-3.5" /></IconButton>
-            <IconButton title="Supprimer le dossier" danger onClick={() => setRemovingFolder(f)}><TrashIcon /></IconButton>
-          </div>
+          {touch ? (
+            <IconButton title={`Actions : ${f.name}`} big onClick={() => setMenu({ title: f.name, actions })}><DotsIcon /></IconButton>
+          ) : (
+            <div className="hidden shrink-0 items-center group-hover/folder:flex">
+              {actions.map((a) => <IconButton key={a.label} title={a.label} disabled={a.disabled} danger={a.danger} onClick={a.onClick}>{a.icon}</IconButton>)}
+            </div>
+          )}
         </div>
         {isOpen && (
           <div className="space-y-0.5 pb-1">
@@ -348,7 +365,7 @@ export function PiecesPanel({ subject, current, listening, onPick, onShuffle, on
             {own.map((p) => row(p, depth + 1))}
             {subfolders.length === 0 && own.length === 0 && (
               <p className="py-2 pr-3 text-xs text-neutral-400" style={{ paddingLeft: (depth + 1) * INDENT + 12 }}>
-                Vide : glisse un morceau ou un dossier ici.
+                {touch ? 'Vide.' : 'Vide : glisse un morceau ou un dossier ici.'}
               </p>
             )}
           </div>
@@ -359,17 +376,21 @@ export function PiecesPanel({ subject, current, listening, onPick, onShuffle, on
 
   function row(p: PieceSummary, depth: number) {
     const active = current === p.id;
+    const actions: Action[] = [
+      { label: 'Modifier (titre, artiste, dossier, difficulté)', icon: <PencilIcon className="h-4 w-4" />, onClick: () => setEditing(p) },
+      { label: 'Supprimer', icon: <TrashIcon />, danger: true, onClick: () => setRemoving(p) },
+    ];
     return (
       <div
         key={p.id}
-        {...dragProps({ kind: 'piece', id: p.id })}
+        {...(touch ? {} : dragProps({ kind: 'piece', id: p.id }))}
         style={{ marginLeft: depth * INDENT }}
         className={`group flex items-center gap-1 rounded-xl pr-1.5 ${active ? 'bg-neutral-100' : 'hover:bg-neutral-50'} ${dragged?.kind === 'piece' && dragged.id === p.id ? 'opacity-40' : ''}`}
       >
         <button
           type="button"
           onClick={() => onPick(p.id)}
-          onDoubleClick={() => setEditing(p)}
+          onDoubleClick={touch ? undefined : () => setEditing(p)}
           title={`${sourceLabels[p.source]} · ${p.note_count} notes`}
           className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left"
         >
@@ -386,23 +407,27 @@ export function PiecesPanel({ subject, current, listening, onPick, onShuffle, on
           </span>
           <span className="shrink-0 text-xs tabular-nums text-neutral-400 group-hover:hidden">{formatDuration(p.duration)}</span>
         </button>
-        <div className="hidden shrink-0 items-center group-hover:flex">
-          <IconButton title="Modifier (titre, artiste, dossier, difficulté)" onClick={() => setEditing(p)}><PencilIcon className="h-4 w-4" /></IconButton>
-          <IconButton title="Supprimer" danger onClick={() => setRemoving(p)}><TrashIcon /></IconButton>
-        </div>
+        {touch ? (
+          <IconButton title={`Actions : ${p.title}`} big onClick={() => setMenu({ title: p.title, actions })}><DotsIcon /></IconButton>
+        ) : (
+          <div className="hidden shrink-0 items-center group-hover:flex">
+            {actions.map((a) => <IconButton key={a.label} title={a.label} danger={a.danger} onClick={a.onClick}>{a.icon}</IconButton>)}
+          </div>
+        )}
       </div>
     );
   }
 }
 
-function IconButton({ title, onClick, disabled, danger, children }: { title: string; onClick(): void; disabled?: boolean; danger?: boolean; children: ReactNode }) {
+function IconButton({ title, onClick, disabled, danger, big, children }: { title: string; onClick(): void; disabled?: boolean; danger?: boolean; big?: boolean; children: ReactNode }) {
   return (
     <button
       type="button"
       title={title}
+      aria-label={title}
       onClick={onClick}
       disabled={disabled}
-      className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm text-neutral-400 disabled:opacity-30 disabled:hover:bg-transparent ${
+      className={`flex ${big ? 'h-10 w-10' : 'h-7 w-7'} shrink-0 items-center justify-center rounded-lg text-sm text-neutral-400 disabled:opacity-30 disabled:hover:bg-transparent ${
         danger ? 'hover:bg-red-50 hover:text-red-600' : 'hover:bg-neutral-200/70 hover:text-neutral-900'
       }`}
     >
@@ -414,6 +439,12 @@ function IconButton({ title, onClick, disabled, danger, children }: { title: str
 const FolderPlusIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v5M9.5 13.5h5" />
+  </svg>
+);
+
+const DotsIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4" aria-hidden>
+    <circle cx="12" cy="5" r="1.75" /><circle cx="12" cy="12" r="1.75" /><circle cx="12" cy="19" r="1.75" />
   </svg>
 );
 

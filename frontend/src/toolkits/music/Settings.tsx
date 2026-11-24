@@ -1,16 +1,14 @@
-import { noteLabel, noteName } from '@learn/shared';
-import { useEffect, useState } from 'react';
+import { noteLabel } from '@learn/shared';
+import { useState } from 'react';
 import { Section, Toggle } from '../../components/settings';
-import { Segmented } from '../../components/Segmented';
 import { useObservable } from '../../lib/store';
 import { Button } from '../../modules/ui';
 import { audioState, playNotes } from './audio';
 import { sourceLabels, type SourceId } from './input/bus';
 import { useHeldNotes, useNoteInput } from './input/hooks';
-import { detectedLayout, keyLabel, pauseKeyboardSource } from './input/keyboard';
 import { disableMic, enableMic, micState } from './input/mic';
 import { disableMidi, enableMidi, midiState } from './input/midi';
-import { DEFAULT_MAPPING, inputSettings, updateSettings, type KeyboardLayout } from './input/settings';
+import { inputSettings, updateSettings } from './input/settings';
 import { PianoKeyboard } from './PianoKeyboard';
 
 const statusText = { off: 'désactivé', pending: 'autorisation…', on: 'actif', denied: 'refusé par le navigateur' } as const;
@@ -24,7 +22,6 @@ export function MusicSettings() {
   const [lastSource, setLastSource] = useState<SourceId | null>(null);
   useNoteInput((e) => e.type === 'on' && setLastSource(e.source));
 
-  const base = (settings.keyboard.baseOctave + 1) * 12;
   const heldList = [...held].sort((a, b) => a - b);
 
   return (
@@ -34,7 +31,7 @@ export function MusicSettings() {
           {heldList.length ? heldList.map((m) => noteLabel(m, true)).join(' + ') : 'Joue une note avec n’importe quelle entrée.'}
           {lastSource && <span className="ml-2 text-neutral-400">via {sourceLabels[lastSource]}</span>}
         </div>
-        <PianoKeyboard from={base - 12} to={base + 23} labels="keys" height={140} />
+        <PianoKeyboard from={48} to={83} labels="names" height={140} />
       </Section>
 
       <Section title="Son" description="Piano échantillonné (Salamander Grand Piano).">
@@ -62,32 +59,6 @@ export function MusicSettings() {
             />
           ))}
         </div>
-      </Section>
-
-      <Section title="Clavier d’ordinateur" description="Les touches jouent des notes quand un clavier est affiché, sauf pendant la saisie de texte. Les notes suivent la position physique des touches : seules les lettres affichées dépendent de la disposition.">
-        <div className="flex flex-wrap items-center gap-6">
-          <Toggle
-            label="Activé"
-            checked={settings.keyboard.enabled}
-            onChange={(v) => updateSettings((s) => ({ ...s, keyboard: { ...s.keyboard, enabled: v } }))}
-          />
-          <div className="flex items-center gap-3 text-sm text-neutral-600">
-            Disposition
-            <Segmented<KeyboardLayout>
-              value={settings.keyboard.layout ?? 'auto'}
-              onChange={(layout) => updateSettings((s) => ({ ...s, keyboard: { ...s.keyboard, layout } }))}
-              options={[
-                { value: 'auto', label: detectedLayout() ? `Auto (${detectedLayout()!.toUpperCase()})` : 'Auto' },
-                { value: 'azerty', label: 'AZERTY' },
-                { value: 'qwerty', label: 'QWERTY' },
-              ]}
-            />
-          </div>
-          <span className="text-sm text-neutral-600">
-            Octave de départ : <strong>{noteName(base)}</strong> ({keyLabel(settings.keyboard.octaveDown)} / {keyLabel(settings.keyboard.octaveUp)} pour changer)
-          </span>
-        </div>
-        <MappingEditor />
       </Section>
 
       <Section title="Clavier MIDI" description="Branche un clavier en USB. Fonctionne dans Chrome et Edge.">
@@ -145,69 +116,4 @@ export function MusicSettings() {
 function centsText(pitch: number) {
   const cents = Math.round((pitch - Math.round(pitch)) * 100);
   return cents === 0 ? '' : `(${cents > 0 ? '+' : ''}${cents} cents)`;
-}
-
-// Click a note, then press the key that should play it.
-function MappingEditor() {
-  const settings = useObservable(inputSettings);
-  const [editing, setEditing] = useState<number | null>(null);
-  const mapping = settings.keyboard.mapping;
-  const base = (settings.keyboard.baseOctave + 1) * 12;
-
-  useEffect(() => {
-    if (editing === null) return;
-    pauseKeyboardSource(true);
-    const onKey = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.code !== 'Escape') {
-        updateSettings((s) => {
-          const next = Object.fromEntries(Object.entries(s.keyboard.mapping).filter(([code, off]) => code !== e.code && off !== editing));
-          next[e.code] = editing;
-          return { ...s, keyboard: { ...s.keyboard, mapping: next } };
-        });
-      }
-      setEditing(null);
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-      pauseKeyboardSource(false);
-    };
-  }, [editing]);
-
-  const codeFor = (offset: number) => Object.entries(mapping).find(([, o]) => o === offset)?.[0];
-
-  return (
-    <div className="mt-4">
-      <div className="flex flex-wrap gap-1.5">
-        {Array.from({ length: 18 }, (_, o) => {
-          const code = codeFor(o);
-          return (
-            <button
-              key={o}
-              type="button"
-              onClick={() => setEditing(o)}
-              className={`w-14 rounded-lg border px-1 py-1.5 text-center text-xs ${
-                editing === o ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-300 hover:bg-neutral-50'
-              }`}
-            >
-              <div className="text-neutral-400">{noteName(base + o)}</div>
-              <div className="font-semibold">{editing === o ? '…' : code ? keyLabel(code) : '—'}</div>
-            </button>
-          );
-        })}
-      </div>
-      <div className="mt-2 flex items-center gap-3 text-xs text-neutral-500">
-        {editing !== null ? 'Appuie sur la touche à associer (Échap pour annuler).' : 'Clique une note pour changer sa touche.'}
-        <button
-          type="button"
-          className="underline"
-          onClick={() => updateSettings((s) => ({ ...s, keyboard: { ...s.keyboard, mapping: DEFAULT_MAPPING } }))}
-        >
-          Disposition par défaut
-        </button>
-      </div>
-    </div>
-  );
 }

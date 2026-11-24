@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // A playable piece, whatever it was imported from (MIDI, MusicXML, audio
-// transcription). Times are in seconds at the original tempo, so tempo
+// transcription) or written by hand (see score.ts). Times are in seconds at the original tempo, so tempo
 // changes are already applied.
 
 export const hands = ['right', 'left'] as const;
@@ -27,7 +27,7 @@ export const pieceTrackSchema = z.object({
 });
 export type PieceTrack = z.infer<typeof pieceTrackSchema>;
 
-export const pieceSources = ['midi', 'musicxml', 'audio'] as const;
+export const pieceSources = ['midi', 'musicxml', 'audio', 'manual'] as const;
 
 // How hard a piece feels to its owner, easiest first.
 export const pieceDifficulties = ['easy', 'medium', 'hard', 'impossible'] as const;
@@ -37,6 +37,16 @@ export type PieceDifficulty = (typeof pieceDifficulties)[number];
 // bass, or the melody alone (worked out in the player, the notes unchanged).
 export const pieceLevels = ['original', 'simplified', 'melody'] as const;
 export type PieceLevel = (typeof pieceLevels)[number];
+
+// Practice parts set by hand: where each starts (seconds) and its letter; the
+// same letter means the same passage. The first one starts at 0.
+export const pieceSectionSchema = z.object({
+  start: z.number().min(0),
+  label: z.string().trim().min(1).max(12),
+});
+export const pieceSectionsSchema = z.array(pieceSectionSchema).min(1).max(200)
+  .refine((s) => s[0].start === 0 && s.every((x, i) => i === 0 || x.start > s[i - 1].start), { message: 'Parties invalides' });
+export type PieceSection = z.infer<typeof pieceSectionSchema>;
 
 export const pieceSchema = z.object({
   title: z.string().trim().min(1).max(120),

@@ -1,4 +1,5 @@
 import type { PieceNote } from '@learn/shared';
+import { beatGrid, BEATS_PER_BAR, type BeatGrid } from './grid';
 
 // Splits a piece into practice sections from its notes alone, whatever it was
 // imported from: cut into bars, find the passages that come back, cut there,
@@ -11,7 +12,6 @@ export interface Section {
 }
 
 // Time signatures are not stored: bars are assumed to hold four beats.
-const BEATS_PER_BAR = 4;
 // Bars sharing this much of their notes (pitch + position) count as the same.
 const SIMILAR = 0.6;
 // A repeat must last this many bars to cut the piece around it.
@@ -21,20 +21,16 @@ const MAX_SECTION = 8;
 // Long sections are cut in chunks of about this many bars.
 const CHUNK = 4;
 
-export function detectSections(notes: PieceNote[], bpm: number | null): Section[] {
-  if (notes.length === 0) return [];
+export function detectSections(notes: PieceNote[], bpm: number | null, grid: BeatGrid | null = beatGrid(notes, bpm)): Section[] {
+  if (notes.length === 0 || !grid) return [];
   const sorted = [...notes].sort((a, b) => a.time - b.time);
   const duration = sorted.reduce((end, n) => Math.max(end, n.time + n.duration), 0);
-  const beat = bpm ? 60 / bpm : estimateBeat(onsetTimes(sorted));
-  if (!beat) return [];
-  const bar = beat * BEATS_PER_BAR;
-  const origin = sorted[0].time;
 
   // Each bar as a set of "pitch@sixteenth"; rounding to the sixteenth absorbs
   // the timing jitter of live recordings and transcriptions.
   const bars: Set<string>[] = [];
   for (const n of sorted) {
-    const sixteenth = Math.round((n.time - origin) / (beat / 4));
+    const sixteenth = Math.max(0, Math.round(grid.toBeats(n.time) * 4));
     const index = Math.floor(sixteenth / (BEATS_PER_BAR * 4));
     while (bars.length <= index) bars.push(new Set());
     bars[index].add(`${n.midi}@${sixteenth % (BEATS_PER_BAR * 4)}`);
@@ -110,8 +106,8 @@ export function detectSections(notes: PieceNote[], bpm: number | null): Section[
   });
 
   return spans.map(([from, to], i) => ({
-    start: i === 0 ? 0 : origin + from * bar,
-    end: i === spans.length - 1 ? duration : origin + to * bar,
+    start: i === 0 ? 0 : grid.toTime(from * BEATS_PER_BAR),
+    end: i === spans.length - 1 ? duration : grid.toTime(to * BEATS_PER_BAR),
     label: labels[i],
   }));
 }
@@ -124,34 +120,3 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 }
 
 const letter = (i: number) => (i < 26 ? String.fromCharCode(65 + i) : `${String.fromCharCode(65 + (i % 26))}${Math.floor(i / 26) + 1}`);
-
-// Chords count once.
-function onsetTimes(sorted: PieceNote[]): number[] {
-  const out: number[] = [];
-  for (const n of sorted) if (!out.length || n.time - out[out.length - 1] > 0.04) out.push(n.time);
-  return out;
-}
-
-// Pieces without a known tempo (audio): the beat period the onsets line up on
-// best, nudged towards ~100 bpm to avoid picking half or double time.
-export function estimateBeat(onsets: number[]): number | null {
-  if (onsets.length < 8) return null;
-  let best = 0;
-  let bestScore = -1;
-  for (let bpm = 60; bpm <= 180; bpm += 0.5) {
-    const period = 60 / bpm;
-    let re = 0;
-    let im = 0;
-    for (const t of onsets) {
-      const a = (2 * Math.PI * t) / period;
-      re += Math.cos(a);
-      im += Math.sin(a);
-    }
-    const score = (Math.hypot(re, im) / onsets.length) * Math.exp(-2 * Math.log2(bpm / 100) ** 2);
-    if (score > bestScore) {
-      bestScore = score;
-      best = period;
-    }
-  }
-  return best;
-}

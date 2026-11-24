@@ -14,6 +14,9 @@ const components: Components = {
     }
     return <pre {...rest} className="overflow-x-auto rounded-lg bg-neutral-100 p-3 text-sm">{children}</pre>;
   },
+  table({ children }) {
+    return <div className="overflow-x-auto"><table>{children}</table></div>;
+  },
   a({ href, children }) {
     return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
   },

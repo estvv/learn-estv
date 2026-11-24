@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router';
 import { useAuth, type User } from '../app/auth';
 import { Avatar } from '../components/Avatar';
@@ -45,11 +45,11 @@ export function ProfilePage() {
 
   return (
     <Page width="lg">
-      <section className="mb-8 flex items-start gap-5">
+      <section className="mb-6 flex items-start gap-4 sm:mb-8 sm:gap-5">
         <Avatar url={user.avatar_url} name={user.display_name} size="xl" />
         <div className="min-w-0 flex-1 pt-1">
-          <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="truncate text-2xl font-bold text-neutral-900">{user.display_name}</h1>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
+            <h1 className="min-w-0 truncate text-2xl font-bold text-neutral-900">{user.display_name}</h1>
             {isMe && (
               <Link to="/compte" className="inline-flex items-center gap-1.5 self-center rounded-md bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-200 hover:text-neutral-900">
                 <PencilIcon className="h-3.5 w-3.5" />Modifier
@@ -137,11 +137,16 @@ function Heatmap({ days }: { days: { day: string; count: number }[] }) {
   const cells: ({ day: string; count: number } | null)[] = [...Array(offset).fill(null), ...days];
   const weeks: (typeof cells)[] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  // On a phone the year does not fit: show the last weeks.
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scroller.current) scroller.current.scrollLeft = scroller.current.scrollWidth;
+  }, []);
   const total = days.reduce((n, d) => n + (d.count ? 1 : 0), 0);
 
   return (
     <div className={`${panel} p-4`}>
-      <div className="overflow-x-auto">
+      <div ref={scroller} className="overflow-x-auto">
         <div className="flex w-max gap-[3px]">
           {weeks.map((week, i) => (
             <div key={i} className="flex flex-col gap-[3px]">
@@ -156,7 +161,7 @@ function Heatmap({ days }: { days: { day: string; count: number }[] }) {
           ))}
         </div>
       </div>
-      <div className="mt-3 flex items-center justify-between text-xs text-neutral-400">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-400">
         <span>{plural(total, 'jour')} actif{total > 1 ? 's' : ''} sur l’année</span>
         <span className="flex items-center gap-1">
           Moins {HEAT.map((c) => <span key={c} className={`h-[11px] w-[11px] rounded-[3px] ${c}`} />)} Plus

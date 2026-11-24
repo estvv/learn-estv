@@ -65,12 +65,12 @@ export function ReviewPage() {
     if (due.length) return frame(<ReviewIntro batches={due} onStart={() => start(false)} />);
     const seen = progress.srs.size > 0;
     return frame(
-      <div className={`${panel} p-8 text-center`}>
+      <div className={`${panel} p-5 sm:p-8 text-center`}>
         <div className="text-lg font-semibold">Rien à réviser pour l’instant</div>
         <p className="mt-1 text-sm text-neutral-500">
           {seen ? 'Tu peux quand même t’entraîner sur tes éléments les plus fragiles.' : 'Commence le parcours : les éléments vus reviendront ici au bon moment.'}
         </p>
-        <div className="mt-6 flex justify-center gap-2">
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
           {seen && <Button onClick={() => start(true)}>S’entraîner</Button>}
           <Link to={back} className={secondaryButton}>Retour au parcours</Link>
         </div>
@@ -81,9 +81,9 @@ export function ReviewPage() {
   const batch = session.batches[session.index];
   if (!batch) {
     return frame(
-      <div className={`${panel} p-8 text-center`}>
+      <div className={`${panel} p-5 sm:p-8 text-center`}>
         <div className="text-lg font-semibold">Séance terminée</div>
-        <div className="mt-6 flex justify-center gap-2">
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Button variant="secondary" onClick={() => setSession(null)}>Encore</Button>
           <Link to={back} className={primaryButton}>Retour au parcours</Link>
         </div>
@@ -110,7 +110,7 @@ export function ReviewPage() {
 
 function ReviewIntro({ batches, onStart }: { batches: Batch[]; onStart(): void }) {
   return (
-    <div className={`${panel} p-8`}>
+    <div className={`${panel} p-5 sm:p-8`}>
       <div className="text-lg font-semibold">À réviser</div>
       <ul className="mt-3 space-y-1 text-sm text-neutral-600">
         {batches.map((b) => <li key={b.facet.id}>{b.facet.label} : {b.ids.length}</li>)}

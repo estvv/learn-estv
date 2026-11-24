@@ -176,12 +176,43 @@ describe('auth and progress', () => {
     await me.patch(`/api/pieces/${id}`).send({ level: 'melody' }).expect(200);
     expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.level).toBe('melody');
     await me.patch(`/api/pieces/${id}`).send({ level: 'expert' }).expect(400);
+    // Parts set by hand, and back to the automatic ones.
+    const parts = [{ start: 0, label: 'A' }, { start: 4.5, label: 'B' }];
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sections).toBeNull();
+    await me.patch(`/api/pieces/${id}`).send({ sections: parts }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sections).toEqual(parts);
+    await me.patch(`/api/pieces/${id}`).send({ sections: [{ start: 1, label: 'A' }] }).expect(400);
+    await me.patch(`/api/pieces/${id}`).send({ sections: [parts[0], { start: 0, label: 'B' }] }).expect(400);
+    await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, sections: [parts[0]] }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sections).toEqual([parts[0]]);
+    await me.patch(`/api/pieces/${id}`).send({ sections: null }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sections).toBeNull();
     await me.patch(`/api/pieces/${id}`).send({ description: '' }).expect(200);
     expect((await me.get('/api/pieces').expect(200)).body.data[0].description).toBeNull();
     const withDesc = (await me.post('/api/pieces').send({ subject: 'piano', piece, description: 'en entier' }).expect(201)).body.data.id;
     expect((await me.get(`/api/pieces/${withDesc}`).expect(200)).body.data.description).toBe('en entier');
     await me.delete(`/api/pieces/${withDesc}`).expect(200);
     expect(list[0].cover).toBe('https://img.test/-/Gamme');
+
+    // Written by hand: the notes come from the score.
+    const score = {
+      bpm: 120, division: 2,
+      parts: [{ label: 'A', beats: 4, keys: [{ hand: 'right', number: 4, midi: 70 }], notes: [{ step: 0, midi: 70, hand: 'right' }, { step: 3, midi: 70, hand: 'right' }] }],
+      order: ['A', 'A'],
+    };
+    const own = { subject: 'piano', piece: { ...piece, title: 'À moi', source: 'manual' }, score };
+    const ownId = (await me.post('/api/pieces').send(own).expect(201)).body.data.id;
+    const ownFull = (await me.get(`/api/pieces/${ownId}`).expect(200)).body.data;
+    expect(ownFull).toMatchObject({ source: 'manual', bpm: 120, score });
+    expect(ownFull.notes.map((n: { time: number }) => n.time)).toEqual([0, 0.75, 2, 2.75]);
+    await me.put(`/api/pieces/${ownId}/score`).send({ score: { ...score, bpm: 60, order: ['A'] } }).expect(200);
+    expect((await me.get(`/api/pieces/${ownId}`).expect(200)).body.data.notes.map((n: { time: number }) => n.time)).toEqual([0, 1.5]);
+    expect((await me.put(`/api/pieces/${ownId}/score`).send({ score: { ...score, order: ['B'] } }).expect(400)).body.error).toBe('Partie inconnue');
+    await me.put(`/api/pieces/${ownId}/notes`).send({ notes: piece.notes }).expect(400);
+    await me.put(`/api/pieces/${id}/score`).send({ score }).expect(400);
+    await other.put(`/api/pieces/${ownId}/score`).send({ score }).expect(404);
+    expect(ownFull.sections).toBeNull();
+    await me.delete(`/api/pieces/${ownId}`).expect(200);
 
     // Several instruments: every track kept, switched on and off.
     const band = {

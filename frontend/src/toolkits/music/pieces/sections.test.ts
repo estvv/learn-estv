@@ -1,7 +1,8 @@
 import type { PieceNote } from '@learn/shared';
 import { describe, expect, it } from 'vitest';
+import { estimateBeat } from './grid';
 import { PiecePlayer } from './player';
-import { detectSections, estimateBeat } from './sections';
+import { detectSections } from './sections';
 
 const BPM = 120;
 const BAR = (60 / BPM) * 4;

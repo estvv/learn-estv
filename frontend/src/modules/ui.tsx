@@ -15,7 +15,7 @@ export function Button({ variant = 'primary', className = '', ...props }: Button
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="ml-1 rounded border border-current/30 px-1 text-[10px] font-medium opacity-60">{children}</kbd>;
+  return <kbd className="ml-1 rounded border pointer-coarse:hidden border-current/30 px-1 text-[10px] font-medium opacity-60">{children}</kbd>;
 }
 
 export function ProgressBar({ value, className = '' }: { value: number; className?: string }) {
@@ -32,12 +32,12 @@ export function Empty({ children }: { children: ReactNode }) {
 
 // A white card for the activity content (question, card face…).
 export function Surface({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`${panel} p-6 ${className}`}>{children}</div>;
+  return <div className={`${panel} p-4 sm:p-6 ${className}`}>{children}</div>;
 }
 
 export function Summary({ score, total, correct, passed, children }: { score?: number; total?: number; correct?: number; passed: boolean; children?: ReactNode }) {
   return (
-    <div className={`${panel} p-8 text-center`}>
+    <div className={`${panel} p-5 text-center sm:p-8`}>
       <div className="text-4xl font-bold tabular-nums">{score !== undefined ? `${Math.round(score * 100)} %` : '✓'}</div>
       {total !== undefined && <div className="mt-1 text-sm text-neutral-500">{correct} / {total} bonnes réponses</div>}
       <div className={`mt-3 text-sm font-medium ${passed ? 'text-emerald-600' : 'text-neutral-600'}`}>

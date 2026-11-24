@@ -61,9 +61,10 @@ export function AdminPage() {
       />
 
       {!users ? <LoadingState /> : (
-        <div className={`${panel} overflow-x-auto`}>
-          <table className="w-full text-sm">
-            <thead>
+        <div className={`${panel} md:overflow-x-auto`}>
+          {/* On a phone, one block per account instead of a row. */}
+          <table className="block w-full text-sm md:table">
+            <thead className="hidden md:table-header-group">
               <tr className="border-b border-neutral-100 bg-neutral-50/60 text-left text-neutral-500">
                 <th className="px-4 py-2.5 font-medium">Compte</th>
                 <th className="px-3 py-2.5 font-medium">Dernière activité</th>
@@ -71,10 +72,10 @@ export function AdminPage() {
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className="block divide-y md:table-row-group divide-neutral-100">
               {users.map((u) => (
-                <tr key={u.id} className={u.disabled ? 'text-neutral-400' : ''}>
-                  <td className="px-4 py-3">
+                <tr key={u.id} className={`flex flex-wrap items-center gap-x-3 gap-y-2 p-4 md:table-row ${u.disabled ? 'text-neutral-400' : ''}`}>
+                  <td className="w-full md:w-auto md:px-4 md:py-3">
                     <div className="flex items-center gap-3">
                       <Avatar url={u.avatar_url} name={u.display_name} size="sm" />
                       <div>
@@ -85,10 +86,10 @@ export function AdminPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-3 text-neutral-500">{u.last_activity ? relativeDay(u.last_activity) : <span className="text-neutral-300">jamais</span>}</td>
-                  <td className="px-3 py-3">{u.disabled ? <Badge>Désactivé</Badge> : <Badge accent="emerald">Actif</Badge>}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1 whitespace-nowrap">
+                  <td className="text-neutral-500 md:px-3 md:py-3">{u.last_activity ? relativeDay(u.last_activity) : <span className="text-neutral-300">jamais</span>}</td>
+                  <td className="md:px-3 md:py-3">{u.disabled ? <Badge>Désactivé</Badge> : <Badge accent="emerald">Actif</Badge>}</td>
+                  <td className="w-full md:w-auto md:px-4 md:py-3">
+                    <div className="-mx-3 flex flex-wrap gap-1 whitespace-nowrap md:mx-0 md:flex-nowrap md:justify-end">
                       <button type="button" onClick={() => setEditing(u)} className={ghostButton}>
                         <PencilIcon className="h-3.5 w-3.5" />Modifier
                       </button>

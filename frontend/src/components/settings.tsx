@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 export function Section({ title, description, aside, children }: { title: string; description?: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section className={`${panel} p-5`}>
+    <section className={`${panel} p-4 sm:p-5`}>
       <div className="flex items-center justify-between gap-4">
         <h2 className="font-semibold">{title}</h2>
         {aside}

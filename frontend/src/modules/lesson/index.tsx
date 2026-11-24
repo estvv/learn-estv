@@ -8,7 +8,7 @@ function LessonPlayer({ subject, config, onFinish }: PlayerProps<LessonConfig>) 
   const lesson = subject.pack.lessons.find((l) => l.id === config.lesson);
   if (!lesson) return <Empty>Leçon introuvable : {config.lesson}</Empty>;
   return (
-    <article className={`${panel} p-6 md:p-10`}>
+    <article className={`${panel} p-4 sm:p-6 md:p-10`}>
       <h1 className="mb-6 text-2xl font-bold md:text-3xl">{lesson.title}</h1>
       <Markdown>{lesson.markdown}</Markdown>
       <div className="mt-10 flex justify-end border-t border-neutral-100 pt-6">

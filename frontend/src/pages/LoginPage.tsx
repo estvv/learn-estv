@@ -28,9 +28,9 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center px-4 py-10">
-      <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
-        <div className="mb-8 text-center">
+    <div className="flex min-h-[70dvh] items-center justify-center px-4 py-10">
+      <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
+        <div className="mb-6 text-center sm:mb-8">
           <h1 className="mb-2 text-3xl font-bold text-neutral-900">Learn</h1>
           <p className="text-sm text-neutral-500">Les comptes sont créés par l’admin. Sans compte, tout reste accessible en mode invité.</p>
         </div>

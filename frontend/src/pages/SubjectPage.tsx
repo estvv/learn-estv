@@ -37,15 +37,15 @@ export function SubjectPage() {
 
   return (
     <Page width="lg">
-      <div className="mb-8">
+      <div className="mb-6 sm:mb-8">
         <Link to="/" className="text-sm text-neutral-500 hover:text-neutral-900">← Sujets</Link>
         <div className="mt-3 flex flex-wrap items-center gap-4">
-          <SubjectImage id={pack.subject.id} name={pack.subject.name} accent={a} className="h-20 w-32 rounded-xl" text="text-xl" />
+          <SubjectImage id={pack.subject.id} name={pack.subject.name} accent={a} className="h-14 w-22 rounded-xl sm:h-20 sm:w-32" text="text-xl" />
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-bold text-neutral-900 md:text-3xl">{pack.subject.name}</h1>
             <p className="mt-1 text-neutral-500">{pack.subject.description}</p>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
+          <div className="flex w-full flex-wrap gap-2 *:grow sm:w-auto sm:shrink-0 sm:*:grow-0">
             {pack.subject.practice && toolkits.some((t) => t.id === pack.subject.practice && t.Practice) && (
               <Link to={`/s/${model.id}/pratique`} className={secondaryButton}>
                 <PlayIcon className="h-4 w-4" />Pratique
@@ -80,13 +80,13 @@ export function SubjectPage() {
                     const unitDone = progress ? unitSteps.filter((s) => progress.steps.has(s.fullId)).length : 0;
                     return (
                       <details key={unit.id} open={!long || (nextStep?.pathId === path.id && nextStep.unitId === unit.id)} className={`${panel} group overflow-hidden`}>
-                        <summary className="flex cursor-pointer list-none items-start gap-3 px-5 py-4 hover:bg-neutral-50 group-open:border-b group-open:border-neutral-100 [&::-webkit-details-marker]:hidden">
+                        <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-4 hover:bg-neutral-50 group-open:border-b group-open:border-neutral-100 [&::-webkit-details-marker]:hidden">
                           <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${accent(a).tile}`}>{ui + 1}</span>
                           <div className="min-w-0 flex-1">
                             <div className="font-semibold text-neutral-900">{unit.name}</div>
                             {unit.description && <div className="text-sm text-neutral-500">{unit.description}</div>}
                           </div>
-                          <span className="flex items-center gap-2 pt-1 text-xs tabular-nums text-neutral-400">
+                          <span className="flex shrink-0 items-center gap-2 pt-1 text-xs tabular-nums text-neutral-400">
                             {unitDone === unitSteps.length && unitDone > 0 && <CheckIcon className="h-4 w-4 text-emerald-500" />}
                             {unitDone}/{unitSteps.length}
                             <ChevronDownIcon className="h-4 w-4 transition-transform group-open:rotate-180" />
@@ -98,15 +98,15 @@ export function SubjectPage() {
                             const isNext = nextStep?.fullId === s.fullId;
                             return (
                               <li key={s.fullId}>
-                                <Link to={stepUrl(model.id, s)} className={`flex items-center gap-3 px-5 py-2.5 text-sm transition-colors hover:bg-neutral-50 ${isNext ? 'bg-neutral-50' : ''}`}>
+                                <Link to={stepUrl(model.id, s)} className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-neutral-50 ${isNext ? 'bg-neutral-50' : ''}`}>
                                   <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
                                     record ? 'bg-emerald-500 text-white' : isNext ? 'border-2 border-neutral-900' : 'border border-neutral-300'
                                   }`}>
                                     {record && <CheckIcon className="h-3.5 w-3.5" />}
                                   </span>
-                                  <span className={`flex-1 ${record ? 'text-neutral-500' : 'font-medium text-neutral-900'}`}>{s.step.title}</span>
+                                  <span className={`min-w-0 flex-1 ${record ? 'text-neutral-500' : 'font-medium text-neutral-900'}`}>{s.step.title}</span>
                                   {record?.best_score != null && <span className="text-xs tabular-nums text-neutral-400">{Math.round(record.best_score * 100)} %</span>}
-                                  <span className="w-14 text-right text-xs text-neutral-400">{s.step.config.challenge ? 'Défi' : getModule(s.step.module)?.label ?? s.step.module}</span>
+                                  <span className="w-14 shrink-0 text-right text-xs text-neutral-400">{s.step.config.challenge ? 'Défi' : getModule(s.step.module)?.label ?? s.step.module}</span>
                                 </Link>
                               </li>
                             );

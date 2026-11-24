@@ -1,23 +1,28 @@
-import { frenchName, isBlack, noteName } from '@learn/shared';
+import { frenchName, isBlack, noteName, type Hand } from '@learn/shared';
 import { useMemo, useRef, type PointerEvent } from 'react';
 import { inputBus } from './input/bus';
 import { keyLayout } from './keyGeometry';
 import { useHeldNotes, useNoteInput } from './input/hooks';
-import { keyLabelsForOctave } from './input/keyboard';
-import { inputSettings } from './input/settings';
-import { useObservable } from '../../lib/store';
 
 export type KeyMark = 'target' | 'correct' | 'wrong' | 'hint';
-export type KeyLabels = 'none' | 'names' | 'c' | 'scientific' | 'keys';
+export type KeyLabels = 'none' | 'names' | 'c' | 'scientific';
+
+// A number stuck on a key (see pieces/numbers.ts).
+export interface Sticker {
+  number: number;
+  hand: Hand;
+}
 
 interface Props {
   from: number;
   to: number;
   marks?: ReadonlyMap<number, KeyMark>;
   labels?: KeyLabels;
+  stickers?: ReadonlyMap<number, Sticker[]>;
   // Clickable keys emitting notes on the input bus (default true).
   interactive?: boolean;
-  height?: number;
+  // Pixels, or any CSS height.
+  height?: number | string;
 }
 
 const markClass: Record<KeyMark, { white: string; black: string }> = {
@@ -28,17 +33,13 @@ const markClass: Record<KeyMark, { white: string; black: string }> = {
 };
 
 
-export function PianoKeyboard({ from, to, marks, labels = 'none', interactive = true, height = 150 }: Props) {
+export function PianoKeyboard({ from, to, marks, labels = 'none', stickers, interactive = true, height = 150 }: Props) {
   const layout = useMemo(() => keyLayout(from, to), [from, to]);
   const held = useHeldNotes();
-  const settings = useObservable(inputSettings);
   useNoteInput(undefined, interactive);
   const pointerNote = useRef(new Map<number, number>()); // pointerId -> midi
 
   const keys = [...layout.entries()];
-  const keyLabels = useMemo(() => (labels === 'keys' ? keyLabelsForOctave() : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [labels, settings.keyboard]);
 
   const press = (e: PointerEvent, midi: number) => {
     if (!interactive) return;
@@ -66,16 +67,30 @@ export function PianoKeyboard({ from, to, marks, labels = 'none', interactive = 
       case 'names': return isBlack(midi) ? null : frenchName(midi);
       case 'c': return midi % 12 === 0 ? noteName(midi) : null;
       case 'scientific': return isBlack(midi) ? null : noteName(midi);
-      case 'keys': return keyLabels?.get(midi) ?? null;
       default: return null;
     }
   };
 
+  // Names shrink with the keys rather than run into each other.
+  const whites = keys.filter(([, k]) => !k.black).length;
+  const fontSize = `min(11px, ${(50 / whites).toFixed(2)}cqw)`;
+
+  const stickerSize = `clamp(7px, ${(62 / whites).toFixed(2)}cqw, 15px)`;
+  const stuck = (midi: number) => stickers?.get(midi)?.map((s) => (
+    <span
+      key={s.hand}
+      className={`rounded px-[0.3em] font-bold leading-[1.35] text-white ${s.hand === 'left' ? 'bg-amber-600' : 'bg-sky-600'}`}
+      style={{ fontSize: stickerSize }}
+    >
+      {s.number}
+    </span>
+  ));
+
   const pct = (v: number) => `${v * 100}%`;
   return (
     <div
-      className="relative w-full select-none touch-none"
-      style={{ height }}
+      className="relative w-full select-none touch-none [-webkit-touch-callout:none]"
+      style={{ height, containerType: 'inline-size' }}
       onPointerUp={lift}
       onPointerCancel={lift}
       onPointerLeave={lift}
@@ -90,12 +105,13 @@ export function PianoKeyboard({ from, to, marks, labels = 'none', interactive = 
             key={m}
             onPointerDown={(e) => press(e, m)}
             onPointerEnter={(e) => enter(e, m)}
-            className={`absolute top-0 bottom-0 flex items-end justify-center rounded-b-md border border-neutral-300 pb-2 text-[11px] font-medium text-neutral-500 transition-colors ${
+            className={`absolute top-0 bottom-0 flex flex-col items-center justify-end gap-0.5 rounded-b-md border border-neutral-300 pb-2 font-medium text-neutral-500 transition-colors ${
               mark ? markClass[mark].white : down ? 'bg-neutral-200' : 'bg-white'
             } ${interactive ? 'cursor-pointer' : ''}`}
-            style={{ left: pct(k.x), width: pct(k.width) }}
+            style={{ left: pct(k.x), width: pct(k.width), fontSize }}
             title={noteName(m)}
           >
+            {stuck(m)}
             {label(m)}
           </div>
         );
@@ -108,12 +124,13 @@ export function PianoKeyboard({ from, to, marks, labels = 'none', interactive = 
             key={m}
             onPointerDown={(e) => press(e, m)}
             onPointerEnter={(e) => enter(e, m)}
-            className={`absolute top-0 z-10 flex items-end justify-center rounded-b-md pb-1.5 text-[10px] font-medium text-white transition-colors ${
+            className={`absolute top-0 z-10 flex flex-col items-center justify-end gap-0.5 rounded-b-md pb-1.5 font-medium text-white transition-colors ${
               mark ? markClass[mark].black : down ? 'bg-neutral-600' : 'bg-neutral-900'
             } ${interactive ? 'cursor-pointer' : ''}`}
-            style={{ left: pct(k.x), width: pct(k.width), height: '62%' }}
+            style={{ left: pct(k.x), width: pct(k.width), height: '62%', fontSize }}
             title={noteName(m)}
           >
+            {stuck(m)}
             {label(m)}
           </div>
         );
