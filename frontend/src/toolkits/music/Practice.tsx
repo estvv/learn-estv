@@ -105,9 +105,10 @@ export function MusicPractice({ subject }: { subject: string }) {
       setVersion((v) => v + 1);
       back();
     };
-    const step = params.get('modifier') === 'numeros' ? 'numbers' as const : undefined;
-    return piece.score
-      ? <ScoreEditor key={piece.id} subject={subject} piece={piece} firstStep={step} onSaved={saved} onClose={back} />
+    const how = params.get('modifier');
+    const step = how === 'numeros' ? 'numbers' as const : undefined;
+    return piece.score || how === 'notes'
+      ? <ScoreEditor key={piece.id} subject={subject} piece={piece} firstStep={how === 'notes' ? 'piece' : step} onSaved={saved} onClose={back} />
       : <NotesEditor key={piece.id} piece={piece} firstStep={step} onSaved={saved} onClose={back} />;
   }
 
@@ -139,9 +140,9 @@ export function MusicPractice({ subject }: { subject: string }) {
               // The piece goes on; the ones after it change.
               onShuffle: (on) => setQueue(on ? queueFrom(order, piece.id, turn.current) : null),
             }}
-            onEditNumbers={(step = 'piece') => {
+            onEdit={(what = 'cells') => {
               setQueue(null);
-              setParams({ morceau: String(pieceId), modifier: step === 'numbers' ? 'numeros' : '1' });
+              setParams({ morceau: String(pieceId), modifier: { cells: '1', numbers: 'numeros', notes: 'notes' }[what] });
             }}
             onChange={(change) => setPiece((p) => (p && p.id === piece.id ? { ...p, ...change } : p))}
           />

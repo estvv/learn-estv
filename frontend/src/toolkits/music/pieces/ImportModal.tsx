@@ -2,6 +2,7 @@ import type { PieceDifficulty } from '@learn/shared';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Field, inputClass } from '../../../components/Field';
 import { Modal } from '../../../components/Modal';
+import { Switch } from '../../../components/Switch';
 import { ErrorText, primaryButton, secondaryButton } from '../../../components/ui';
 import { numbersToPlace, readPictures } from './aiImport';
 import { ACCEPT, fileKind, piecesApi, type FileKind } from './api';
@@ -12,6 +13,7 @@ import { importMusicXml } from './importMusicXml';
 import { importPdf, NotAScore, pdfPictures } from './importPdf';
 import { importVideo, NoKeyboard } from './importVideo';
 import { guessNames } from './names';
+import { snapPiece } from './snap';
 import { DifficultyPicker, FolderSelect } from './pieceFields';
 import type { ScoreDraft } from './ScoreEditor';
 import { sourceLabels, type ImportResult, type PieceFolder } from './types';
@@ -38,6 +40,7 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
   const [progress, setProgress] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [octave, setOctave] = useState(0);
+  const [snap, setSnap] = useState(true);
   // What could not be read as hoped, and what else can be tried.
   const [other, setOther] = useState<{ why: string; way: 'sound' | 'ai' } | null>(null);
   const [title, setTitle] = useState('');
@@ -151,7 +154,8 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
     setSaving(true);
     setError('');
     try {
-      const { warnings: _, ...piece } = result;
+      const { warnings: _, ...read } = result;
+      const piece = snap && transcribed(result) ? snapPiece(read) : read;
       const { id } = await piecesApi.create(subject, {
         ...piece,
         notes: shifted(piece.notes, octave),
@@ -256,6 +260,11 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
                 {kind === 'video' && <button type="button" onClick={() => file && void bySound(file)} className="ml-auto text-xs underline">Transcrire le son à la place</button>}
               </div>
             )}
+            {transcribed(result) && (
+              <div className="-ml-2">
+                <Switch on={snap} label="Caler les notes sur les cases" title="Les petits décalages disparaissent et le tempo devient régulier." onChange={setSnap} />
+              </div>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Titre">
                 <input value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
@@ -291,6 +300,9 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
     </Modal>
   );
 }
+
+// Heard or seen, not written: never quite on the beat.
+const transcribed = (r: ImportResult) => r.source === 'audio' || r.source === 'video';
 
 // Notes that would leave the piano stay on its last octave.
 function shifted(notes: ImportResult['notes'], octaves: number): ImportResult['notes'] {

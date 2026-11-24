@@ -17,16 +17,13 @@ export const RATES = [0.5, 0.75, 1, 1.25];
 // changing; a sheet on a phone.
 export function PieceOptions({ floating, mode, level, rate, hand, bothHands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onClose }: {
   floating: boolean;
-  // Null while correcting the notes: they are the piece's own, only listened to.
-  mode: PlayMode | null;
+  mode: PlayMode;
   level: PieceLevel;
   rate: number;
-  // Null while correcting the notes.
-  hand: HandChoice | null;
+  hand: HandChoice;
   // Both play, at this level and with these tracks.
   bothHands: boolean;
-  // Null while correcting the notes: no numbers then.
-  numbered: boolean | null;
+  numbered: boolean;
   tracks: PieceTrack[];
   notes: PieceNote[];
   enabled: boolean[];
@@ -39,9 +36,9 @@ export function PieceOptions({ floating, mode, level, rate, hand, bothHands, num
   onNumbered(on: boolean): void;
   onTracks(enabled: boolean[]): void;
   onBigKeys(on: boolean): void;
-  // Left out where correcting notes by hand is not possible.
+  // Left out for pieces written by hand: they only have one editor.
   onEdit?(): void;
-  onEditNumbers?(): void;
+  onEditNumbers(): void;
   onClose(): void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -90,26 +87,17 @@ export function PieceOptions({ floating, mode, level, rate, hand, bothHands, num
         <Field label="Vitesse">
           <Segmented<number> full value={rate} onChange={onRate} options={RATES.map((r) => ({ value: r, label: `${Math.round(r * 100)} %` }))} />
         </Field>
-        {numbered !== null && <Toggle checked={numbered} onChange={onNumbered} label="Chiffres sur les notes et les touches" />}
+        <Toggle checked={numbered} onChange={onNumbered} label="Chiffres sur les notes et les touches" />
         {tracks.length > 1 && (
           <Field label="Pistes">
             <div className="-mx-2"><TrackList tracks={tracks} notes={notes} enabled={enabled} onChange={onTracks} /></div>
           </Field>
         )}
-        {onEditNumbers && (
-          <button type="button" onClick={onEditNumbers} className={`${secondaryButton} w-full`}>
-            <PencilIcon className="h-4 w-4" />Modifier en chiffres
-          </button>
-        )}
+        <button type="button" onClick={onEditNumbers} className={`${secondaryButton} w-full`}>
+          <PencilIcon className="h-4 w-4" />Modifier en chiffres
+        </button>
         {onEdit && (
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              onEdit();
-            }}
-            className={`${secondaryButton} w-full`}
-          >
+          <button type="button" onClick={onEdit} className={`${secondaryButton} w-full`}>
             <PencilIcon className="h-4 w-4" />Modifier les notes
           </button>
         )}

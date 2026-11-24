@@ -1,4 +1,4 @@
-import { cutStart, pieceDuration, renderScore, soundingSpan, trimSilence, type PieceContent, type PieceEdits, type PieceLevel, type PieceNote, type PieceSection } from '@learn/shared';
+import { pieceDuration, renderScore, soundingSpan, trimSilence, type PieceEdits, type PieceLevel, type PieceNote, type PieceSection } from '@learn/shared';
 import { BeatGrid, beatGrid } from './grid';
 import { assignHands, credible, shareHands } from './hands';
 import { applyEdit, editOf } from './levelEdits';
@@ -68,6 +68,18 @@ export function levelNotes(piece: StoredPiece): PieceNote[] {
   return level === 'original' ? played(piece) : applyEdit(plainLevel(piece), piece.edits?.[level], trackOn(piece));
 }
 
+// Parts start on a beat: when they all agree, they tell where the beats of a
+// piece that does not start on one are.
+function onParts(grid: BeatGrid, piece: StoredPiece): BeatGrid {
+  if (!piece.bpm || grid.beats.length !== 2) return grid;
+  const off = (piece.sections ?? []).slice(1).map((s) => grid.toBeats(s.start));
+  if (!off.length) return grid;
+  const late = off[0] - Math.floor(off[0]);
+  const same = off.every((b) => Math.abs(b - late - Math.round(b - late)) < 0.02);
+  if (!same || late < 0.02 || late > 0.98) return grid;
+  return BeatGrid.regular(grid.toTime(late - 1), grid.beats[1] - grid.beats[0]);
+}
+
 // Beats and parts. They come from the original notes: the same at every level.
 export interface Layout {
   grid: BeatGrid;
@@ -86,7 +98,7 @@ export function layoutOf(piece: StoredPiece): Layout {
   const found = beatGrid(base, piece.bpm);
   const grid = found ?? BeatGrid.regular(base[0]?.time ?? 0, 0.5);
   const given = givenByOwner(piece.numbers ?? []);
-  if (piece.sections) return { grid, sections: fromSaved(piece.sections, duration), duration, given };
+  if (piece.sections) return { grid: onParts(grid, piece), sections: fromSaved(piece.sections, duration), duration, given };
   const auto = detectSections(base, piece.bpm, found);
   return { grid, sections: auto.length ? auto : [{ start: 0, end: duration, label: 'A' }], duration, given };
 }
@@ -115,11 +127,11 @@ export const visible = (piece: StoredPiece, edited: PieceNote[]) => (levelOf(pie
 // The level without the changes made to it.
 export const untouched = (piece: StoredPiece) => (levelOf(piece) === 'original' ? piece.notes : plainLevel(piece));
 
-export type PieceChange = { notes?: PieceNote[]; sections?: PieceSection[] | null; edits?: PieceEdits | null };
+// `bpm`: the tempo changed with the notes.
+export type PieceChange = { bpm?: number; notes?: PieceNote[]; sections?: PieceSection[] | null; edits?: PieceEdits | null };
 
-// What saving the edited notes changes in the piece. `cut`: seconds taken off
-// its start (original level only).
-export function changeOf(piece: StoredPiece, edited: PieceNote[], cut = 0): PieceChange {
+// What saving the edited notes changes in the piece.
+export function changeOf(piece: StoredPiece, edited: PieceNote[]): PieceChange {
   const level = levelOf(piece);
   if (level !== 'original') {
     const edits: PieceEdits = { ...piece.edits };
@@ -128,15 +140,9 @@ export function changeOf(piece: StoredPiece, edited: PieceNote[], cut = 0): Piec
     else delete edits[level];
     return { edits: Object.keys(edits).length ? edits : null };
   }
-  // `cut` is already off the notes: the rest follows. No silence is left at the start.
-  const after: PieceContent = { notes: edited };
-  if (Math.abs(cut) > 1e-6) {
-    const rest = cutStart({ notes: [], sections: piece.sections, edits: piece.edits }, cut);
-    if (piece.sections) after.sections = rest.sections;
-    if (piece.edits) after.edits = rest.edits;
-  }
-  const trimmed = trimSilence({ notes: edited, sections: after.sections ?? piece.sections, edits: after.edits ?? piece.edits });
-  if (trimmed.notes === edited) return after;
+  // No silence is left at the start.
+  const trimmed = trimSilence({ notes: edited, sections: piece.sections, edits: piece.edits });
+  if (trimmed.notes === edited) return { notes: edited };
   return {
     notes: trimmed.notes,
     ...(piece.sections ? { sections: trimmed.sections } : {}),

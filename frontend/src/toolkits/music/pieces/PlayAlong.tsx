@@ -1,20 +1,14 @@
 import { isBlack, pieceDuration, type Hand, type PieceLevel, type PieceSection } from '@learn/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RepeatIcon, ShuffleIcon } from '../../../components/icons';
-import { ConfirmModal } from '../../../components/Modal';
 import { readJson, writeJson } from '../../../lib/storage';
 import { useObservable } from '../../../lib/store';
 import { COMPACT, PHONE, SHORT, TOUCH, useMedia } from '../../../lib/useMedia';
 import { useWakeLock } from '../../../lib/useWakeLock';
-import { ensureAudio, playNote } from '../audio';
 import { useNoteInput } from '../input/hooks';
 import { PianoKeyboard, type KeyLabels, type KeyMark, type Sticker } from '../PianoKeyboard';
 import { piecesApi } from './api';
-import { changeOf, editable, layoutOf, levelNames, levelNotes, levelOf, playedSpan, visible } from './derive';
-import {
-  addNote, commit, cutAfter, cutBefore, redo, removeNotes, startHistory, switchHand, transpose, undo, withIds, withoutIds,
-  type EditNote, type History,
-} from './edit';
+import { layoutOf, levelNotes, levelOf, playedSpan } from './derive';
 import { FallingNotes } from './FallingNotes';
 import { FINGER_KEY, scrollToKeys } from './keyScroll';
 import { numberPiece, partAt } from './numbers';
@@ -49,55 +43,36 @@ const PANEL_KEY = 'learn.numbers-panel.v1';
 
 // A piece with falling notes above the keyboard: listen to it, or let it wait
 // for the right notes, with the piece as numbers above (see numbers.ts).
-// The notes can be changed right there: added, deleted, moved (see edit.ts).
 //
 // The title and the player on top, the rest in "Réglages".
-export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChange }: {
+export function PlayAlong({ piece, labels, nav, autoPlay, onEdit, onChange }: {
   piece: StoredPiece;
   labels: KeyLabels;
   nav: PieceNav;
   // Starts as soon as it is there.
   autoPlay: boolean;
   // The piece is changed on a page of its own.
-  onEditNumbers(step?: 'numbers' | 'piece'): void;
+  onEdit(what?: 'cells' | 'numbers' | 'notes'): void;
   // Already saved, or being saved.
   onChange(change: Partial<StoredPiece>): void;
 }) {
-  // Editing: the notes being corrected, with undo; null when not editing.
-  const [history, setHistory] = useState<History | null>(null);
-  const [selected, setSelected] = useState<Set<number>>(() => new Set());
-  const [leaving, setLeaving] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [editError, setEditError] = useState('');
-  // Clicks add notes instead of picking them.
-  const [adding, setAdding] = useState(false);
-  const isEditing = history !== null;
-
   // Everything shown comes from the piece, step by step (see derive.ts): its
   // tracks and level, the changes made to it, then its numbers.
   const score = piece.score ?? null;
   const level = levelOf(piece);
   const enabled = useMemo(() => piece.tracks?.map((t) => t.enabled) ?? [], [piece.tracks]);
   const layout = useMemo(() => layoutOf(piece), [piece]);
-  const playable = useMemo(() => levelNotes(piece), [piece]);
-  const notes = useMemo(() => (history ? visible(piece, history.present) : playable), [history, piece, playable]);
-  // Beats and parts stay put while editing, unless the start of the piece is cut.
-  const kept = level === 'original' ? history?.present.find((n) => n.id < piece.notes.length) : undefined;
-  const cut = kept ? piece.notes[kept.id].time - kept.time : 0;
-  const { grid, sections, given } = useMemo(
-    () => (cut && history ? layoutOf({ ...piece, ...changeOf(piece, history.present, cut) }) : layout),
-    [cut, history, piece, layout],
-  );
-  const duration = useMemo(() => (history ? pieceDuration(history.present) : layout.duration), [history, layout]);
+  const notes = useMemo(() => levelNotes(piece), [piece]);
+  const { grid, sections, given, duration } = layout;
   const player = useMemo(() => new PiecePlayer(piece.notes, pieceDuration(piece.notes)), [piece.notes]);
   useEffect(() => () => player.dispose(), [player]);
   // One hand at a time: the other is neither heard nor shown.
   const [handChoice, setHand] = useState<HandChoice>('both');
   const bothHands = useMemo(() => notes.some((n) => handOf(n) === 'left') && notes.some((n) => handOf(n) === 'right'), [notes]);
-  const hand = bothHands && !isEditing ? handChoice : 'both';
+  const hand = bothHands ? handChoice : 'both';
   const heard = useMemo(() => (hand === 'both' ? notes : notes.filter((n) => handOf(n) === hand)), [notes, hand]);
-  // The silences around are skipped, but not while editing: notes may go there.
-  const [start, end] = useMemo(() => (isEditing ? [0, duration] : playedSpan(piece, notes, duration)), [isEditing, piece, notes, duration]);
+  // The silences around are skipped.
+  const [start, end] = useMemo(() => playedSpan(piece, notes, duration), [piece, notes, duration]);
   useEffect(() => player.setNotes(heard, end, start), [player, heard, end, start]);
   const state = useObservable(player.state);
   const [mode, setMode] = useState<PlayMode>('listen');
@@ -110,15 +85,13 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
   const [options, setOptions] = useState(false);
   const closeOptions = useCallback(() => setOptions(false), []);
   useWakeLock(state.playing);
-  // The keyboard keeps the original range while editing (no jumping when a note moves).
-  const [from, to] = useMemo(() => pieceRange(notes.length && !history ? notes : piece.notes), [notes, piece.notes, history]);
+  const [from, to] = useMemo(() => pieceRange(notes.length ? notes : piece.notes), [notes, piece.notes]);
   const [partsError, setPartsError] = useState('');
 
   const [numbersOn, setNumbersOn] = useState(() => readJson(NUMBERS_KEY, { on: true }).on);
   // Beside the notes on a computer, over them on a smaller screen.
   const [panel, setPanel] = useState(() => !compact && readJson(PANEL_KEY, { open: true }).open);
-  const [bigNumbers, setBigNumbers] = useState(false);
-  const big = bigNumbers && !isEditing;
+  const [big, setBig] = useState(false);
   const numbered = useMemo(() => numberPiece(notes, sections, grid, given), [notes, sections, grid, given]);
   const shownParts = useMemo(() => {
     const own = <T extends { hand: Hand }>(list: T[]) => (hand === 'both' ? list : list.filter((x) => x.hand === hand));
@@ -134,82 +107,6 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
   };
   useNoteInput();
 
-  // --- Editing ---------------------------------------------------------------------
-  const editing = history !== null;
-  const selectedRef = useRef(selected);
-  selectedRef.current = selected;
-  const leavingRef = useRef(leaving);
-  leavingRef.current = leaving;
-
-  const apply = (change: (notes: EditNote[], ids: Set<number>) => EditNote[]) =>
-    setHistory((h) => h && commit(h, change(h.present, selectedRef.current)));
-  const startEditing = () => {
-    setOptions(false);
-    player.pause();
-    setMode('listen');
-    player.setMode('listen');
-    applyLoop(null);
-    setSelected(new Set());
-    setEditError('');
-    setAdding(false);
-    setHistory(startHistory(withIds(editable(piece))));
-  };
-  // On the beat's nearest quarter, in the hand that plays around there.
-  const add = (midi: number, time: number) => {
-    const beat = Math.round(grid.toBeats(time) * 4) / 4;
-    const at = Math.max(0, grid.toTime(beat));
-    const length = (grid.toTime(beat + 0.5) - grid.toTime(beat)) * 0.95;
-    const track = piece.tracks ? Math.max(0, enabled.indexOf(true)) : undefined;
-    void ensureAudio().then(() => playNote(midi, 0.4)).catch(() => {});
-    apply((n) => addNote(n, midi, at, length, track));
-  };
-  const stopEditing = () => {
-    applyLoop(null);
-    setHistory(null);
-    setSelected(new Set());
-    setLeaving(false);
-  };
-  const saveEdits = async () => {
-    if (!history) return;
-    if (!history.present.length) return setEditError('Il faut garder au moins une note.');
-    setSaving(true);
-    setEditError('');
-    try {
-      const change = changeOf(piece, withoutIds(history.present), cut);
-      await piecesApi.saveChange(piece.id, change);
-      stopEditing();
-      onChange(change);
-    } catch (e) {
-      setEditError((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Editor shortcuts, caught before the player's own (Escape).
-  useEffect(() => {
-    if (!editing) return;
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (leavingRef.current || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
-      const mod = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
-      if (mod && key === 'z') setHistory((h) => h && (e.shiftKey ? redo(h) : undo(h)));
-      else if (mod && key === 'y') setHistory((h) => h && redo(h));
-      else if (mod) return;
-      else if (e.key === 'Delete' || e.key === 'Backspace') apply(removeNotes);
-      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') apply((n, ids) => transpose(n, ids, (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 12 : 1)));
-      else if (e.code === 'KeyH') apply(switchHand);
-      else if (key === 'a') setAdding((on) => !on);
-      else if (e.key === 'Escape') setSelected(new Set());
-      else return;
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [editing]);
-
   // Once, when the piece arrives.
   useEffect(() => {
     if (autoPlay) void player.play();
@@ -219,11 +116,8 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
   const navRef = useRef(nav);
   navRef.current = nav;
   useEffect(() => {
-    if (state.finished && !editing && navRef.current.shuffle) navRef.current.next(true);
-  }, [state.finished, editing]);
-
-  // Notes picked and still there (a deleted note is not "selected").
-  const selectedCount = history ? history.present.filter((n) => selected.has(n.id)).length : 0;
+    if (state.finished && navRef.current.shuffle) navRef.current.next(true);
+  }, [state.finished]);
 
   // Coarse UI refresh (time, sounding keys) ~20 times a second while playing.
   useEffect(() => {
@@ -314,7 +208,6 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
   };
   const pickTracks = (next: boolean[]) => {
     applyLoop(null);
-    setSelected(new Set());
     onChange({ tracks: piece.tracks?.map((t, i) => ({ ...t, enabled: next[i] })) });
     void piecesApi.update(piece.id, { tracks_enabled: next }).catch(() => {});
   };
@@ -404,7 +297,8 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
 
   const bar = (
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      {editing ? <PlayButton playing={state.playing} onClick={() => player.toggle()} /> : <>{shuffleButton}{transport}</>}
+      {shuffleButton}
+      {transport}
       <span className={`w-9 shrink-0 text-right text-xs tabular-nums text-neutral-500 ${compact ? 'phone:hidden' : ''}`}>{clock(Math.max(0, player.position - start))}</span>
       {timeline}
       <span className={`w-9 shrink-0 text-xs tabular-nums text-neutral-400 ${compact ? 'phone:hidden' : ''}`}>{clock(end - start)}</span>
@@ -428,12 +322,12 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
       {options && (
         <PieceOptions
           floating={!phone}
-          mode={editing ? null : mode}
+          mode={mode}
           level={level}
           rate={rate}
-          hand={editing ? null : hand}
+          hand={hand}
           bothHands={bothHands}
-          numbered={editing ? null : numbersOn}
+          numbered={numbersOn}
           tracks={piece.tracks ?? []}
           notes={piece.notes}
           enabled={enabled}
@@ -445,46 +339,9 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
           onNumbered={toggleNumbers}
           onTracks={pickTracks}
           onBigKeys={setBigKeys}
-          onEdit={editing || phone || score ? undefined : startEditing}
-          onEditNumbers={editing ? undefined : () => onEditNumbers()}
+          onEdit={score ? undefined : () => onEdit('notes')}
+          onEditNumbers={() => onEdit()}
           onClose={closeOptions}
-        />
-      )}
-
-      {history && (
-        <EditBar
-          count={selectedCount}
-          canUndo={history.past.length > 0}
-          canRedo={history.future.length > 0}
-          saving={saving}
-          touch={touch}
-          level={levelNames[level]}
-          adding={adding}
-          canCut={level === 'original'}
-          error={editError}
-          onAdding={() => setAdding(!adding)}
-          onRemove={() => apply(removeNotes)}
-          onTranspose={(by) => apply((n, ids) => transpose(n, ids, by))}
-          onHand={() => apply(switchHand)}
-          onCutBefore={() => {
-            applyLoop(null);
-            apply((n) => cutBefore(n, player.position));
-          }}
-          onCutAfter={() => apply((n) => cutAfter(n, player.position))}
-          onUndo={() => setHistory((h) => h && undo(h))}
-          onRedo={() => setHistory((h) => h && redo(h))}
-          onCancel={() => (history.past.length ? setLeaving(true) : stopEditing())}
-          onSave={() => void saveEdits()}
-        />
-      )}
-      {leaving && (
-        <ConfirmModal
-          title="Abandonner les changements ?"
-          message="Les changements non enregistrés seront perdus."
-          confirmLabel="Abandonner"
-          danger
-          onConfirm={stopEditing}
-          onClose={() => setLeaving(false)}
         />
       )}
 
@@ -502,8 +359,8 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
           position={player.position}
           loop={loop}
           compact={compact}
-          onEdit={() => onEditNumbers()}
-          editing={score || isEditing ? null : {
+          onEdit={() => onEdit()}
+          editing={score ? null : {
             onCut: (i, beat) => changeParts((p) => cutAt(p, grid.toTime(shownParts[i].beat + beat))),
             onMove: (i, by) => changeParts((p) => moveStart(p, i, grid.toTime(shownParts[i].beat + by))),
             onJoin: (i) => changeParts((p) => joinPrevious(p, i)),
@@ -513,7 +370,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
           }}
           onSeek={seek}
           onLoop={(i) => applyLoop(i === null ? null : [i, i])}
-          onClose={() => setBigNumbers(false)}
+          onClose={() => setBig(false)}
         />
       )}
 
@@ -527,20 +384,6 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
                 to={to}
                 numbers={numbersOn ? numbered.numbers : undefined}
                 parts={numbersOn ? sections : undefined}
-                edit={editing ? {
-                  selected,
-                  onPick: (ids, add) => setSelected((prev) => {
-                    if (!add) return new Set(ids);
-                    const next = new Set(prev);
-                    // Shift+click toggles one note; Shift+box adds them all.
-                    if (ids.length === 1 && next.has(ids[0])) next.delete(ids[0]);
-                    else ids.forEach((id) => next.add(id));
-                    return next;
-                  }),
-                  onScroll: () => setFrame((f) => f + 1),
-                  adding,
-                  onAdd: add,
-                } : undefined}
               />
             </div>}
             <div className={`px-2 sm:px-4 ${big ? 'border-t border-neutral-100 pt-2' : ''} ${short ? 'pb-2' : ''}`}>
@@ -548,7 +391,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
             </div>
           </div>
         </div>
-        {part && !big && !(compact && isEditing) && (
+        {part && !big && (
           <NumbersPanel
             title={piece.title}
             parts={shownParts}
@@ -559,70 +402,15 @@ export function PlayAlong({ piece, labels, nav, autoPlay, onEditNumbers, onChang
             over={compact}
             onSeek={seek}
             onLoop={(i) => applyLoop(i === null ? null : [i, i])}
-            onOwn={editing ? undefined : () => onEditNumbers('numbers')}
+            onOwn={() => onEdit('numbers')}
             onDetail={() => {
               if (compact) setPanel(false);
-              setBigNumbers(true);
+              setBig(true);
             }}
             onOpen={togglePanel}
           />
         )}
       </div>
-    </div>
-  );
-}
-
-// The editor's toolbar, under the title.
-function EditBar({ count, canUndo, canRedo, saving, touch, level, adding, canCut, error, onAdding, onRemove, onTranspose, onHand, onCutBefore, onCutAfter, onUndo, onRedo, onCancel, onSave }: {
-  count: number;
-  canUndo: boolean;
-  canRedo: boolean;
-  saving: boolean;
-  touch: boolean;
-  level: string;
-  adding: boolean;
-  // Only the piece itself has a start and an end to cut.
-  canCut: boolean;
-  error: string;
-  onAdding(): void;
-  onRemove(): void;
-  onTranspose(by: number): void;
-  onHand(): void;
-  onCutBefore(): void;
-  onCutAfter(): void;
-  onUndo(): void;
-  onRedo(): void;
-  onCancel(): void;
-  onSave(): void;
-}) {
-  const none = count === 0;
-  const tool = 'h-9 rounded-lg px-2.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:pointer-events-none disabled:opacity-30';
-  const help = adding
-    ? `${touch ? 'Touche' : 'Clique'} à l’endroit de la note à ajouter. Elle se cale sur le quart de temps.`
-    : touch
-      ? 'Touche une note pour la choisir, ou glisse pour en choisir plusieurs. Avance avec la barre de lecture.'
-      : 'Clic : choisir · glisser : en choisir plusieurs · double-clic dans le vide : ajouter · molette : avancer · Suppr, ↑ ↓, H (main), A (ajouter)';
-  return (
-    <div className="shrink-0 border-t border-neutral-200 bg-white px-3 py-2 sm:px-5">
-      <div className="flex flex-wrap items-center gap-0.5">
-        <button type="button" aria-pressed={adding} onClick={onAdding} title="Ajouter des notes (A)" className={adding ? 'h-9 rounded-lg bg-neutral-900 px-2.5 text-xs font-medium text-white' : tool}>+ Ajouter</button>
-        <button type="button" className={tool} disabled={none} onClick={onRemove} title="Supprimer (Suppr)">Supprimer</button>
-        <button type="button" className={tool} disabled={none} onClick={() => onTranspose(-1)} title="Un demi-ton plus bas (↓) · une octave : Maj+↓">↓</button>
-        <button type="button" className={tool} disabled={none} onClick={() => onTranspose(1)} title="Un demi-ton plus haut (↑) · une octave : Maj+↑">↑</button>
-        <button type="button" className={tool} disabled={none} onClick={onHand} title="Changer de main (H)">Main</button>
-        {canCut && <button type="button" className={tool} onClick={onCutBefore} title="Supprimer tout ce qui commence avant la position actuelle">Couper avant</button>}
-        {canCut && <button type="button" className={tool} onClick={onCutAfter} title="Supprimer tout ce qui commence après la position actuelle">Couper après</button>}
-        <span className="flex-1" />
-        <button type="button" className={tool} disabled={!canUndo} onClick={onUndo} title="Annuler (Ctrl+Z)">↶</button>
-        <button type="button" className={tool} disabled={!canRedo} onClick={onRedo} title="Rétablir (Ctrl+Maj+Z)">↷</button>
-        <button type="button" onClick={onCancel} className={tool}>Quitter</button>
-        <button type="button" onClick={onSave} disabled={saving} className="ml-1 h-9 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50">
-          {saving ? 'Enregistrement…' : 'Enregistrer'}
-        </button>
-      </div>
-      <p className={`mt-1 px-2.5 text-[11px] ${error ? 'text-red-600' : 'text-neutral-400'}`}>
-        {error || `Niveau ${level}${none ? '' : ` · ${count} note${count > 1 ? 's' : ''} choisie${count > 1 ? 's' : ''}`} · ${help}`}
-      </p>
     </div>
   );
 }

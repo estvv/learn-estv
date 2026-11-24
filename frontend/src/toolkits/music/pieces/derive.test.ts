@@ -72,14 +72,14 @@ describe('from a piece to its numbers', () => {
     expect(visible(p, editable(p)).map((x) => x.midi)).toEqual([48]);
   });
 
-  it('moves parts and changes when the start is cut', () => {
+  it('moves parts and changes when the start goes', () => {
     const p = piece(chords, {
       sections: [{ start: 0, label: 'A' }, { start: 0.5, label: 'B' }],
-      edits: { simplified: { removed: [{ midi: 53, time: 0.5 }], added: [n(40, 0)] } },
+      edits: { simplified: { removed: [{ midi: 53, time: 0.5 }], added: [n(40, 1)] } },
     });
-    const change = changeOf(p, chords.slice(3).map((x) => ({ ...x, time: x.time - 0.5 })), 0.5);
+    const change = changeOf(p, chords.slice(3));
     expect(change.sections).toEqual([{ start: 0, label: 'B' }]);
-    expect(change.edits).toEqual({ simplified: { removed: [{ midi: 53, time: 0 }], added: [] } });
+    expect(change.edits).toEqual({ simplified: { removed: [{ midi: 53, time: 0 }], added: [n(40, 0)] } });
   });
 
   it('leaves no silence at the start once its first notes are deleted', () => {

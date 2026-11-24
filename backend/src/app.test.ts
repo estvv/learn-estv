@@ -192,6 +192,12 @@ describe('auth and progress', () => {
     await me.patch(`/api/pieces/${id}`).send({ sections: [parts[0], { start: 0, label: 'B' }] }).expect(400);
     await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, sections: [parts[0]] }).expect(200);
     expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sections).toEqual([parts[0]]);
+    // The tempo only changes when it is sent.
+    const bpm = (await me.get(`/api/pieces/${id}`).expect(200)).body.data.bpm;
+    await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, bpm: 87.5 }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.bpm).toBe(87.5);
+    await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, bpm: 0 }).expect(400);
+    if (bpm) await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, bpm }).expect(200);
     await me.patch(`/api/pieces/${id}`).send({ sections: null }).expect(200);
     expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sections).toBeNull();
     await me.patch(`/api/pieces/${id}`).send({ description: '' }).expect(200);

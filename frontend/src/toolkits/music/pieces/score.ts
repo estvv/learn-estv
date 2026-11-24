@@ -21,7 +21,7 @@ const numberOf = (p: ScorePart, hand: Hand, midi: number) => p.keys.find((k) => 
 export const midiOf = (p: ScorePart, hand: Hand, number: number) => p.keys.find((k) => k.hand === hand && k.number === number)?.midi;
 
 // Keys played without a number yet get the next one.
-function withKeys(p: ScorePart, hand: Hand, midis: number[]): ScorePart {
+export function withKeys(p: ScorePart, hand: Hand, midis: number[]): ScorePart {
   const keys = [...p.keys];
   for (const midi of midis) {
     if (keys.some((k) => k.hand === hand && k.midi === midi)) continue;
@@ -83,12 +83,17 @@ export function removeKey(score: Score, label: string, hand: Hand, number: numbe
 
 const same = (a: ScoreNote, b: ScoreNote) => a.hand === b.hand && a.step === b.step && a.midi === b.midi;
 
-// Room for what is written, by whole bars.
+// Beats it takes to write up to the last of these steps, by whole bars. (Notes
+// of an imported piece may be between two columns, and its parts very long.)
+function room(p: ScorePart, steps: number[], division: number): number {
+  const columns = Math.floor(steps.reduce((max, s) => Math.max(max, s), -1)) + 1;
+  return columns <= p.beats * division ? p.beats : Math.ceil(columns / (BAR * division)) * BAR;
+}
+const longest = (p: ScorePart) => Math.max(MAX_BEATS, p.beats);
+
 function grown(p: ScorePart, division: number): ScorePart {
-  const columns = p.notes.reduce((max, n) => Math.max(max, n.step + 1), 0);
-  const beats = Math.max(p.beats, Math.ceil(columns / (BAR * division)) * BAR);
-  if (beats <= MAX_BEATS) return { ...p, beats };
-  return { ...p, beats: MAX_BEATS, notes: p.notes.filter((n) => n.step < MAX_BEATS * division) };
+  const beats = Math.min(longest(p), room(p, p.notes.map((n) => n.step), division));
+  return { ...p, beats, notes: p.notes.filter((n) => n.step < beats * division) };
 }
 
 // Same key, same place: the new one takes over. New keys get a number.
@@ -117,14 +122,17 @@ export interface Played {
   off: number;
 }
 
-// Along with the metronome: `start` is the first beat of the part.
-export function addRecorded(score: Score, label: string, hand: Hand, played: Played[], start: number): Score {
-  const column = 60 / score.bpm / score.division;
-  return addNotes(score, label, played.map((k) => ({
-    hand, midi: k.midi,
-    step: Math.max(0, Math.round((k.on - start) / column)),
-    length: Math.max(1, Math.round((k.off - k.on) / column)),
-  })));
+// Along with the metronome: `start` is the first beat of the part, `beats`
+// turns the seconds since then into beats.
+export function addRecorded(score: Score, label: string, hand: Hand, played: Played[], start: number, beats = (t: number) => (t * score.bpm) / 60): Score {
+  return addNotes(score, label, played.map((k) => {
+    const on = beats(k.on - start) * score.division;
+    return {
+      hand, midi: k.midi,
+      step: Math.max(0, Math.round(on)),
+      length: Math.max(1, Math.round(beats(k.off - start) * score.division - on)),
+    };
+  }));
 }
 
 // Keys pressed this close together are a chord.
@@ -195,8 +203,7 @@ export function placeRun(score: Score, label: string, hand: Hand, run: number[][
       const midi = midiOf(p, hand, number);
       return midi === undefined || steps[i] === undefined ? [] : [{ step: steps[i], midi, hand }];
     }));
-    const columns = Math.max(0, ...placed.map((n) => n.step)) + 1;
-    const beats = Math.min(MAX_BEATS, Math.max(p.beats, Math.ceil(columns / (BAR * score.division)) * BAR));
+    const beats = Math.min(longest(p), room(p, placed.map((n) => n.step), score.division));
     return { ...p, beats, notes: [...p.notes.filter((n) => n.hand !== hand), ...placed.filter((n) => n.step < beats * score.division)] };
   });
 }
@@ -206,9 +213,8 @@ export function shiftHand(score: Score, label: string, hand: Hand, by: number): 
   return change(score, label, (p) => {
     const own = p.notes.filter((n) => n.hand === hand).map((n) => ({ ...n, step: n.step + by }));
     if (!own.length || own.some((n) => n.step < 0)) return p;
-    const columns = Math.max(...own.map((n) => n.step)) + 1;
-    const beats = Math.max(p.beats, Math.ceil(columns / (BAR * score.division)) * BAR);
-    return beats > MAX_BEATS ? p : { ...p, beats, notes: [...p.notes.filter((n) => n.hand !== hand), ...own] };
+    const beats = room(p, own.map((n) => n.step), score.division);
+    return beats > longest(p) ? p : { ...p, beats, notes: [...p.notes.filter((n) => n.hand !== hand), ...own] };
   });
 }
 
@@ -260,7 +266,7 @@ const asSections = (score: Score) => score.parts.map((p, i) => ({ start: i, labe
 export function addPart(score: Score, from: string, copy: boolean): { score: Score; label: string } {
   const p = partOf(score, from);
   const label = newLabel(asSections(score));
-  const part = { ...p, label, notes: copy ? p.notes : [] };
+  const part: ScorePart = copy ? { ...p, label } : { label, beats: p.beats, keys: p.keys, notes: [] };
   return { label, score: { ...score, parts: [...score.parts, part], order: [...score.order, label] } };
 }
 
@@ -278,12 +284,14 @@ export function renamePart(score: Score, label: string, to: string): Score {
 }
 
 export function setBeats(score: Score, label: string, beats: number): Score {
-  const b = Math.max(1, Math.min(MAX_BEATS, Math.round(beats)));
+  const b = Math.max(1, Math.min(longest(partOf(score, label)), Math.round(beats)));
   return change(score, label, (p) => ({ ...p, beats: b, notes: p.notes.filter((n) => n.step < b * score.division) }));
 }
 
-// Notes keep their place in time, or the nearest column there is.
-export function setDivision(score: Score, division: Score['division']): Score {
+// Notes keep their place in time, or the nearest column there is. `exact`: they
+// do not have to fall on a column.
+export function setDivision(score: Score, division: Score['division'], exact = false): Score {
+  const scaled = (n: number) => (exact ? (n * division) / score.division : Math.round((n * division) / score.division));
   return {
     ...score,
     division,
@@ -292,8 +300,8 @@ export function setDivision(score: Score, division: Score['division']): Score {
       const notes = p.notes
         .map((n) => ({
           ...n,
-          step: Math.min(p.beats * division - 1, Math.round((n.step * division) / score.division)),
-          ...(n.length ? { length: Math.max(1, Math.round((n.length * division) / score.division)) } : {}),
+          step: exact ? scaled(n.step) : Math.min(p.beats * division - 1, scaled(n.step)),
+          ...(n.length ? { length: exact ? scaled(n.length) : Math.max(1, scaled(n.length)) } : {}),
         }))
         .filter((n) => {
           const id = `${n.hand}${n.step}:${n.midi}`;

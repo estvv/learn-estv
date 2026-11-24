@@ -18,9 +18,9 @@ export const piecesApi = {
   update: (id: number, meta: Partial<PieceMeta> & { cover?: string | null; tracks_enabled?: boolean[]; level?: PieceLevel; sections?: PieceSection[] | null; edits?: PieceEdits | null; numbers?: PieceNumber[] | null }) => api<{ cover: string | null }>(`/pieces/${id}`, { method: 'PATCH', json: meta }),
   remove: (id: number) => api(`/pieces/${id}`, { method: 'DELETE' }),
   // Corrected notes replace the piece's.
-  saveNotes: (id: number, change: { notes: PieceNote[]; sections?: PieceSection[] | null; edits?: PieceEdits | null }) => api(`/pieces/${id}/notes`, { method: 'PUT', json: change }),
+  saveNotes: (id: number, change: { bpm?: number; notes: PieceNote[]; sections?: PieceSection[] | null; edits?: PieceEdits | null }) => api(`/pieces/${id}/notes`, { method: 'PUT', json: change }),
   // What changeOf (derive.ts) says to save.
-  saveChange: (id: number, { notes, ...rest }: PieceChange): Promise<unknown> => (notes ? piecesApi.saveNotes(id, { notes, ...rest }) : piecesApi.update(id, rest)),
+  saveChange: (id: number, { notes, bpm, ...rest }: PieceChange): Promise<unknown> => (notes ? piecesApi.saveNotes(id, { notes, bpm, ...rest }) : piecesApi.update(id, rest)),
   coverFromLink: (link: string, signal?: AbortSignal) =>
     api<{ cover: string | null }>(`/pieces/cover?${new URLSearchParams({ link })}`, { signal }),
   findCover: (title: string, artist: string | null, signal?: AbortSignal) =>
