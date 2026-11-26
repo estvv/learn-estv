@@ -59,7 +59,7 @@ function GeneralSettings() {
 
   return (
     <div className="space-y-6">
-      <Section title="Apparence" description="Auto suit le mode sombre de l’appareil. Chaque thème a ses couleurs.">
+      <Section title="Apparence" description="Auto suit le mode sombre de l’appareil. Chaque thème a ses couleurs ; un morceau peut avoir les siennes, dans ses options.">
         <div className="space-y-5">
           <ThemeField />
           <div className="grid gap-5 sm:grid-cols-2">

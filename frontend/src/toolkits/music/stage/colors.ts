@@ -1,6 +1,5 @@
 import type { Hand } from '@learn/shared';
 import { mix } from '../../../lib/appearance';
-import type { MoodId } from './settings';
 
 // A colour and what is made of it, kept: they are asked for at every picture.
 export interface Tone {
@@ -47,12 +46,7 @@ export function hex(hue: number, saturation: number, lightness: number): string 
 // Far from the keyboard, then on it: notes warm up as they come.
 type Pair = readonly [far: string, near: string];
 
-export function pairOf(mood: MoodId, hand: Hand | null, midi: number, hands: Record<Hand, string>): Pair {
-  // Chosen: as it is when it sounds, dimmer far away.
-  if (mood === 'custom') {
-    const own = hands[hand ?? (midi >= 60 ? 'right' : 'left')];
-    return [mix(own, '#000000', 0.35), own];
-  }
+export function pairOf(hand: Hand | null, midi: number, hands: Record<Hand, string>): Pair {
   const own = hands[hand ?? (midi >= 60 ? 'right' : 'left')];
   return [own, mix(own, '#ffffff', 0.82)];
 }

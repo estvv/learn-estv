@@ -35,7 +35,7 @@ export function MusicSettings() {
         <PianoKeyboard from={48} to={83} labels="names" height={140} />
       </Section>
 
-      <Section title="Notes qui tombent" description="Pour les morceaux. Les couleurs des mains se choisissent dans Général.">
+      <Section title="Notes qui tombent" description="Pour les morceaux. Les couleurs de base des mains se choisissent dans Général ; chaque morceau peut avoir les siennes, dans ses options.">
         <div className="grid gap-5 lg:grid-cols-2">
           <StageFields />
           <StagePreview />

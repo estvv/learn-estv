@@ -1,14 +1,19 @@
 import { memo, useEffect, useRef } from 'react';
 import { SidePanel } from '../../../components/SidePanel';
 import { CopyButton, litSteps, PartLetter, Small, TEXT } from './Numbers';
+import { Notebook } from './Notebook';
 import { compactLines, compactText, handLetter, pieceText, type Part } from './numbers';
+import { RecentreButton, useFollow } from './useFollow';
+import type { PieceSequence } from './types';
 
 // The piece as one writes it down to learn it: its parts one under the other,
 // each hand's numbers close together and aligned.
 
 const LINE = 26; // characters
+// Wider while writing: the text and what it is written from.
+const WRITING_WIDTH = 460;
 
-export function NumbersPanel({ title, parts, part: current, position, loop, open, over, onSeek, onLoop, onDetail, onOwn, onOpen }: {
+export function NumbersPanel({ title, parts, part: current, position, loop, open, over, writing, onWriting, pieceId, written, onWrite, onToggle, onSeek, onLoop, onDetail, onOwn, onOpen }: {
   title: string;
   parts: Part[];
   // Where the piece is.
@@ -18,6 +23,13 @@ export function NumbersPanel({ title, parts, part: current, position, loop, open
   open: boolean;
   // Over the notes (small screens) instead of beside them.
   over: boolean;
+  // Writing the keys down (Notebook.tsx), or reading them.
+  writing: boolean;
+  onWriting(on: boolean): void;
+  pieceId: number;
+  written: PieceSequence | null;
+  onWrite(next: PieceSequence | null, id: number): void;
+  onToggle(): void;
   onSeek(time: number): void;
   // Null: stop looping.
   onLoop(part: number | null): void;
@@ -26,19 +38,20 @@ export function NumbersPanel({ title, parts, part: current, position, loop, open
   onOwn?(): void;
   onOpen(open: boolean): void;
 }) {
-  const box = useRef<HTMLDivElement>(null);
+  const follow = useFollow<HTMLDivElement>();
   const latest = useRef(onSeek);
   latest.current = onSeek;
   const seek = useRef((time: number) => latest.current(time)).current;
 
+  // The part played stays in view, unless scrolled away from by hand.
+  const { el, free, scrollTo } = follow;
   useEffect(() => {
-    const el = box.current;
-    const target = open ? el?.querySelector(`[data-part="${current}"]`) : null;
+    const target = open && !free ? el?.querySelector(`[data-part="${current}"]`) : null;
     if (!el || !target) return;
     // Not scrollIntoView: it would also scroll the panel while it slides.
     const [view, at] = [el.getBoundingClientRect(), target.getBoundingClientRect()];
-    if (at.top < view.top || at.bottom > view.bottom) el.scrollTo({ top: el.scrollTop + at.top - view.top - 8, behavior: 'smooth' });
-  }, [current, open]);
+    if (at.top < view.top || at.bottom > view.bottom) scrollTo({ top: el.scrollTop + at.top - view.top - 8, behavior: 'smooth' });
+  }, [current, open, el, free, scrollTo]);
 
   const body = (
     <>
@@ -56,14 +69,33 @@ export function NumbersPanel({ title, parts, part: current, position, loop, open
     </>
   );
   return (
-    <SidePanel label="Chiffres" open={open} over={over} onOpen={onOpen}>
+    <SidePanel label="Chiffres" open={open} over={over} onOpen={onOpen} wide={writing ? WRITING_WIDTH : undefined}>
       <div className="flex h-full flex-col">
         <div className="flex shrink-0 items-center gap-1 px-2 py-2">
-          <CopyButton text={() => pieceText(title, parts, compactText)} />
+          <Small active={writing} onClick={() => onWriting(!writing)} title="Écrire l’ordre des touches de chaque main, pendant que le morceau joue">Écrire</Small>
+          {!writing && <CopyButton text={() => pieceText(title, parts, compactText)} />}
           {onOwn && <Small onClick={onOwn} title="Choisir le numéro de chaque touche">Numéros</Small>}
           <Small onClick={onDetail} title="Les chiffres placés sur les temps, pour lire le rythme ou corriger les parties">Voir le rythme</Small>
         </div>
-        <div ref={box} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 [scrollbar-width:thin]">{body}</div>
+        {writing ? (
+          <div className="min-h-0 flex-1"><Notebook
+            key={pieceId}
+            parts={parts}
+            current={current}
+            position={position}
+            looped={loop !== null && loop[0] === current && loop[1] === current}
+            written={written}
+            onWrite={(next) => onWrite(next, pieceId)}
+            onToggle={onToggle}
+            onSeek={seek}
+            onLoop={() => onLoop(loop !== null && loop[0] === current && loop[1] === current ? null : current)}
+          /></div>
+        ) : (
+          <div className="relative min-h-0 flex-1">
+            <div ref={follow.ref} className="h-full overflow-y-auto overscroll-contain px-4 pb-4 [scrollbar-width:thin]">{body}</div>
+            <RecentreButton free={free} onClick={follow.recentre} />
+          </div>
+        )}
       </div>
     </SidePanel>
   );

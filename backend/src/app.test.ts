@@ -144,7 +144,7 @@ describe('auth and progress', () => {
     await agent.post('/api/progress/steps').send({ step: 'piano/debutant/clavier/decouvrir' }).expect(200);
     const profile = (await agent.get('/api/users/me/profile').expect(200)).body.data;
     expect(profile.user.display_name).toBe('Estève');
-    expect(profile.stats.streak.current).toBe(1);
+    expect(profile.stats.active_days).toBe(1);
     expect(profile.stats.totals).toMatchObject({ answers: 1, correct_rate: 1, elements_seen: 1, steps_done: 1 });
     expect(profile.stats.subjects[0]).toMatchObject({ id: 'piano', accent: 'violet', steps_done: 1, elements_seen: 1 });
     expect(profile.stats.recent[0]).toMatchObject({ title: 'Le clavier du piano', subject_name: 'Piano' });
@@ -220,7 +220,8 @@ describe('auth and progress', () => {
     await me.post(`/api/pieces/${id}/time`).send({ seconds: 601 }).expect(400);
     await other.post(`/api/pieces/${id}/time`).send({ seconds: 30 }).expect(404);
     const practice = (await me.get('/api/pieces/practice?subject=piano').expect(200)).body.data;
-    expect(practice).toMatchObject({ today: 75, streak: { current: 1, best: 1 } });
+    expect(practice).toMatchObject({ today: 75 });
+    expect(practice).not.toHaveProperty('streak');
     expect(practice.days.at(-1).seconds).toBe(75);
     expect(practice.pieces[0]).toMatchObject({ id, seconds: 75, best: 92 });
     expect((await other.get('/api/pieces/practice').expect(200)).body.data).toMatchObject({ today: 0, pieces: [] });
@@ -352,6 +353,13 @@ describe('auth and progress', () => {
     expect((await me.get('/api/pieces').expect(200)).body.data[0].cover).toBe(picked);
     await me.patch(`/api/pieces/${id}`).send({ cover: null }).expect(200);
     expect((await me.get('/api/pieces').expect(200)).body.data[0].cover).toBeNull();
+    // The order of the keys, rewritten by hand; empty: worked out again.
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sequence).toBeNull();
+    await me.patch(`/api/pieces/${id}`).send({ sequence: { right: '5-7-5-4\n\n3-5' } }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sequence).toEqual({ right: '5-7-5-4\n\n3-5' });
+    await me.patch(`/api/pieces/${id}`).send({ sequence: { right: 'x'.repeat(20_001) } }).expect(400);
+    await me.patch(`/api/pieces/${id}`).send({ sequence: { left: '' } }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.sequence).toBeNull();
     // A cover from a file: kept, served by its own address, copied with the piece.
     const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
     const sent = `data:image/png;base64,${png.toString('base64')}`;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router';
 import { useAuth, type User } from '../app/auth';
 import { Avatar } from '../components/Avatar';
-import { FlameIcon, PencilIcon } from '../components/icons';
+import { PencilIcon } from '../components/icons';
 import { SubjectImage } from '../components/SubjectImage';
 import { Bar, EmptyState, ErrorText, LoadingState, Page, panel, SectionTitle, StatTile } from '../components/ui';
 import { relativeDay } from '../content/overview';
@@ -12,7 +12,7 @@ import { HEAT } from '../lib/theme';
 interface Profile {
   user: User & { created_at: number };
   stats: {
-    streak: { current: number; best: number; active_days: number };
+    active_days: number;
     totals: { answers: number; correct_rate: number | null; elements_seen: number; elements_mastered: number; steps_done: number };
     heatmap: { day: string; count: number }[];
     subjects: { id: string; name: string; accent: string; steps_done: number; steps_total: number; elements_seen: number; elements_total: number; mastery: number }[];
@@ -59,17 +59,11 @@ export function ProfilePage() {
           <p className="text-xs text-neutral-400">
             <span className="font-medium text-neutral-500">@{user.username}</span> · inscrit en {since}
           </p>
-          {stats.streak.current > 0 && (
-            <p className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-sm font-semibold text-amber-700">
-              <FlameIcon className="h-4 w-4" />{plural(stats.streak.current, 'jour')} d’affilée
-            </p>
-          )}
         </div>
       </section>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <StatTile label="Série actuelle" value={stats.streak.current} sub={`record : ${plural(stats.streak.best, 'jour')}`} />
-        <StatTile label="Jours actifs" value={stats.streak.active_days} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <StatTile label="Jours actifs" value={stats.active_days} />
         <StatTile label="Réponses" value={stats.totals.answers} sub={`${pct(stats.totals.correct_rate)} de réussite`} />
         <StatTile label="Éléments maîtrisés" value={stats.totals.elements_mastered} sub={`sur ${stats.totals.elements_seen} vus`} />
       </div>

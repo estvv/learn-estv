@@ -1,3 +1,4 @@
+import { mix } from '../../../lib/appearance';
 import { alpha, type Tone } from './colors';
 import { halo, light, round, vertical, type Box } from './draw';
 import type { StyleId } from './settings';
@@ -65,11 +66,22 @@ const comet: DrawNote = (ctx, b, t, lit) => {
   ctx.globalCompositeOperation = 'source-over';
 };
 
-// Sober: one flat colour, barely rounded, no halo; a touch brighter as it sounds.
+// Sober: the hand's colour as it is, flat, barely rounded, no halo. Sounding: a
+// little brighter, its edge on the keys lit.
 const plain: DrawNote = (ctx, b, t, lit) => {
-  round(ctx, b, Math.min(4, b.w * 0.2));
-  ctx.fillStyle = lit > 0.5 ? t.hot : t.main;
+  const r = Math.min(4, b.w * 0.2);
+  round(ctx, b, r);
+  ctx.fillStyle = lit > 0 ? mix(t.main, '#ffffff', 1 - 0.22 * lit) : t.main;
   ctx.fill();
+  // Notes one above the other stay apart.
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = t.dark;
+  ctx.stroke();
+  if (lit > 0) {
+    round(ctx, { x: b.x + 1, y: b.y + b.h - 3, w: b.w - 2, h: 2 }, 1);
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * lit})`;
+    ctx.fill();
+  }
 };
 
 export const STYLES: Record<Exclude<StyleId, 'classic'>, DrawNote> = { glow, glass, outline, comet, plain };

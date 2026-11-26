@@ -30,6 +30,16 @@ describe('an imported piece in the editor', () => {
     expect(changeFrom(src, setDivision(setDivision(src.score, 3, true), 4, true)).notes).toBeNull();
   });
 
+  it('numbers keys as the player does', () => {
+    const right = (src: ReturnType<typeof openPiece>) => src.score.parts[0].keys.filter((k) => k.hand === 'right').map((k) => [k.midi, k.number]).sort((x, y) => x[0] - y[0]);
+    // In the order they come…
+    expect(right(openPiece(piece()))).toEqual([[60, 1], [62, 3], [64, 2]]);
+    // …or from the lowest; numbers seen here are not the owner's own.
+    const src = openPiece(piece({ numbering: 'hand' }));
+    expect(right(src)).toEqual([[60, 1], [62, 2], [64, 3]]);
+    expect(changeFrom(src, src.score)).toEqual({ notes: null, numbers: null });
+  });
+
   it('keeps the beats of a piece that does not follow a tempo', () => {
     let t = 0;
     const played = Array.from({ length: 64 }, (_, i) => {

@@ -52,7 +52,8 @@ export class FrameMaker {
     const portrait = this.options.format === 'portrait';
     const keysH = Math.round(portrait ? h * 0.12 : h * 0.2);
     // Above the notes: the cover and the title (only standing up).
-    const top = portrait && this.options.cover ? Math.round(w * 0.86) : 0;
+    // The lyrics go there too, under the title: off the notes.
+    const top = portrait && this.options.cover ? Math.round(w * (this.sung.length && this.options.lyrics ? 0.76 : 0.6)) : 0;
     return { top, notesH: h - keysH - top, keysH, unit: Math.min(w, h) / 1080 };
   }
 
@@ -135,9 +136,9 @@ export class FrameMaker {
     const { w } = this;
     const portrait = this.options.format === 'portrait';
     const cover = this.film.cover;
-    const size = portrait ? w * 0.5 : this.h * 0.15;
+    const size = portrait ? w * 0.36 : this.h * 0.15;
     const x = portrait ? (w - size) / 2 : 36 * unit;
-    const y = portrait ? w * 0.09 : 36 * unit;
+    const y = portrait ? w * 0.06 : 36 * unit;
     if (cover) {
       ctx.save();
       ctx.beginPath();
@@ -166,7 +167,8 @@ export class FrameMaker {
     const line = this.sung[now];
     const next = this.sung[now + 1];
     const portrait = this.options.format === 'portrait';
-    const y = this.layout.top + this.layout.notesH * (portrait ? 0.1 : 0.14) + (portrait ? 0 : this.options.cover ? this.h * 0.12 : 0);
+    // Standing up with the cover: under the title, above the notes.
+    const y = portrait && this.options.cover ? this.w * 0.6 : this.layout.top + this.layout.notesH * (portrait ? 0.1 : 0.14) + (portrait ? 0 : this.options.cover ? this.h * 0.12 : 0);
     const big = 54 * unit;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -240,29 +242,32 @@ export class FrameMaker {
     ctx.globalAlpha = 1;
   }
 
+  // A watermark: small, see-through, in a corner; there, not in the way.
   private watermark(ctx: Ctx, unit: number) {
     // At the top right: the cover may be at the left.
-    const pad = 36 * unit;
-    const size = 64 * unit;
-    ctx.globalAlpha = 0.7;
-    ctx.font = FONT(800, 46 * unit);
+    const pad = 28 * unit;
+    const size = 34 * unit;
+    ctx.save();
+    ctx.globalAlpha = 0.32;
+    ctx.font = FONT(600, 24 * unit);
     const text = this.options.logo ? ctx.measureText(this.options.logo).width : 0;
     const picture = this.logo?.complete && this.logo.naturalWidth ? (this.logo.naturalWidth / this.logo.naturalHeight) * size : 0;
-    let x = this.w - pad - text - (picture && text ? 16 * unit : 0) - picture;
+    const gap = picture && text ? 10 * unit : 0;
+    let x = this.w - pad - text - gap - picture;
+    // Seen on light notes as on the black.
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+    ctx.shadowBlur = 6 * unit;
     if (picture) {
       ctx.drawImage(this.logo!, x, pad, picture, size);
-      x += picture + 16 * unit;
+      x += picture + gap;
     }
     if (this.options.logo) {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#ffffff';
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.lineWidth = 6 * unit;
-      ctx.strokeText(this.options.logo, x, pad + size / 2);
       ctx.fillText(this.options.logo, x, pad + size / 2);
     }
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 }
 

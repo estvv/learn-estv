@@ -1,12 +1,12 @@
 import type { PieceNote } from '@learn/shared';
-import { useMemo, useRef, type CSSProperties } from 'react';
-import { Field } from '../../../components/Field';
+import { useMemo, useRef, type CSSProperties, type ReactNode } from 'react';
 import { Segmented } from '../../../components/Segmented';
-import { Toggle } from '../../../components/settings';
+import { Switch } from '../../../components/Switch';
+import { appearance, setTheme, type Appearance } from '../../../lib/appearance';
 import { useObservable } from '../../../lib/store';
 import { FallingNotes, type NoteSource } from '../pieces/FallingNotes';
 import { PianoKeyboard } from '../PianoKeyboard';
-import { MOOD_IDS, MOOD_NAMES, setStage, stage, STYLE_IDS, STYLE_NAMES, type Effects, type KeyLight as KeyLightMode, type Sparks, type MoodId, type StyleId } from './settings';
+import { setStage, stage, STYLE_IDS, STYLE_NAMES, type Effects, type KeyLight as KeyLightMode, type Sparks, type StyleId } from './settings';
 
 // What each looks like, on a button.
 const SWATCHES: Record<StyleId, CSSProperties> = {
@@ -15,15 +15,21 @@ const SWATCHES: Record<StyleId, CSSProperties> = {
   glass: { background: '#7d9bff3d', border: '1.5px solid #a9bdff', boxShadow: '0 0 10px #6f8dff66' },
   outline: { border: '2px solid #8ea6ff', boxShadow: '0 0 12px #6f8dffaa, inset 0 0 6px #6f8dff66' },
   comet: { background: 'linear-gradient(transparent, #7d9bff 60%, #ffffff)', borderRadius: 99, boxShadow: '0 6px 12px -2px #8ea6ffcc' },
-  plain: { background: '#f5c542', borderRadius: 3 },
+  plain: { background: 'var(--color-hand-r)', border: '1px solid var(--color-hand-r-ink)', borderRadius: 3 },
 };
 
-export function StageFields() {
+// Grouped from the main choice to the details: how notes look, their colours,
+// then what goes with them. `colours`: the hands' (those of the piece); `theme`:
+// the theme can be chosen, which only the classic style is played in.
+export function StageFields({ colours, theme }: { colours?: ReactNode; theme?: boolean }) {
   const s = useObservable(stage);
+  const { theme: chosenTheme } = useObservable(appearance);
   const plain = s.style === 'classic';
+  const keyColour = !plain && s.keys !== 'off';
+  const ledColour = !plain && s.led;
   return (
-    <div className="space-y-4">
-      <Field label="Style des notes" hint={plain ? undefined : 'Se joue dans le noir, avec les couleurs de nuit.'}>
+    <div className="space-y-6">
+      <Group title="Notes">
         <div className="grid grid-cols-3 gap-2">
           {STYLE_IDS.map((id) => (
             <button
@@ -33,65 +39,91 @@ export function StageFields() {
               aria-pressed={s.style === id}
               className={`overflow-hidden rounded-lg border text-center text-xs font-medium transition-colors ${s.style === id ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 text-neutral-700 hover:border-neutral-400'}`}
             >
-              <span className={`flex h-11 items-center justify-center ${id === 'classic' ? '' : 'bg-black'}`}>
-                {id === 'classic' ? <span className="h-full w-full" style={SWATCHES.classic} /> : <span className="h-7 w-3.5 rounded" style={SWATCHES[id]} />}
+              <span className={`flex h-10 items-center justify-center ${id === 'classic' ? '' : 'bg-black'}`}>
+                {id === 'classic' ? <span className="h-full w-full" style={SWATCHES.classic} /> : <span className="h-6 w-3 rounded" style={SWATCHES[id]} />}
               </span>
               <span className="block py-1.5">{STYLE_NAMES[id]}</span>
             </button>
           ))}
         </div>
-      </Field>
+        {plain ? (
+          theme && (
+            <Row label="Thème">
+              <Segmented<Appearance['theme']> value={chosenTheme} onChange={setTheme} options={[{ value: 'auto', label: 'Auto' }, { value: 'light', label: 'Clair' }, { value: 'dark', label: 'Nuit' }]} />
+            </Row>
+          )
+        ) : (
+          <p className="text-xs text-neutral-400">Ce style se joue toujours dans le noir.</p>
+        )}
+      </Group>
+
+      {(colours || keyColour || ledColour) && (
+        <Group title="Couleurs">
+          {colours}
+          {keyColour && <OwnColor label="Touches jouées" value={s.keyColor} onChange={(keyColor) => setStage({ keyColor })} />}
+          {ledColour && <OwnColor label="LED" value={s.ledColor} onChange={(ledColor) => setStage({ ledColor })} />}
+        </Group>
+      )}
+
       {!plain && (
-        <>
-          <Field label="Couleurs">
-            <Segmented<MoodId> full value={s.mood} onChange={(mood) => setStage({ mood })} options={MOOD_IDS.map((id) => ({ value: id, label: MOOD_NAMES[id] }))} />
-          </Field>
-          {s.mood === 'custom' && (
-            <div className="flex gap-4">
-              <ColorInput label="Main gauche" value={s.custom.left} onChange={(left) => setStage({ custom: { ...s.custom, left } })} />
-              <ColorInput label="Main droite" value={s.custom.right} onChange={(right) => setStage({ custom: { ...s.custom, right } })} />
-            </div>
-          )}
-          <Field label="Particules">
-            <Segmented<Effects> full value={s.effects} onChange={(effects) => setStage({ effects })} options={[{ value: 'off', label: 'Aucune' }, { value: 'soft', label: 'Douces' }, { value: 'max', label: 'Max' }]} />
-          </Field>
+        <Group title="Effets">
+          <Row label="Particules">
+            <Segmented<Effects> value={s.effects} onChange={(effects) => setStage({ effects })} options={[{ value: 'off', label: 'Aucune' }, { value: 'soft', label: 'Douces' }, { value: 'max', label: 'Max' }]} />
+          </Row>
           {s.effects !== 'off' && (
-            <Field label="Genre de particules">
-              <Segmented<Sparks> full value={s.sparks} onChange={(sparks) => setStage({ sparks })} options={[{ value: 'cloud', label: 'Nuées' }, { value: 'embers', label: 'Braises' }]} />
-            </Field>
+            <Row label="Genre">
+              <Segmented<Sparks> value={s.sparks} onChange={(sparks) => setStage({ sparks })} options={[{ value: 'cloud', label: 'Nuées' }, { value: 'embers', label: 'Braises' }]} />
+            </Row>
           )}
-          <Field label="Touches jouées">
-            <Segmented<KeyLightMode> full value={s.keys} onChange={(keys) => setStage({ keys })} options={[{ value: 'glow', label: 'Éclairées' }, { value: 'solid', label: 'Pleines' }, { value: 'off', label: 'Normales' }]} />
-          </Field>
-          {s.keys !== 'off' && <OwnColor label="Couleur des touches" value={s.keyColor} onChange={(keyColor) => setStage({ keyColor })} />}
-          <div className="space-y-2">
-            <Toggle checked={s.led} onChange={(led) => setStage({ led })} label="Ligne de LED au-dessus du clavier" />
-            {s.led && <OwnColor label="Couleur des LED" value={s.ledColor} onChange={(ledColor) => setStage({ ledColor })} />}
-          </div>
-        </>
+          <Row label="Touches jouées">
+            <Segmented<KeyLightMode> value={s.keys} onChange={(keys) => setStage({ keys })} options={[{ value: 'glow', label: 'Éclairées' }, { value: 'solid', label: 'Pleines' }, { value: 'off', label: 'Normales' }]} />
+          </Row>
+          <Row label="LED au-dessus du clavier">
+            <Switch on={s.led} label={s.led ? 'Oui' : 'Non'} onChange={(led) => setStage({ led })} />
+          </Row>
+        </Group>
       )}
     </div>
   );
 }
 
-function ColorInput({ label, value, onChange }: { label: string; value: string; onChange(v: string): void }) {
+function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-neutral-700">
-      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-7 w-7 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" />
-      {label}
-    </label>
+    <section className="space-y-3">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+// The name on the left, the choice on the right; one under the other when narrow.
+export function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+      <span className="text-sm text-neutral-700">{label}</span>
+      {children}
+    </div>
   );
 }
 
 // That of the notes, or one chosen ('' or a colour).
 function OwnColor({ label, value, onChange }: { label: string; value: string; onChange(v: string): void }) {
   return (
-    <Field label={label}>
-      <div className="flex items-center gap-3">
-        <Segmented<'notes' | 'own'> value={value ? 'own' : 'notes'} onChange={(v) => onChange(v === 'own' ? value || '#ff7a1a' : '')} options={[{ value: 'notes', label: 'Des notes' }, { value: 'own', label: 'Choisie' }]} />
-        {value && <input type="color" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className="h-7 w-7 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" />}
+    <Row label={label}>
+      <div className="flex items-center gap-2">
+        {value && <Swatch label={label} value={value} onChange={onChange} />}
+        <Segmented<'notes' | 'own'> value={value ? 'own' : 'notes'} onChange={(v) => onChange(v === 'own' ? value || '#ff7a1a' : '')} options={[{ value: 'notes', label: 'Des mains' }, { value: 'own', label: 'Choisie' }]} />
       </div>
-    </Field>
+    </Row>
+  );
+}
+
+// A colour to click on.
+export function Swatch({ label, value, onChange }: { label: string; value: string; onChange(v: string): void }) {
+  return (
+    <label title={label} className="relative block h-7 w-7 shrink-0 cursor-pointer rounded-md ring-1 ring-black/10 ring-inset" style={{ background: value }}>
+      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+    </label>
   );
 }
 
@@ -114,7 +146,7 @@ export function StagePreview() {
   }, []);
   return (
     <div className={`overflow-hidden rounded-lg border border-neutral-200 ${s.style === 'classic' ? 'bg-white' : 'bg-black'}`} aria-hidden>
-      <div className="h-56"><FallingNotes player={source} from={48} to={83} keyLight={keys} /></div>
+      <div className="h-36 sm:h-56"><FallingNotes player={source} from={48} to={83} keyLight={keys} /></div>
       <div className="pointer-events-none relative">
         <PianoKeyboard from={48} to={83} interactive={false} height={84} />
         <KeyLight canvas={keys} />

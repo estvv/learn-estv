@@ -5,8 +5,10 @@ const WIDTH = 336;
 const CLICK = 5;
 
 // A panel on the right that slides in and out: drag its handle, or click it.
-export function SidePanel({ label, open, over, onOpen, children }: {
+export function SidePanel({ label, open, over, onOpen, children, wide = WIDTH }: {
   label: string;
+  // Px, when open.
+  wide?: number;
   open: boolean;
   // Over what is beside it (small screens) instead of pushing it.
   over: boolean;
@@ -18,8 +20,8 @@ export function SidePanel({ label, open, over, onOpen, children }: {
   const drag = useRef<{ x: number; width: number; moved: boolean } | null>(null);
   const skipClick = useRef(false);
 
-  const full = () => Math.min(WIDTH, window.innerWidth - 48);
-  const width = dragged !== null ? `${dragged}px` : open ? `min(${WIDTH}px, 100vw - 48px)` : '0px';
+  const full = () => Math.min(wide, window.innerWidth - 48);
+  const width = dragged !== null ? `${dragged}px` : open ? `min(${wide}px, 100vw - 48px)` : '0px';
   const title = open ? `Fermer : ${label.toLowerCase()}` : `Ouvrir : ${label.toLowerCase()}`;
 
   const end = (e: React.PointerEvent) => {
@@ -74,7 +76,7 @@ export function SidePanel({ label, open, over, onOpen, children }: {
       </button>
       <div className={`h-full overflow-hidden bg-white ${open || dragged !== null ? 'border-l border-neutral-200' : ''} ${over && open ? 'shadow-xl' : ''}`}>
         {/* Its own width: the content does not reflow while sliding. */}
-        <div inert={!open} className="h-full" style={{ width: `min(${WIDTH}px, 100vw - 48px)` }}>{children}</div>
+        <div inert={!open} className="h-full" style={{ width: `min(${wide}px, 100vw - 48px)` }}>{children}</div>
       </div>
     </aside>
   );

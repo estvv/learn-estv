@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { FlameIcon } from '../../../components/icons';
 import { Modal } from '../../../components/Modal';
 import { panel, StatTile } from '../../../components/ui';
 import { HEAT } from '../../../lib/theme';
@@ -9,10 +8,9 @@ import { Stars } from './TakeCard';
 import { STARS } from './takes';
 
 const minutes = (s: number) => (s < 60 ? `${Math.round(s)} s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${String(Math.round((s % 3600) / 60)).padStart(2, '0')}`);
-const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
 const dayName = (day: string, how: Intl.DateTimeFormatOptions) => new Date(`${day}T12:00:00Z`).toLocaleDateString('fr-FR', { ...how, timeZone: 'UTC' });
 
-// Days in a row and time today, at the top of the list of pieces.
+// Time played today and this week, at the top of the list of pieces.
 export function PracticeStrip({ subject, onPick }: { subject: string; onPick(id: number): void }) {
   const [practice, setPractice] = useState<Practice | null>(null);
   const [open, setOpen] = useState(false);
@@ -20,14 +18,14 @@ export function PracticeStrip({ subject, onPick }: { subject: string; onPick(id:
     piecesApi.practice(subject).then(setPractice, () => {});
   }, [subject]);
   if (!practice) return null;
-  const { streak, today } = practice;
+  const { today, days } = practice;
+  const week = days.slice(-7).reduce((s, d) => s + d.seconds, 0);
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className="mx-4 mb-2 flex w-[calc(100%-2rem)] items-center gap-3 rounded-xl bg-neutral-50 px-3 py-2 text-left text-sm hover:bg-neutral-100">
-        <FlameIcon className={`h-5 w-5 ${streak.current ? 'text-amber-500' : 'text-neutral-300'}`} />
         <span className="min-w-0 flex-1">
-          <span className="font-semibold text-neutral-900">{streak.current ? `${plural(streak.current, 'jour')} d’affilée` : 'Pas de série en cours'}</span>
-          <span className="block text-xs text-neutral-500">{today >= 1 ? `${minutes(today)} aujourd’hui` : 'Rien joué aujourd’hui'}</span>
+          <span className="font-semibold text-neutral-900">{today >= 1 ? `${minutes(today)} aujourd’hui` : 'Rien joué aujourd’hui'}</span>
+          <span className="block text-xs text-neutral-500">{week >= 1 ? `${minutes(week)} ces 7 derniers jours` : 'Rien ces 7 derniers jours'}</span>
         </span>
         <span className="text-xs text-neutral-400">Détails</span>
       </button>
@@ -37,7 +35,7 @@ export function PracticeStrip({ subject, onPick }: { subject: string; onPick(id:
 }
 
 function PracticeModal({ practice, onPick, onClose }: { practice: Practice; onPick(id: number): void; onClose(): void }) {
-  const { days, streak, pieces } = practice;
+  const { days, pieces } = practice;
   const week = days.slice(-7).reduce((s, d) => s + d.seconds, 0);
   const total = days.reduce((s, d) => s + d.seconds, 0);
   // From nothing to an hour and more.
@@ -50,10 +48,9 @@ function PracticeModal({ practice, onPick, onClose }: { practice: Practice; onPi
   const most = Math.max(60, ...recent.map((d) => d.seconds));
 
   return (
-    <Modal title="Ta pratique" subtitle="Un jour compte dès une minute jouée." onClose={onClose} width="lg">
+    <Modal title="Ta pratique" subtitle="Le temps passé à jouer les morceaux." onClose={onClose} width="lg">
       <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <StatTile label="Série" value={plural(streak.current, 'jour')} sub={`record : ${plural(streak.best, 'jour')}`} />
+        <div className="grid grid-cols-3 gap-2">
           <StatTile label="Aujourd’hui" value={minutes(practice.today)} />
           <StatTile label="7 derniers jours" value={minutes(week)} />
           <StatTile label="3 derniers mois" value={minutes(total)} />

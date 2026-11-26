@@ -15,7 +15,7 @@ import { changeOf, editable, layoutOf, levelNames, levelNotes, levelOf, numbersA
 import { clearRange, copyRange, pasteClip, targetOf, type Clip, type Range } from './gridClip';
 import { setStep } from './numberEdit';
 import { Small } from './Numbers';
-import { givenByOwner, partAt, stepText, type Part } from './numbers';
+import { FIXED_FROM, givenByOwner, partAt, stepText, type Key, type Part } from './numbers';
 import { isOwn, keysOf, orderNumbers, resetNumbers, setNumber } from './ownNumbers';
 import { OwnNumbers } from './OwnNumbers';
 import { pieceRange } from './player';
@@ -23,6 +23,8 @@ import { parseRun } from './score';
 import { OctaveButton } from './ScoreEditor';
 import type { StoredPiece } from './types';
 import { usePreview } from './usePreview';
+
+const NUMBERING_NAMES = { order: 'Ordre', hand: 'Position (par main)', fixed: 'Position fixe' } as const;
 
 interface Edited {
   notes: PieceNote[];
@@ -61,7 +63,17 @@ export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
     const { parts } = numbersOf(levelNotes(piece), layout);
     return parts.some((p) => p.division >= 4 && p.division % 3) ? 4 : parts.some((p) => p.division % 3 === 0) ? 3 : 2;
   });
-  const parts = useMemo(() => numbersOf(heard, { ...layout, given: givenByOwner(numbers) }, division).parts, [heard, layout, numbers, division]);
+  // The owner's numbers, which step 1 changes; they are the player's only in
+  // « Ordre » with parts.
+  const ownParts = useMemo(() => numbersOf(heard, { ...layout, given: givenByOwner(numbers) }, division).parts, [heard, layout, numbers, division]);
+  const numbering = piece.numbering ?? 'order';
+  const whole = !!piece.whole;
+  const ownUsed = numbering === 'order' && !whole;
+  // As the player numbers keys: what step 2 shows and reads.
+  const parts = useMemo(
+    () => (ownUsed ? ownParts : numbersOf(heard, { ...layout, given: { ...givenByOwner(numbers), numbering, whole } }, division).parts),
+    [ownUsed, ownParts, heard, layout, numbers, numbering, whole, division],
+  );
   const [index, setIndex] = useState(0);
   const part: Part = parts[index] ?? parts[0];
   const [cell, setCell] = useState<Cell | null>(null);
@@ -84,8 +96,17 @@ export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
     ? Math.floor((layout.grid.toBeats(preview.position) - part.beat) * part.division + 0.3)
     : -1;
 
-  // The numbers of the whole letter, not only those this part plays.
-  const keys = useMemo(() => [...keysOf(parts, part.label, 'left'), ...keysOf(parts, part.label, 'right')], [parts, part.label]);
+  // The numbers of the whole letter (of the whole piece when counted across
+  // parts), not only those this part plays.
+  const shown = step === 'numbers' ? ownParts : parts;
+  const keys = useMemo(() => {
+    const labels = whole && step === 'piece' ? [...new Set(shown.map((p) => p.label))] : [part.label];
+    const out: Key[] = [];
+    for (const hand of ['left', 'right'] as const) {
+      for (const label of labels) for (const k of keysOf(shown, label, hand)) if (!out.some((o) => o.hand === hand && o.midi === k.midi)) out.push(k);
+    }
+    return out;
+  }, [shown, whole, step, part.label]);
   const stickers = useMemo(() => {
     const out = new Map<number, Sticker[]>();
     for (const k of keys) out.set(k.midi, [...(out.get(k.midi) ?? []), k]);
@@ -111,7 +132,8 @@ export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
     if (!run || run.length > 1) return setError('Une case : un numéro, ou plusieurs avec + (1+3).'), false;
     const midis: number[] = [];
     for (const n of run[0] ?? []) {
-      const key = keys.find((k) => k.hand === c.hand && k.number === n);
+      const key = keys.find((k) => k.hand === c.hand && k.number === n)
+        ?? (numbering === 'fixed' && n + FIXED_FROM >= 21 && n + FIXED_FROM <= 108 ? { midi: n + FIXED_FROM } : undefined);
       if (!key) return setError(`Pas de touche n° ${n} ici : joue une touche du clavier pour en ajouter une.`), false;
       midis.push(key.midi);
     }
@@ -120,7 +142,7 @@ export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
   };
 
   // --- Numbers ----------------------------------------------------------------------
-  const [hand, setHand] = useState<Hand>(() => (keysOf(parts, part.label, 'right').length ? 'right' : 'left'));
+  const [hand, setHand] = useState<Hand>(() => (keysOf(ownParts, part.label, 'right').length ? 'right' : 'left'));
   const [assign, setAssign] = useState(false);
   const [everywhere, setEverywhere] = useState(false);
   // While assigning: the keys played, in order. Another place starts again at 1.
@@ -129,12 +151,12 @@ export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
   useEffect(() => setPressed([]), [part.label, hand, everywhere, assign, step]);
   const assignKey = (midi: number) => {
     if (!assign || pressed.includes(midi)) return;
-    if (!keysOf(parts, part.label, hand).some((k) => k.midi === midi)) {
+    if (!keysOf(ownParts, part.label, hand).some((k) => k.midi === midi)) {
       return setError(`Cette touche n’est pas jouée par la main ${hand === 'left' ? 'gauche' : 'droite'} dans la partie ${part.label}.`);
     }
     const next = [...pressed, midi];
     setPressed(next);
-    editNumbers(orderNumbers(numbers, parts, at, next));
+    editNumbers(orderNumbers(numbers, ownParts, at, next));
   };
   const showPart = (i: number) => {
     preview.stop();
@@ -275,7 +297,7 @@ export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
                 title="Dans l’ordre où les touches sont jouées"
                 onClick={() => {
                   setPressed([]);
-                  editNumbers(resetNumbers(numbers, parts, at));
+                  editNumbers(resetNumbers(numbers, ownParts, at));
                 }}
               >
                 Automatique
@@ -283,11 +305,16 @@ export function NotesEditor({ piece, firstStep = 'piece', onSaved, onClose }: {
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-neutral-100 bg-white px-3 py-5 sm:px-5">
+            {!ownUsed && (
+              <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Ce morceau est réglé en « {NUMBERING_NAMES[numbering]}{whole ? ', sans parties' : ''} » : ces numéros ne servent qu’en « Ordre » avec les parties. L’étape 2 montre ceux du lecteur.
+              </p>
+            )}
             <OwnNumbers
               hand={hand}
-              keys={keysOf(parts, part.label, hand)}
+              keys={keysOf(ownParts, part.label, hand)}
               assign={assign}
-              onNumber={(midi, number) => editNumbers(setNumber(numbers, parts, at, midi, number))}
+              onNumber={(midi, number) => editNumbers(setNumber(numbers, ownParts, at, midi, number))}
               onHear={playKey}
             />
             <div className="mt-3"><ErrorText>{error}</ErrorText></div>

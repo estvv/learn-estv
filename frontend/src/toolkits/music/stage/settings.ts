@@ -6,9 +6,6 @@ import { Observable } from '../../../lib/store';
 
 export const STYLE_IDS = ['classic', 'glow', 'glass', 'outline', 'comet', 'plain'] as const;
 export type StyleId = (typeof STYLE_IDS)[number];
-// Of the notes, and of the light: the hands' own in the app, or chosen.
-export const MOOD_IDS = ['hands', 'custom'] as const;
-export type MoodId = (typeof MOOD_IDS)[number];
 export type Effects = 'off' | 'soft' | 'max';
 // What rises from the keys: clouds carried by one wind, or embers each on its way.
 export type Sparks = 'cloud' | 'embers';
@@ -17,27 +14,21 @@ export type KeyLight = 'glow' | 'solid' | 'off';
 
 export interface StageSettings {
   style: StyleId;
-  mood: MoodId;
   effects: Effects;
   sparks: Sparks;
   // The line of light over the keyboard.
   led: boolean;
   // Notes light the keys up.
   keys: KeyLight;
-  // Of each hand, when the mood is 'custom'.
-  custom: { left: string; right: string };
   // Of the keys played and of the line of light; '' for that of the notes.
   keyColor: string;
   ledColor: string;
 }
 
 export const STYLE_NAMES: Record<StyleId, string> = { classic: 'Classique', glow: 'Lueur', glass: 'Verre', outline: 'Contour', comet: 'Traînée', plain: 'Sobre' };
-export const MOOD_NAMES: Record<MoodId, string> = {
-  hands: 'Classique', custom: 'Perso',
-};
 
 const KEY = 'learn.stage.v1';
-const DEFAULTS: StageSettings = { style: 'classic', mood: 'hands', effects: 'max', sparks: 'cloud', led: true, keys: 'glow', custom: { left: '#e8e8e8', right: '#f5c542' }, keyColor: '', ledColor: '' };
+const DEFAULTS: StageSettings = { style: 'classic', effects: 'max', sparks: 'cloud', led: true, keys: 'glow', keyColor: '', ledColor: '' };
 // Styles there used to be.
 const OLD = ['neon', 'crystal', 'fire', 'liquid', 'galaxy'];
 
@@ -46,16 +37,15 @@ const color = (v: unknown, otherwise: string) => (typeof v === 'string' && HEX.t
 
 const one = <T extends string>(value: unknown, of: readonly T[], otherwise: T): T => (of.includes(value as T) ? (value as T) : otherwise);
 
-export function cleanedStage(s: Partial<Omit<StageSettings, 'keys' | 'custom'>> & { keys?: unknown; custom?: Partial<StageSettings['custom']> }): StageSettings {
+// The notes take the colours of the hands (those of the piece, if it has its own).
+export function cleanedStage(s: Partial<Omit<StageSettings, 'keys'>> & { keys?: unknown }): StageSettings {
   return {
     style: one(s.style, STYLE_IDS, OLD.includes(s.style as string) ? 'glow' : DEFAULTS.style),
-    mood: one(s.mood, MOOD_IDS, DEFAULTS.mood),
     effects: one(s.effects, ['off', 'soft', 'max'], DEFAULTS.effects),
     sparks: one(s.sparks, ['cloud', 'embers'], DEFAULTS.sparks),
     led: typeof s.led === 'boolean' ? s.led : DEFAULTS.led,
     // Once on or off.
     keys: s.keys === false ? 'off' : one(s.keys, ['glow', 'solid', 'off'], DEFAULTS.keys),
-    custom: { left: color(s.custom?.left, DEFAULTS.custom.left), right: color(s.custom?.right, DEFAULTS.custom.right) },
     keyColor: color(s.keyColor, ''),
     ledColor: color(s.ledColor, ''),
   };

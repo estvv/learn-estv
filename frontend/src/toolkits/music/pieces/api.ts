@@ -3,7 +3,7 @@ import { api } from '../../../lib/api';
 import type { PieceChange } from './derive';
 import type { FoundLyrics } from './lyrics';
 import type { PieceCopy } from './pieceCopy';
-import type { PieceFolder, PieceMeta, PieceSummary, StoredPiece } from './types';
+import type { PieceFolder, PieceMeta, PieceSequence, PieceSummary, StoredPiece } from './types';
 
 export const piecesApi = {
   list: (subject: string) => api<PieceSummary[]>(`/pieces?subject=${encodeURIComponent(subject)}`),
@@ -16,7 +16,7 @@ export const piecesApi = {
   saveScore: (id: number, score: Score) => api(`/pieces/${id}/score`, { method: 'PUT', json: { score } }),
   // Answers the cover, searched again when the title or artist changed.
   // cover: picked by hand (from a link); left out, it follows the title and artist.
-  update: (id: number, meta: Partial<PieceMeta> & { cover?: string | null; tracks_enabled?: boolean[]; level?: PieceLevel; sections?: PieceSection[] | null; edits?: PieceEdits | null; numbers?: PieceNumber[] | null; lyrics?: LyricLine[] | null; numbering?: PieceNumbering; whole?: boolean }) => api<{ cover: string | null }>(`/pieces/${id}`, { method: 'PATCH', json: meta }),
+  update: (id: number, meta: Partial<PieceMeta> & { cover?: string | null; tracks_enabled?: boolean[]; level?: PieceLevel; sections?: PieceSection[] | null; edits?: PieceEdits | null; numbers?: PieceNumber[] | null; lyrics?: LyricLine[] | null; numbering?: PieceNumbering; whole?: boolean; sequence?: PieceSequence | null }) => api<{ cover: string | null }>(`/pieces/${id}`, { method: 'PATCH', json: meta }),
   remove: (id: number) => api(`/pieces/${id}`, { method: 'DELETE' }),
   // Corrected notes replace the piece's.
   saveNotes: (id: number, change: { bpm?: number; notes: PieceNote[]; sections?: PieceSection[] | null; edits?: PieceEdits | null; lyrics?: LyricLine[] | null }) => api(`/pieces/${id}/notes`, { method: 'PUT', json: change }),
@@ -39,10 +39,9 @@ export const piecesApi = {
 // The best take of a part, at a level.
 export interface Best { level: PieceLevel; part: string; best: number; count: number }
 
-// Time spent playing, and days in a row (backend/src/practice.ts).
+// Time spent playing (backend/src/practice.ts).
 export interface Practice {
   today: number;
-  streak: { current: number; best: number };
   days: { day: string; seconds: number }[];
   pieces: { id: number; title: string; artist: string | null; cover: string | null; seconds: number; last: string; best: number | null }[];
 }

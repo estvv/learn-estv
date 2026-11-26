@@ -30,16 +30,17 @@ import { useVoice, useVoicePlayer } from './voice/useVoice';
 import { VoiceModal } from './voice/VoiceModal';
 import { FullscreenControls, FullscreenIcon } from './FullscreenControls';
 import { FINGER_KEY, scrollToKeys } from './keyScroll';
+import { RecentreButton, useFollow } from './useFollow';
 import { numberPiece, partAt } from './numbers';
 import { Numbers } from './Numbers';
 import { NumbersPanel } from './NumbersPanel';
 import { cutAt, joinPrevious, moveStart, rename, toSaved } from './parts';
 import { Cover } from './pieceFields';
-import { PieceOptions, RATES, type HandChoice } from './PieceOptions';
+import { PieceOptions, RATES, type HandChoice, type NumbersShown } from './PieceOptions';
 import { PiecePlayer, pieceRange, type PlayMode } from './player';
 import { clock, ControlButton, controlIcon, PlayButton, SkipButton, SlidersIcon, Timeline } from './PlayerControls';
 import { handOf } from './simplify';
-import type { StoredPiece } from './types';
+import type { PieceSequence, StoredPiece } from './types';
 
 // From a piece to another: down the list, or in a random order (shuffle.ts).
 export interface PieceNav {
@@ -61,6 +62,8 @@ const NUMBERS_KEY = 'learn.numbers.v1';
 const LYRICS_KEY = 'learn.lyrics.v1';
 const WAIT_KEY = 'learn.wait-input.v1';
 const PANEL_KEY = 'learn.numbers-panel.v1';
+// The side panel writes the keys down instead of showing them (Notebook.tsx).
+const WRITING_KEY = 'learn.numbers.writing';
 
 // A piece with falling notes above the keyboard: listen to it, or let it wait
 // for the right notes, with the piece as numbers above (see numbers.ts).
@@ -143,7 +146,13 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
   const [from, to] = useMemo(() => pieceRange(notes.length ? notes : piece.notes), [notes, piece.notes]);
   const [partsError, setPartsError] = useState('');
 
-  const [numbersOn, setNumbersOn] = useState(() => readJson(NUMBERS_KEY, { on: true }).on);
+  // Where numbers are written: on the notes, on the keys (once one switch for both).
+  const [numbersShown, setNumbersShown] = useState<NumbersShown>(() => {
+    const saved = readJson<{ on?: boolean; notes?: boolean; keys?: boolean }>(NUMBERS_KEY, {});
+    const on = saved.on ?? true;
+    return { notes: saved.notes ?? on, keys: saved.keys ?? on };
+  });
+  const numbersOn = numbersShown.notes;
   const [lyricsOn, setLyricsOn] = useState(() => readJson(LYRICS_KEY, { on: true }).on);
   const lyrics = piece.lyrics?.some((l) => l.time !== null) ? piece.lyrics : null;
   const [karaoke, setKaraoke] = useState(false);
@@ -153,6 +162,11 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
   useVoicePlayer(voice, player, !!voice?.on && mode === 'listen');
   // Beside the notes on a computer, over them on a smaller screen.
   const [panel, setPanel] = useState(() => !compact && readJson(PANEL_KEY, { open: true }).open);
+  const [writing, setWritingShown] = useState(() => readJson<boolean>(WRITING_KEY, false));
+  const setWriting = (on: boolean) => {
+    setWritingShown(on);
+    writeJson(WRITING_KEY, on);
+  };
   const [big, setBig] = useState(false);
   const numbering = piece.numbering ?? 'order';
   const whole = !!piece.whole;
@@ -278,15 +292,17 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
     for (let m = from; m <= to; m++) if (!isBlack(m)) n++;
     return n;
   }, [from, to]);
-  const scroller = useRef<HTMLDivElement>(null);
+  // Scrolled by hand, it stays put until recentred.
+  const scroller = useFollow<HTMLDivElement>();
+  const { el: scrolled, free: scrolledFree, scrollTo: scrollKeys } = scroller;
   useEffect(() => {
-    const el = scroller.current;
-    if (!fingers || !el) return;
+    const el = scrolled;
+    if (!fingers || !el || scrolledFree) return;
     const left = state.expected.map((n) => n.midi).filter((m) => !state.played.includes(m));
     const coming = player.notes.find((n) => n.time > player.position + 0.05);
     const target = scrollToKeys(left.length ? left : coming ? [coming.midi] : [], from, to, el);
-    if (target !== null) el.scrollTo({ left: target, behavior: 'smooth' });
-  }, [fingers, state.expected, state.played, from, to, player]);
+    if (target !== null) scrollKeys({ left: target, behavior: 'smooth' });
+  }, [fingers, state.expected, state.played, from, to, player, scrolled, scrolledFree, scrollKeys]);
   const named = fingers || !compact || window.innerWidth / whites >= NAMED_KEY;
   const keyboardHeight = !compact ? 'clamp(130px, 20dvh, 260px)' : fingers ? 'clamp(110px, 26dvh, 260px)' : 'clamp(80px, 17dvh, 200px)';
 
@@ -337,6 +353,14 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
     onChange(change);
     void piecesApi.update(piece.id, change).catch(() => {});
   };
+  // The keys written down by hand (Notebook.tsx), kept with the piece.
+  // `id`: of the piece it was written for, which may no longer be the one open.
+  const shownId = useRef(piece.id);
+  shownId.current = piece.id;
+  const writeSequence = (sequence: PieceSequence | null, id = piece.id) => {
+    if (id === shownId.current) onChange({ sequence });
+    void piecesApi.update(id, { sequence }).catch(() => {});
+  };
   const pickTracks = (next: boolean[]) => {
     applyLoop(null);
     onChange({ tracks: piece.tracks?.map((t, i) => ({ ...t, enabled: next[i] })) });
@@ -347,9 +371,10 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
     setPanel(open);
     if (!compact) writeJson(PANEL_KEY, { open });
   };
-  const toggleNumbers = (on: boolean) => {
-    setNumbersOn(on);
-    writeJson(NUMBERS_KEY, { on });
+  const toggleNumbers = (patch: Partial<NumbersShown>) => {
+    const next = { ...numbersShown, ...patch };
+    setNumbersShown(next);
+    writeJson(NUMBERS_KEY, next);
   };
   const saveParts = (next: PieceSection[] | null) => {
     applyLoop(null);
@@ -459,7 +484,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
           rate={rate}
           hand={hand}
           bothHands={bothHands}
-          numbered={numbersOn}
+          numbered={numbersShown}
           tracks={piece.tracks ?? []}
           notes={piece.notes}
           enabled={enabled}
@@ -468,6 +493,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
           onLevel={pickLevel}
           numbering={numbering}
           whole={whole}
+          pieceId={piece.id}
           onNumbering={pickNumbers}
           onRate={pickRate}
           climbing={climbing}
@@ -524,7 +550,19 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
       )}
       {lyrics && lyricsOn && <LyricsBanner lines={lyrics} player={player} short={short} />}
 
-      {partShown && numbered.parts[current] && <PartNumbers parts={numbered.parts} start={current} onClose={() => setPartShown(false)} />}
+      {partShown && numbered.parts[current] && <PartNumbers
+          parts={numbered.parts}
+          start={current}
+          written={piece.sequence ?? null}
+          onWrite={writeSequence}
+          onWriteBeside={phone || full ? undefined : () => {
+            setPartShown(false);
+            setBig(false);
+            setWriting(true);
+            togglePanel(true);
+          }}
+          onClose={() => setPartShown(false)}
+        />}
       {asking && (
         <WaitChoice
           current={input}
@@ -600,7 +638,8 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
       )}
 
       <div className={`relative flex overflow-hidden ${big ? 'shrink-0' : 'min-h-0 flex-1'}`}>
-        <div ref={scroller} className={`min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-contain ${styled ? 'bg-black' : 'bg-white'} ${big || styled ? '' : 'border-t border-neutral-100'}`}>
+        {fingers && <RecentreButton free={scroller.free} onClick={scroller.recentre} className="right-3 top-3" />}
+        <div ref={scroller.ref} className={`min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-contain ${styled ? 'bg-black' : 'bg-white'} ${big || styled ? '' : 'border-t border-neutral-100'}`}>
           <div className="flex h-full flex-col" style={{ minWidth: fingers ? whites * FINGER_KEY : undefined }}>
             {!big && <div className="relative min-h-0 flex-1 px-2 sm:px-4">
               <FallingNotes
@@ -614,7 +653,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
             </div>}
             <div className={`px-2 sm:px-4 ${big ? 'border-t border-neutral-100 pt-2' : ''} ${short ? 'pb-2' : ''}`}>
               <div className="relative">
-                <PianoKeyboard from={from} to={to} labels={named && !numbersOn ? labels : 'none'} marks={marks} stickers={numbersOn ? stickers : undefined} height={keyboardHeight} />
+                <PianoKeyboard from={from} to={to} labels={named && !numbersShown.keys ? labels : 'none'} marks={marks} stickers={numbersShown.keys ? stickers : undefined} height={keyboardHeight} />
                 {!big && <KeyLight canvas={keyLight} />}
               </div>
             </div>
@@ -623,6 +662,12 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
         {part && !big && !full && !phone && (
           <NumbersPanel
             title={piece.title}
+            writing={writing}
+            onWriting={setWriting}
+            pieceId={piece.id}
+            written={piece.sequence ?? null}
+            onWrite={writeSequence}
+            onToggle={() => player.toggle()}
             parts={shownParts}
             part={current}
             position={player.position}

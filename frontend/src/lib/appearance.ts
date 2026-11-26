@@ -2,7 +2,7 @@ import { readJson, writeJson } from './storage';
 import { Observable } from './store';
 
 // How the app looks on this device: light or night, and the colours of the two
-// hands, which each theme has its own of. The theme itself is in index.css and
+// hands, which each theme has its own of, and each piece may have its own of. The theme itself is in index.css and
 // dark.css; the hands' shades are worked out here, as the canvas needs them too.
 
 export type Theme = 'light' | 'dark';
@@ -82,10 +82,35 @@ export function shadesOf(color: string, theme: Theme): Shades {
 export interface Look { theme: Theme; left: Shades; right: Shades }
 
 const system = () => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null);
-export const lookOf = (a: Appearance, dark: boolean): Look => {
+// `own`: the colours of the piece shown, theme by theme, over the usual ones.
+export const lookOf = (a: Appearance, dark: boolean, own?: OwnHands): Look => {
   const theme = a.theme === 'auto' ? (dark ? 'dark' : 'light') : a.theme;
-  return { theme, left: shadesOf(a.hands[theme].left, theme), right: shadesOf(a.hands[theme].right, theme) };
+  const hands = own?.[theme] ?? a.hands[theme];
+  return { theme, left: shadesOf(hands.left, theme), right: shadesOf(hands.right, theme) };
 };
+
+// --- Each piece's own -------------------------------------------------------------------
+
+export type OwnHands = Partial<Record<Theme, HandColors>>;
+const PIECES_KEY = 'learn.pieceHands.v1';
+
+export function cleanedPieces(saved: Record<string, unknown>): Record<string, OwnHands> {
+  const out: Record<string, OwnHands> = {};
+  for (const [id, own] of Object.entries(saved)) {
+    const kept: OwnHands = {};
+    for (const t of ['light', 'dark'] as const) {
+      const h = (own as OwnHands | null)?.[t];
+      if (isColor(h?.left) && isColor(h?.right)) kept[t] = { left: h.left, right: h.right };
+    }
+    if (kept.light || kept.dark) out[id] = kept;
+  }
+  return out;
+}
+
+// Piece id -> its colours.
+export const pieceHands = new Observable<Record<string, OwnHands>>(cleanedPieces(readJson<Record<string, unknown>>(PIECES_KEY, {})));
+// The piece on the screen, whose colours are the hands'.
+export const shownPiece = new Observable<number | null>(null);
 
 export const appearance = new Observable<Appearance>(cleaned(readJson<Partial<Appearance>>(KEY, {})));
 export const look = new Observable<Look>(lookOf(appearance.get(), system()?.matches ?? false));
@@ -104,7 +129,8 @@ const VARIABLES: Record<keyof Shades, string> = {
 
 function apply() {
   const chosen = appearance.get();
-  const next = lookOf(night ? { ...chosen, theme: 'dark' } : chosen, system()?.matches ?? false);
+  const piece = shownPiece.get();
+  const next = lookOf(night ? { ...chosen, theme: 'dark' } : chosen, system()?.matches ?? false, piece === null ? undefined : pieceHands.get()[piece]);
   const root = document.documentElement;
   root.dataset.theme = next.theme;
   for (const hand of ['left', 'right'] as const) {
@@ -120,6 +146,11 @@ export function initAppearance() {
     writeJson(KEY, appearance.get());
     apply();
   });
+  pieceHands.subscribe(() => {
+    writeJson(PIECES_KEY, pieceHands.get());
+    apply();
+  });
+  shownPiece.subscribe(apply);
   system()?.addEventListener('change', apply);
 }
 
@@ -128,3 +159,19 @@ export const setHand = (theme: Theme, hand: 'left' | 'right', color: string) => 
   if (isColor(color)) appearance.set((a) => ({ ...a, hands: { ...a.hands, [theme]: { ...a.hands[theme], [hand]: color } } }));
 };
 export const resetHands = (theme: Theme) => appearance.set((a) => ({ ...a, hands: { ...a.hands, [theme]: DEFAULT_HANDS[theme] } }));
+
+// The hands of one piece: its own colours, or the usual ones.
+export const handsOfPiece = (a: Appearance, theme: Theme, piece: number): HandColors => pieceHands.get()[piece]?.[theme] ?? a.hands[theme];
+export const setPieceHand = (piece: number, theme: Theme, hand: 'left' | 'right', color: string) => {
+  if (!isColor(color)) return;
+  const base = handsOfPiece(appearance.get(), theme, piece);
+  pieceHands.set((all) => ({ ...all, [piece]: { ...all[piece], [theme]: { ...base, [hand]: color } } }));
+};
+// Back to the usual colours.
+export const resetPieceHands = (piece: number, theme: Theme) => pieceHands.set((all) => {
+  const rest: OwnHands = { ...all[piece] };
+  delete rest[theme];
+  const others = { ...all };
+  delete others[piece];
+  return rest.light || rest.dark ? { ...others, [piece]: rest } : others;
+});

@@ -1,5 +1,6 @@
 import type { PieceNote } from '@learn/shared';
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { RecentreButton } from './useFollow';
 import { look, shadesOf, type Shades, type Theme } from '../../../lib/appearance';
 import { keyLayout } from '../keyGeometry';
 import { Scene, type SeenNote } from '../stage/scene';
@@ -55,14 +56,18 @@ export class NotesPainter {
     this.layout = keyLayout(from, to);
   }
 
-  // `at`: milliseconds, as performance.now(); `calm`: no sparks.
-  paint(ctx: CanvasRenderingContext2D, w: number, h: number, player: NoteSource, extra: { numbers?: ReadonlyMap<PieceNote, number>; parts?: { start: number; label: string }[]; calm?: boolean; keys?: CanvasRenderingContext2D | null; keysSize?: [number, number] }, at: number) {
+  // `at`: milliseconds, as performance.now(); `calm`: no sparks; `view`: the
+  // moment seen at the keyboard, when it is not the one played.
+  paint(ctx: CanvasRenderingContext2D, w: number, h: number, player: NoteSource, extra: { numbers?: ReadonlyMap<PieceNote, number>; parts?: { start: number; label: string }[]; calm?: boolean; keys?: CanvasRenderingContext2D | null; keysSize?: [number, number]; view?: number | null }, at: number) {
     const { layout } = this;
-    const before = this.before ?? { at, position: player.position };
+    // What is seen, and what is played.
+    const seen = extra.view ?? player.position;
+    const now = player.position;
+    const before = this.before ?? { at, position: seen };
     // Where a note is drawn, in pixels; null when out of view.
     const place = (n: PieceNote) => {
       const keyBox = layout.get(n.midi);
-      const pos = player.position;
+      const pos = seen;
       const span = LOOKAHEAD * player.rate;
       if (!keyBox || n.time > pos + span || n.time + n.duration < pos) return null;
       const pps = h / span;
@@ -83,7 +88,7 @@ export class NotesPainter {
     const colors = look.get();
     const line = (share: number) => (colors.theme === 'dark' ? `rgba(255,255,255,${share * 1.5})` : `rgba(0,0,0,${share})`);
 
-    const pos = player.position;
+    const pos = seen;
     const span = LOOKAHEAD * player.rate;
     const expected = new Set(player.state.get().expected.map((n) => n.midi));
 
@@ -96,7 +101,7 @@ export class NotesPainter {
         notes.push({
           id: n, midi: n.midi, hand: n.hand,
           box: { x: r.x, y: Math.min(r.top, r.bottom - 6), w: r.width, h: Math.max(6, r.bottom - r.top) },
-          active: n.time <= pos + 0.001 && (expected.size === 0 || expected.has(n.midi)),
+          active: n.time <= now + 0.001 && n.time + n.duration > now && (expected.size === 0 || expected.has(n.midi)),
         });
       }
       const settings = extra.calm ? { ...chosen, effects: 'off' as const } : chosen;
@@ -129,7 +134,7 @@ export class NotesPainter {
       const r = place(n);
       if (!r) continue;
       const color = n.hand ? colors[n.hand] : NONE[colors.theme];
-      const active = n.time <= pos + 0.001 && (expected.size === 0 || expected.has(n.midi));
+      const active = n.time <= now + 0.001 && n.time + n.duration > now && (expected.size === 0 || expected.has(n.midi));
       const number = numbered?.get(n);
       const size = Math.round(Math.min(17, Math.max(10, r.width * 0.5)));
       // Tall enough for its number.
@@ -178,6 +183,39 @@ export function FallingNotes({ player, from, to, numbers, parts, keyLight }: {
   keyLight?: RefObject<HTMLCanvasElement | null>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  // Scrolled by hand (wheel or a finger up and down): the view stays on that
+  // moment while the piece goes on, until recentred.
+  const view = useRef<number | null>(null);
+  const [shifted, setShifted] = useState(false);
+  const moveBy = (seconds: number) => {
+    const last = player.notes.length ? Math.max(...player.notes.map((n) => n.time + n.duration)) : 0;
+    view.current = Math.max(0, Math.min(last, (view.current ?? player.position) + seconds));
+    setShifted(true);
+  };
+  const recentre = () => {
+    view.current = null;
+    setShifted(false);
+  };
+  // Seconds per pixel.
+  const perPixel = () => (LOOKAHEAD * player.rate) / Math.max(1, canvas.current?.clientHeight ?? 1);
+  const latestMove = useRef(moveBy);
+  latestMove.current = moveBy;
+  useEffect(() => {
+    const el = canvas.current!;
+    // Not React's: it must be able to keep the page from scrolling.
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * el.clientHeight : e.deltaY;
+      // Down: what was played, below.
+      latestMove.current(-px * perPixelRef.current());
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+  const perPixelRef = useRef(perPixel);
+  perPixelRef.current = perPixel;
+  const drag = useRef<{ id: number; y: number } | null>(null);
   // Read by the drawing loop without restarting it.
   const numbersRef = useRef({ numbers, parts });
   numbersRef.current = { numbers, parts };
@@ -203,12 +241,35 @@ export function FallingNotes({ player, from, to, numbers, parts, keyLight }: {
         const [kw, kh] = [over.clientWidth, over.clientHeight];
         if (over.width !== kw || over.height !== kh) Object.assign(over, { width: kw, height: kh });
       }
-      painter.paint(ctx, w, h, player, { ...numbersRef.current, calm: calm.matches, keys, keysSize: over ? [over.clientWidth, over.clientHeight] : undefined }, performance.now());
+      painter.paint(ctx, w, h, player, { ...numbersRef.current, calm: calm.matches, keys, keysSize: over ? [over.clientWidth, over.clientHeight] : undefined, view: view.current }, performance.now());
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
   }, [player, from, to, keyLight]);
 
-  return <canvas ref={canvas} className="block h-full w-full" />;
+  return (
+    <>
+      <canvas
+        ref={canvas}
+        // Sideways stays the page's (a keyboard wider than the screen).
+        className="block h-full w-full cursor-grab touch-pan-x active:cursor-grabbing"
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          drag.current = { id: e.pointerId, y: e.clientY };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d || d.id !== e.pointerId) return;
+          // The notes follow the finger: pulled down, what comes later is seen.
+          moveBy((e.clientY - d.y) * perPixel());
+          d.y = e.clientY;
+        }}
+        onPointerUp={() => (drag.current = null)}
+        onPointerCancel={() => (drag.current = null)}
+      />
+      <RecentreButton free={shifted} onClick={recentre} className="left-1/2 top-3 -translate-x-1/2" />
+    </>
+  );
 }

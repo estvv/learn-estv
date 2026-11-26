@@ -55,7 +55,8 @@ export function openPiece(piece: StoredPiece): Imported {
   const onGrid = (d: number) => heard.every((n) => Math.abs(grid.toBeats(n.time) * d - Math.round(grid.toBeats(n.time) * d)) < ON_COLUMN);
   const division = scoreDivisions.find(onGrid)
     ?? (found.some((p) => p.division >= 4 && p.division % 3) ? 4 : found.some((p) => p.division % 3 === 0) ? 3 : 2);
-  const parts = numbersOf(heard, layout, division).parts;
+  // Numbered as the player does it (order, by position, across parts).
+  const parts = numbersOf(heard, { ...layout, given: { ...layout.given, numbering: piece.numbering, whole: piece.whole } }, division).parts;
   const place = new Map(heard.map((n, i) => [n, i]));
   const places: Place[] = [];
   const last = Math.ceil(grid.toBeats(layout.duration) - 1e-6);

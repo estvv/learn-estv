@@ -1,10 +1,11 @@
 import { frenchName, octaveOf, type Hand } from '@learn/shared';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RepeatIcon } from '../../../components/icons';
 import { NoteText } from '../Accidentals';
 import { BEATS_PER_BAR } from './grid';
 import { breakLines, lineWidth, type LineBox, type Sizing } from './numberLines';
 import { handLetter, handName, pieceText, stepText, type Part } from './numbers';
+import { RecentreButton, useFollow } from './useFollow';
 
 // The piece as numbers with its rhythm, instead of the falling notes: for who
 // wants the detail (NumbersPanel.tsx is what one learns from).
@@ -49,7 +50,13 @@ export function Numbers({ title, parts, part: current, column, position, loop, c
   onLoop(part: number | null): void;
   onClose(): void;
 }) {
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement | null>(null);
+  const follow = useFollow<HTMLDivElement>();
+  const followRef = follow.ref;
+  const setBox = useCallback((el: HTMLDivElement | null) => {
+    box.current = el;
+    followRef(el);
+  }, [followRef]);
   const [width, setWidth] = useState(0);
   const [wantsCorrecting, setCorrecting] = useState(false);
   const correcting = editing && wantsCorrecting ? editing : null;
@@ -73,14 +80,15 @@ export function Numbers({ title, parts, part: current, column, position, loop, c
   const cut = useRef((part: number, beat: number) => latest.current.editing?.onCut(part, beat)).current;
 
   const line = Math.max(0, (lines[current] ?? []).filter((l) => l.from <= column).length - 1);
-  // The line being played stays in view.
+  // The line being played stays in view, unless scrolled away from by hand.
+  const { free, scrollTo } = follow;
   useEffect(() => {
     const el = box.current;
     const target = el?.querySelector<HTMLElement>(`[data-line="${current}-${line}"]`);
-    if (!el || !target) return;
+    if (!el || !target || free) return;
     const top = target.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
-    el.scrollTo({ top: top - el.clientHeight * 0.3, behavior: 'smooth' });
-  }, [current, line, width]);
+    scrollTo({ top: top - el.clientHeight * 0.3, behavior: 'smooth' });
+  }, [current, line, width, free, scrollTo]);
 
   const looped = (i: number) => loop !== null && i >= loop[0] && i <= loop[1];
   const draw = (i: number, k: number) => (
@@ -99,7 +107,8 @@ export function Numbers({ title, parts, part: current, column, position, loop, c
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col border-t border-neutral-200 bg-white">
+    <div className="relative flex min-h-0 flex-1 flex-col border-t border-neutral-200 bg-white">
+      <RecentreButton free={follow.free} onClick={follow.recentre} />
       <div className="flex shrink-0 items-center gap-1 px-2 pt-2 sm:px-4">
         <span className="min-w-0 flex-1 truncate pl-1 text-sm font-semibold text-neutral-900">{correcting ? 'Parties' : 'Chiffres et rythme'}</span>
         {correcting ? (
@@ -120,7 +129,7 @@ export function Numbers({ title, parts, part: current, column, position, loop, c
           {correcting.error && <span className="ml-2 text-red-600">{correcting.error}</span>}
         </p>
       )}
-      <div ref={box} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-2 sm:px-5">
+      <div ref={setBox} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-2 sm:px-5">
         {parts.map((p, i) => (
           <section key={i} className="border-b border-neutral-100 py-4 last:border-b-0">
             {correcting && (

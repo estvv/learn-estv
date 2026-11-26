@@ -3,7 +3,7 @@ import { keyLayout } from '../keyGeometry';
 import { hex, pairOf, tone, warm } from './colors';
 import { Particles, presence, wind, type Kind } from './particles';
 import { Scene, type Picture, type SeenNote } from './scene';
-import { cleanedStage, MOOD_IDS, STYLE_IDS, type StageSettings } from './settings';
+import { cleanedStage, STYLE_IDS, type StageSettings } from './settings';
 
 // A canvas that only counts what is drawn, and refuses what a real one would.
 function canvas() {
@@ -38,20 +38,19 @@ const picture = (notes: SeenNote[], moving = true): Picture => ({ w: 800, h: 400
 describe('how the notes look', () => {
   it('is the classic way unless chosen otherwise', () => {
     expect(cleanedStage({}).style).toBe('classic');
-    expect(cleanedStage({ style: 'glass', led: false, effects: 'lots' as never, mood: 'custom' })).toMatchObject({ style: 'glass', led: false, effects: 'max', keys: 'glow', sparks: 'cloud', mood: 'custom' });
-    // Moods there used to be.
-    expect(cleanedStage({ mood: 'gold' as never }).mood).toBe('hands');
-    expect(cleanedStage({ custom: { left: 'red', right: '#AABBCC' }, keyColor: '#123456', ledColor: 'x' })).toMatchObject({ custom: { left: '#e8e8e8', right: '#aabbcc' }, keyColor: '#123456', ledColor: '' });
-    expect(cleanedStage({ style: 'gone' as never, mood: 'gone' as never })).toMatchObject({ style: 'classic', mood: 'hands' });
+    expect(cleanedStage({ style: 'glass', led: false, effects: 'lots' as never })).toMatchObject({ style: 'glass', led: false, effects: 'max', keys: 'glow', sparks: 'cloud' });
+    expect(cleanedStage({ keyColor: '#123456', ledColor: 'x' })).toMatchObject({ keyColor: '#123456', ledColor: '' });
+    expect(cleanedStage({ style: 'gone' as never })).toMatchObject({ style: 'classic' });
+    // Colours of their own there used to be: the hands' now.
+    expect(cleanedStage({ mood: 'custom', custom: { left: '#000000' } } as never)).not.toHaveProperty('custom');
     // Styles there used to be: still in the dark.
     expect(cleanedStage({ style: 'crystal' as never }).style).toBe('glow');
   });
 
-  it('takes the colours of the hands, of a mood or of the keys', () => {
-    expect(pairOf('hands', 'left', 60, hands)[0]).toBe('#ff0000');
-    expect(pairOf('hands', null, 40, hands)[0]).toBe('#ff0000');
-    expect(pairOf('custom', 'left', 40, hands)[1]).toBe('#ff0000');
-    for (const mood of MOOD_IDS) for (const m of [21, 60, 108]) for (const c of pairOf(mood, 'right', m, hands)) expect(c).toMatch(/^#[0-9a-f]{6}$/);
+  it('takes the colours of the hands', () => {
+    expect(pairOf('left', 60, hands)[0]).toBe('#ff0000');
+    expect(pairOf(null, 40, hands)[0]).toBe('#ff0000');
+    for (const m of [21, 60, 108]) for (const c of pairOf('right', m, hands)) expect(c).toMatch(/^#[0-9a-f]{6}$/);
     expect([hex(0, 1, 0.5), hex(120, 1, 0.5), hex(240, 1, 0.5)]).toEqual(['#ff0000', '#00ff00', '#0000ff']);
     expect(tone('#336699').rgb).toBe('51, 102, 153');
   });
@@ -65,11 +64,11 @@ describe('how the notes look', () => {
   it.each(STYLE_IDS.filter((s) => s !== 'classic'))('can be drawn: %s', (style) => {
     const scene = new Scene();
     const { ctx, calls } = canvas();
-    for (const mood of MOOD_IDS) {
+    {
       for (let i = 0; i < 40; i++) {
         // Coming, sounding, then gone; tall, flat, thin.
         const boxes = [{ x: 10, y: -50, w: 30, h: 300 }, { x: 60, y: 390, w: 3, h: 4 }, { x: 90, y: 100, w: 40, h: 8 }];
-        scene.draw(ctx, picture(boxes.map((box, k) => note(i > 10 && i < 25, { box, midi: 60 + k, id: boxes[0] }))), settings({ style, mood }), 0.016);
+        scene.draw(ctx, picture(boxes.map((box, k) => note(i > 10 && i < 25, { box, midi: 60 + k, id: boxes[0] }))), settings({ style }), 0.016);
         scene.drawKeys(ctx, 800, 160, layout);
       }
     }

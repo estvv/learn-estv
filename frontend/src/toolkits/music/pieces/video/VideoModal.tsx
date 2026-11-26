@@ -113,7 +113,6 @@ export function VideoModal({ player, base, range, voice, cover: coverUrl, onBefo
         <p className="text-sm text-neutral-600">Ce navigateur ne sait pas fabriquer de vidéo. Utilise Chrome ou Edge à jour sur ordinateur.</p>
       ) : making ? (
         <div className="space-y-4">
-          <p className="text-sm text-neutral-600">{making.sound ? 'Préparation du son…' : 'Fabrication de la vidéo, image par image. Tu peux changer d’onglet : ça ne change rien au résultat.'}</p>
           <div className="h-2 overflow-hidden rounded-full bg-neutral-100">
             <div className="h-full bg-neutral-900 transition-[width]" style={{ width: `${Math.round(making.share * 100)}%` }} />
           </div>
@@ -141,18 +140,15 @@ export function VideoModal({ player, base, range, voice, cover: coverUrl, onBefo
             <Field label="Noms sur les touches">
               <Segmented<KeyNames> full value={options.keyNames} onChange={(keyNames) => setVideo({ keyNames })} options={[{ value: 'letters', label: 'C D E' }, { value: 'names', label: 'Do Ré Mi' }, { value: 'none', label: 'Aucun' }]} />
             </Field>
-            <Field label="Logo">
+            <Field label="Filigrane">
               <div className="flex gap-2">
-                <input value={options.logo} maxLength={40} placeholder="Ton nom, dans un coin" onChange={(e) => setVideo({ logo: e.target.value })} className={`${inputClass} min-w-0 flex-1`} />
+                <input value={options.logo} maxLength={40} placeholder="Ton nom, discret dans un coin" onChange={(e) => setVideo({ logo: e.target.value })} className={`${inputClass} min-w-0 flex-1`} />
                 <LogoImage value={options.logoImage} onChange={(logoImage) => setVideo({ logoImage })} onError={setError} />
               </div>
             </Field>
           </div>
           <div className="space-y-3">
             <canvas ref={preview} aria-label="Aperçu" className={`mx-auto block rounded-lg border border-neutral-200 ${options.format === 'portrait' ? 'max-h-80 w-auto' : 'w-full'}`} />
-            <p className="text-xs text-neutral-400">
-              {size[0]}×{size[1]}, MP4, 30 images/s · {clock(total)} de morceau. Le style des notes est celui des Réglages.
-            </p>
             {result ? (
               <div className="space-y-2 rounded-xl bg-emerald-50 p-3">
                 <p className="text-sm text-emerald-800">Vidéo prête ({(result.bytes / 1e6).toFixed(1).replace('.', ',')} Mo).</p>

@@ -42,8 +42,15 @@ export interface StoredPiece extends Piece {
   whole?: boolean;
   // Sung along (see lyrics.ts).
   lyrics?: LyricLine[] | null;
+  // The order of the keys as written by hand (see sequence.ts); null: worked out.
+  sequence?: PieceSequence | null;
   // Pieces written by hand; null: imported.
   score?: Score | null;
+}
+
+export interface PieceSequence {
+  left?: string;
+  right?: string;
 }
 
 export interface PieceFolder {

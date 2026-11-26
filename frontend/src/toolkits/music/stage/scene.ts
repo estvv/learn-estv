@@ -56,6 +56,9 @@ const around = () => (Math.random() + Math.random() + Math.random()) / 1.5 - 1;
 // A whole number, right on average.
 const some = (n: number) => Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
 
+// Patches of light drifting along the line of LEDs.
+const DRIFTS = 5;
+
 export class Scene {
   readonly particles = new Particles(0);
   private lamps = new Map<number, Lamp>();
@@ -82,8 +85,7 @@ export class Scene {
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, w, h);
 
-    const hands = settings.mood === 'custom' ? settings.custom : pic.hands;
-    const pair = (n: SeenNote) => pairOf(settings.mood, n.hand, n.midi, hands);
+    const pair = (n: SeenNote) => pairOf(n.hand, n.midi, pic.hands);
     const now = new Map<object, number>();
     for (const lamp of this.lamps.values()) lamp.on = false;
     for (const n of pic.notes) {
@@ -120,7 +122,9 @@ export class Scene {
 
     for (const n of pic.notes) {
       const near = n.active ? 1 : (n.box.y + n.box.h) / h;
-      drawNote(ctx, n.box, tone(warm(pair(n), near)), n.active ? this.lamps.get(n.midi)?.level ?? 1 : 0);
+      // Sober ones keep the hand's colour, without warming up to white.
+      const color = settings.style === 'plain' ? pair(n)[0] : warm(pair(n), near);
+      drawNote(ctx, n.box, tone(color), n.active ? this.lamps.get(n.midi)?.level ?? 1 : 0);
     }
 
     this.particles.step(dt, scale);
@@ -186,19 +190,24 @@ export class Scene {
       const x = this.at(pic, midi);
       return x === null ? [] : [{ ...lamp, color: own || lamp.color, x }];
     });
-    const hands = settings.mood === 'custom' ? settings.custom : pic.hands;
     const rest = (x: number) => {
       if (own) return own;
       const pitch = 21 + (x / w) * 87;
-      return pairOf(settings.mood, x < w / 2 ? 'left' : 'right', pitch, hands)[1];
+      return pairOf(x < w / 2 ? 'left' : 'right', pitch, pic.hands)[1];
     };
     ctx.globalCompositeOperation = 'lighter';
-    // The light it gives, from one end to the other.
+    // The light it gives at rest: faint, close to it, in patches that drift and
+    // breathe, never a still band. Where notes sound, it is far brighter (below).
     const parts = own ? 2 : 8;
+    const t = this.time;
     for (let i = 0; i <= parts; i++) {
       const x = (i / parts) * w;
-      light(ctx, rest(x), x, h, (w / parts) * 1.8, 110 * scale, 0.3 + 0.04 * Math.sin(this.time * 1.7 + i));
-      light(ctx, rest(x), x, h, (w / parts) * 1.8, 34 * scale, 0.4);
+      light(ctx, rest(x), x, h, (w / parts) * 1.6, 14 * scale, 0.32);
+    }
+    for (let i = 0; i < DRIFTS; i++) {
+      const x = w * (0.5 + 0.48 * Math.sin(t * (0.07 + 0.023 * i) + i * 2.4));
+      const breath = 0.5 + 0.5 * Math.sin(t * (0.5 + 0.17 * i) + i * 1.3);
+      light(ctx, rest(x), x, h, w * (0.1 + 0.05 * breath), (26 + 34 * breath) * scale, 0.05 + 0.09 * breath);
     }
     for (const l of lamps) {
       light(ctx, l.color, l.x, h, 170 * scale, 100 * scale, 0.36 * l.level);

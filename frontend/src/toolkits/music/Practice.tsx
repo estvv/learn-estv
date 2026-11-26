@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useAuth } from '../../app/auth';
 import { Segmented } from '../../components/Segmented';
-import { forceNight } from '../../lib/appearance';
+import { forceNight, shownPiece } from '../../lib/appearance';
 import { useObservable } from '../../lib/store';
 import { useFullscreen } from '../../lib/useFullscreen';
 import { PHONE, useMedia } from '../../lib/useMedia';
@@ -58,6 +58,12 @@ export function MusicPractice({ subject }: { subject: string }) {
     forceNight(dark);
     return () => forceNight(false);
   }, [dark]);
+  // The hands take the colours of the piece open, played or changed.
+  const opened = !creating && pieceId ? pieceId : null;
+  useEffect(() => {
+    shownPiece.set(opened);
+    return () => shownPiece.set(null);
+  }, [opened]);
   // A new piece from parts of this one.
   const [extracting, setExtracting] = useState<number | null>(null);
   const [labels, setLabels] = useState<KeyLabels>('names');

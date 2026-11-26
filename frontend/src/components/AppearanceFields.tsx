@@ -1,4 +1,4 @@
-import { appearance, DEFAULT_HANDS, look, resetHands, setHand, setTheme, shadesOf, type Appearance, type Theme } from '../lib/appearance';
+import { appearance, DEFAULT_HANDS, handsOfPiece, look, pieceHands, resetHands, resetPieceHands, setHand, setPieceHand, setTheme, shadesOf, type Appearance, type Theme } from '../lib/appearance';
 import { useObservable } from '../lib/store';
 import { Field } from './Field';
 import { Segmented } from './Segmented';
@@ -46,6 +46,38 @@ export function HandColorsField({ theme: given, label = 'Couleurs des mains' }: 
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// The hands of one piece, in the theme shown: the base colours (Réglages), or
+// its own once one is changed here.
+export function PieceHandColors({ piece }: { piece: number }) {
+  const chosen = useObservable(appearance);
+  const own = useObservable(pieceHands)[piece];
+  const theme = useObservable(look).theme;
+  const hands = handsOfPiece(chosen, theme, piece);
+  const mine = !!own?.[theme];
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <span className="text-sm text-neutral-700">Mains</span>
+        <div className="flex items-center gap-3">
+          {([['left', 'Gauche'], ['right', 'Droite']] as const).map(([hand, name]) => (
+            <label key={hand} className="flex cursor-pointer items-center gap-1.5 text-sm text-neutral-600">
+              <span className="relative block h-7 w-7 shrink-0 rounded-md ring-1 ring-black/10 ring-inset" style={{ background: hands[hand] }}>
+                <input type="color" value={hands[hand]} onChange={(e) => setPieceHand(piece, theme, hand, e.target.value)} aria-label={`Main ${name.toLowerCase()}`} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+              </span>
+              {name}
+            </label>
+          ))}
+        </div>
+      </div>
+      <p className="text-xs text-neutral-400">
+        {mine ? (
+          <>Propres à ce morceau · <button type="button" onClick={() => resetPieceHands(piece, theme)} className="underline hover:text-neutral-900">revenir aux couleurs de base</button></>
+        ) : 'Couleurs de base. Les changer ici ne vaut que pour ce morceau.'}
+      </p>
     </div>
   );
 }

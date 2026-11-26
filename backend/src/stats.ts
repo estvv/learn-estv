@@ -19,7 +19,7 @@ export function shiftDay(day: string, delta: number): string {
 }
 
 export interface ProfileStats {
-  streak: { current: number; best: number; active_days: number };
+  active_days: number;
   totals: { answers: number; correct_rate: number | null; elements_seen: number; elements_mastered: number; steps_done: number };
   heatmap: { day: string; count: number }[]; // oldest first, today last
   subjects: {
@@ -55,17 +55,6 @@ export function profileStats(db: DB, userId: number, now = Date.now()): ProfileS
     return { day, count: perDay.get(day) ?? 0 };
   });
 
-  // Current streak may end yesterday: today is not over yet.
-  let current = 0;
-  for (let day = perDay.has(today) ? today : shiftDay(today, -1); perDay.has(day); day = shiftDay(day, -1)) current++;
-  let best = 0;
-  for (const day of perDay.keys()) {
-    if (perDay.has(shiftDay(day, -1))) continue; // not the start of a run
-    let run = 0;
-    for (let d = day; perDay.has(d); d = shiftDay(d, 1)) run++;
-    best = Math.max(best, run);
-  }
-
   const cards = new Map(srs.map((r) => [`${r.element_id}#${r.facet}`, JSON.parse(r.card) as StoredCard]));
   const seenElements = new Set(srs.map((r) => r.element_id));
   const mastered = [...cards.values()].filter((c) => c.stability >= MASTERED_STABILITY_DAYS).length;
@@ -94,7 +83,7 @@ export function profileStats(db: DB, userId: number, now = Date.now()): ProfileS
 
   const correct = reviews.filter((r) => r.correct).length;
   return {
-    streak: { current, best, active_days: perDay.size },
+    active_days: perDay.size,
     totals: {
       answers: reviews.length,
       correct_rate: reviews.length ? correct / reviews.length : null,

@@ -5,7 +5,7 @@ import { Modal } from '../../../components/Modal';
 import { Segmented } from '../../../components/Segmented';
 import { Toggle } from '../../../components/settings';
 import { StageFields, StagePreview } from '../stage/StageFields';
-import { HandColorsField, ThemeField } from '../../../components/AppearanceFields';
+import { PieceHandColors } from '../../../components/AppearanceFields';
 import { Field } from '../../../components/Field';
 import type { PlayMode } from './player';
 import { FROM, GOOD, progressive, setProgressive, STEP, TO } from './progressive';
@@ -13,6 +13,8 @@ import { useObservable } from '../../../lib/store';
 import { TrackList } from './PlayerControls';
 
 export type HandChoice = 'both' | Hand;
+// Where the player writes the numbers.
+export interface NumbersShown { notes: boolean; keys: boolean }
 
 export const RATES = [0.5, 0.75, 1, 1.25];
 
@@ -21,14 +23,14 @@ type Tab = 'play' | 'look' | 'edit';
 let lastTab: Tab = 'play';
 
 // Everything that is not needed while playing, in a window.
-export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onExtract, lyrics, onLyrics, onKaraoke, voice, onVoice, onVoiceFile, onMidi, onCoach, onVideo, climbing, numbering, whole, onNumbering, onClose }: {
+export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onExtract, lyrics, onLyrics, onKaraoke, voice, onVoice, onVoiceFile, onMidi, onCoach, onVideo, climbing, numbering, whole, onNumbering, pieceId, onClose }: {
   mode: PlayMode;
   level: PieceLevel;
   rate: number;
   hand: HandChoice;
   // Both play, at this level and with these tracks.
   bothHands: boolean;
-  numbered: boolean;
+  numbered: NumbersShown;
   tracks: PieceTrack[];
   notes: PieceNote[];
   enabled: boolean[];
@@ -38,7 +40,7 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
   onLevel(level: PieceLevel): void;
   onRate(rate: number): void;
   onHand(hand: HandChoice): void;
-  onNumbered(on: boolean): void;
+  onNumbered(patch: Partial<NumbersShown>): void;
   onTracks(enabled: boolean[]): void;
   onBigKeys(on: boolean): void;
   // Left out for pieces written by hand: they only have one editor.
@@ -62,6 +64,8 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
   // How keys get their numbers.
   numbering: PieceNumbering;
   whole: boolean;
+  // Whose colours the hands are.
+  pieceId: number;
   onNumbering(change: { numbering?: PieceNumbering; whole?: boolean }): void;
   // The tempo goes up by itself: a loop, in wait mode.
   climbing: boolean;
@@ -104,16 +108,18 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
             </Field>
             <div className="sm:col-span-2"><ProgressiveField climbing={climbing} /></div>
             <div className="space-y-3 sm:col-span-2">
-              <Toggle checked={numbered} onChange={onNumbered} label="Chiffres sur les notes et les touches" />
-              {numbered && (
-                <div className="space-y-2 rounded-xl border border-neutral-200 p-3">
-                  <Field label="Numéros" hint={NUMBERING_HINTS[numbering]}>
-                    <Segmented<PieceNumbering> full value={numbering} onChange={(n) => onNumbering({ numbering: n })} options={[{ value: 'order', label: 'Ordre' }, { value: 'hand', label: 'Position (par main)' }, { value: 'fixed', label: 'Position fixe' }]} />
-                  </Field>
-                  <Toggle checked={whole} onChange={(w) => onNumbering({ whole: w })} label="Sans parties : une seule suite pour tout le morceau" />
-                  {(numbering !== 'order' || whole) && <p className="text-xs text-neutral-400">Tes propres numéros sont mis de côté, et reviennent en « Ordre » avec les parties.</p>}
+              {/* How keys are numbered counts everywhere (panel, parts), shown or not here. */}
+              <div className="space-y-3 rounded-xl border border-neutral-200 p-3">
+                <Field label="Chiffres" hint={''}>
+                  <Segmented<PieceNumbering> full value={numbering} onChange={(n) => onNumbering({ numbering: n })} options={[{ value: 'order', label: 'Ordre' }, { value: 'hand', label: 'Position (par main)' }, { value: 'fixed', label: 'Position fixe' }]} />
+                </Field>
+                <Toggle checked={whole} onChange={(w) => onNumbering({ whole: w })} label="Sans parties : une seule suite pour tout le morceau" />
+                <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-neutral-100 pt-3">
+                  <span className="text-sm text-neutral-500">Afficher sur</span>
+                  <Toggle checked={numbered.notes} onChange={(notes) => onNumbered({ notes })} label="les notes qui tombent" />
+                  <Toggle checked={numbered.keys} onChange={(keys) => onNumbered({ keys })} label="les touches du clavier" />
                 </div>
-              )}
+              </div>
               {lyrics !== null && <Toggle checked={lyrics} onChange={onLyrics} label="Paroles au-dessus des notes" />}
               {voice && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -138,13 +144,12 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
           </div>
         )}
         {tab === 'look' && (
-          <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-            <StageFields />
-            <div className="space-y-5">
-              <StagePreview />
-              <ThemeField full />
-              <HandColorsField />
+          // The preview first on a phone, beside the fields and kept in sight otherwise.
+          <div className="grid gap-x-6 gap-y-5 sm:grid-cols-[minmax(0,1fr)_15rem]">
+            <div className="sm:order-2">
+              <div className="sm:sticky sm:top-0"><StagePreview /></div>
             </div>
+            <StageFields theme colours={<PieceHandColors piece={pieceId} />} />
           </div>
         )}
         {tab === 'edit' && (
@@ -191,12 +196,6 @@ const DownloadIcon = () => (
     <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
   </svg>
 );
-
-const NUMBERING_HINTS: Record<PieceNumbering, string> = {
-  order: 'La première touche jouée = 1, la suivante = 2…',
-  hand: 'Dans chaque main, la touche la plus grave jouée = 1, puis vers l’aigu.',
-  fixed: 'Chaque touche du piano a toujours le même numéro : la plus grave = 1, la plus aiguë = 88.',
-};
 
 function ProgressiveField({ climbing }: { climbing: boolean }) {
   const p = useObservable(progressive);

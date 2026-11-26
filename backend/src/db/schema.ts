@@ -150,6 +150,9 @@ CREATE TABLE IF NOT EXISTS pieces (
   -- across parts (whole = 1).
   numbering TEXT,
   whole INTEGER,
+  -- The order of the keys as the owner wrote it, JSON { left?, right? }; NULL:
+  -- worked out from the notes.
+  sequence TEXT,
   -- Lyrics, JSON [{ time, text }], times in seconds.
   lyrics TEXT,
   -- Changes made by hand to the easier levels, JSON { simplified?, melody? }.
