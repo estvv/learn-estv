@@ -10,7 +10,7 @@ import { PianoKeyboard, type KeyLabels, type KeyMark, type Sticker } from '../Pi
 import { stage } from '../stage/settings';
 import { KeyLight } from '../stage/StageFields';
 import { piecesApi } from './api';
-import { layoutOf, levelNotes, levelOf, playedSpan } from './derive';
+import { layoutOf, levelNames, levelNotes, levelOf, playedSpan } from './derive';
 import { FallingNotes } from './FallingNotes';
 import { LyricsBanner } from './LyricsBanner';
 import { LyricsModal } from './LyricsModal';

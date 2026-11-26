@@ -29,6 +29,7 @@ beforeEach(() => {
   importSeeds(db, contentDir, () => {});
   // Covers: no network in tests; songs titled "Inconnu" have none.
   app = createApp(db, {
+    coach: async ({ messages }) => `Réponse à : ${messages[messages.length - 1].text}`,
     readImages: async (images) => {
       if (images.length > 1) throw new AiError('Illisible');
       return { kind: 'nothing', reason: 'test' };
