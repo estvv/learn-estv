@@ -144,6 +144,9 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
               icon={voice ? <PencilIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
               onClick={onVoiceFile}
             />
+            <Choice title="Exporter en vidéo" text="MP4 en paysage ou vertical, avec le style des notes, le son, les paroles et ton logo." icon={<VideoIcon />} onClick={onVideo} />
+            <Choice title="Coach" text="Demander à l’IA : ta dernière prise, un doigté, ou n’importe quelle question." icon={<ChatIcon />} onClick={onCoach} />
+            <Choice title="Télécharger en MIDI" text="Tel qu’il est joué ici : niveau, pistes, une piste par main." icon={<DownloadIcon />} onClick={onMidi} />
             <Choice title="Nouveau morceau avec des parties" text="Garder seulement quelques parties. Celui-ci ne change pas." icon={<PlusIcon className="h-4 w-4" />} onClick={onExtract} />
           </div>
         )}

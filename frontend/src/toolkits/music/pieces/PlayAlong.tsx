@@ -386,6 +386,13 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
           }}
           voice={voice && { on: voice.on, volume: voice.volume }}
           onVoice={tweakVoice}
+          onMidi={() => downloadMidi(piece)}
+          onCoach={() => openCoach(false)}
+          onVideo={() => {
+            setOptions(false);
+            player.pause();
+            setVideo(true);
+          }}
           onVoiceFile={() => {
             setOptions(false);
             player.pause();

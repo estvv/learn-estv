@@ -84,6 +84,66 @@ export function tick(first: boolean) {
   osc.stop(ctx.currentTime + 0.07);
 }
 
+// --- In the background -------------------------------------------------------------
+
+// Phones stop the sound of a page that is not seen, but not a page playing media.
+// While a piece plays, everything heard also goes to a media element; when the
+// page is hidden, it is that one that is heard. Seen, the sound goes straight out:
+// the element adds a little delay, which keys played on the screen would feel.
+let media: HTMLAudioElement | null = null;
+let ways: { straight: GainNode; streamed: GainNode } | null = null;
+let wanted = false;
+
+function background(t: ToneModule) {
+  const ctx = t.getContext().rawContext as AudioContext;
+  if (typeof ctx.createMediaStreamDestination !== 'function') return;
+  const out = t.getDestination().output as unknown as { disconnect(): void; connect(n: AudioNode): void };
+  const straight = ctx.createGain();
+  const streamed = ctx.createGain();
+  const stream = ctx.createMediaStreamDestination();
+  out.disconnect();
+  t.connect(t.getDestination().output, straight);
+  t.connect(t.getDestination().output, streamed);
+  straight.connect(ctx.destination);
+  streamed.connect(stream);
+  media = new Audio();
+  media.srcObject = stream.stream;
+  ways = { straight, streamed };
+  route();
+  document.addEventListener('visibilitychange', route);
+}
+
+function route() {
+  if (!ways || !tone) return;
+  const hidden = document.hidden && wanted;
+  const now = tone.getContext().rawContext.currentTime;
+  ways.straight.gain.setTargetAtTime(hidden ? 0 : 1, now, 0.02);
+  ways.streamed.gain.setTargetAtTime(hidden ? 1 : 0, now, 0.02);
+  // Seen again: the sound of the page goes on by itself.
+  if (!document.hidden && tone.getContext().state !== 'running') void tone.start();
+}
+
+// Everything heard, as a stream: to be recorded with a video. Null: no sound yet.
+export function soundStream(): { stream: MediaStream; stop(): void } | null {
+  if (!tone || audioState.get() !== 'ready') return null;
+  const t = tone;
+  const ctx = t.getContext().rawContext as AudioContext;
+  if (typeof ctx.createMediaStreamDestination !== 'function') return null;
+  const out = ctx.createMediaStreamDestination();
+  t.connect(t.getDestination().output, out);
+  return { stream: out.stream, stop: () => t.disconnect(t.getDestination().output, out) };
+}
+
+// A piece plays, or stops: the phone shows it, and lets it go on in the background.
+export function keepPlaying(on: boolean) {
+  wanted = on;
+  if (media) {
+    if (on) void media.play().catch(() => {});
+    else media.pause();
+  }
+  route();
+}
+
 // The clock notes are played on. `ahead`: asked for now, they are heard that much
 // later. Null: no sound yet.
 export function audioClock(): { now: number; ahead: number } | null {
