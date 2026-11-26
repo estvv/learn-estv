@@ -352,6 +352,27 @@ describe('auth and progress', () => {
     expect((await me.get('/api/pieces').expect(200)).body.data[0].cover).toBe(picked);
     await me.patch(`/api/pieces/${id}`).send({ cover: null }).expect(200);
     expect((await me.get('/api/pieces').expect(200)).body.data[0].cover).toBeNull();
+    // A cover from a file: kept, served by its own address, copied with the piece.
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+    const sent = `data:image/png;base64,${png.toString('base64')}`;
+    await me.patch(`/api/pieces/${id}`).send({ cover: 'data:text/html;base64,PGI+' }).expect(400);
+    await me.patch(`/api/pieces/${id}`).send({ cover: `data:image/png;base64,${'A'.repeat(700_000)}` }).expect(400);
+    const path = `/api/pieces/${id}/image?v=${sent.length}`;
+    expect((await me.patch(`/api/pieces/${id}`).send({ cover: sent }).expect(200)).body.data.cover).toBe(path);
+    expect((await me.get('/api/pieces').expect(200)).body.data[0].cover).toBe(path);
+    const image = await me.get(`/api/pieces/${id}/image`).expect(200).expect('Content-Type', 'image/png');
+    expect(Buffer.compare(image.body as Buffer, png)).toBe(0);
+    await other.get(`/api/pieces/${id}/image`).expect(404);
+    const withCover = (await me.get(`/api/pieces/${id}`).expect(200)).body.data;
+    const twin = (await me.post('/api/pieces').send({ subject: 'piano', piece: { title: 'Jumeau', artist: null, source: 'midi', bpm: null, notes: withCover.notes }, cover: withCover.cover }).expect(201)).body.data.id;
+    expect((await me.get(`/api/pieces/${twin}`).expect(200)).body.data.cover).toBe(`/api/pieces/${twin}/image?v=${sent.length}`);
+    await me.get(`/api/pieces/${twin}/image`).expect(200);
+    // Another's cannot be taken.
+    const stolen = (await other.post('/api/pieces').send({ subject: 'piano', piece: { title: 'Volé', artist: null, source: 'midi', bpm: null, notes: withCover.notes }, cover: withCover.cover }).expect(201)).body.data.id;
+    await other.get(`/api/pieces/${stolen}/image`).expect(404);
+    await me.delete(`/api/pieces/${twin}`).expect(200);
+    await other.delete(`/api/pieces/${stolen}`).expect(200);
+    await me.patch(`/api/pieces/${id}`).send({ cover: null }).expect(200);
     await me.patch(`/api/pieces/${id}`).send({ title: 'Do majeur' }).expect(200);
     await request(app).get('/api/pieces/cover?title=x').expect(401);
     await other.patch(`/api/pieces/${id}`).send({ artist: 'x' }).expect(404);

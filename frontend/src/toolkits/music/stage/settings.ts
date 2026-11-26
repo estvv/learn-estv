@@ -4,43 +4,60 @@ import { Observable } from '../../../lib/store';
 // How the falling notes look, on this device. All but the classic ones are played
 // in the dark, with the same light and the same sparks: only the notes change.
 
-export const STYLE_IDS = ['classic', 'glow', 'glass', 'outline', 'comet'] as const;
+export const STYLE_IDS = ['classic', 'glow', 'glass', 'outline', 'comet', 'plain'] as const;
 export type StyleId = (typeof STYLE_IDS)[number];
-// Of the notes, and of the light: the hands' own, one for the whole stage, or a
-// rainbow along the keyboard.
-export const MOOD_IDS = ['hands', 'white', 'emerald', 'ruby', 'sapphire', 'amethyst', 'gold', 'rainbow'] as const;
+// Of the notes, and of the light: the hands' own in the app, or chosen.
+export const MOOD_IDS = ['hands', 'custom'] as const;
 export type MoodId = (typeof MOOD_IDS)[number];
 export type Effects = 'off' | 'soft' | 'max';
+// What rises from the keys: clouds carried by one wind, or embers each on its way.
+export type Sparks = 'cloud' | 'embers';
+// How keys played look: lit from above, filled with the colour, or as they are.
+export type KeyLight = 'glow' | 'solid' | 'off';
 
 export interface StageSettings {
   style: StyleId;
   mood: MoodId;
   effects: Effects;
+  sparks: Sparks;
   // The line of light over the keyboard.
   led: boolean;
   // Notes light the keys up.
-  keys: boolean;
+  keys: KeyLight;
+  // Of each hand, when the mood is 'custom'.
+  custom: { left: string; right: string };
+  // Of the keys played and of the line of light; '' for that of the notes.
+  keyColor: string;
+  ledColor: string;
 }
 
-export const STYLE_NAMES: Record<StyleId, string> = { classic: 'Classique', glow: 'Lueur', glass: 'Verre', outline: 'Contour', comet: 'Traînée' };
+export const STYLE_NAMES: Record<StyleId, string> = { classic: 'Classique', glow: 'Lueur', glass: 'Verre', outline: 'Contour', comet: 'Traînée', plain: 'Sobre' };
 export const MOOD_NAMES: Record<MoodId, string> = {
-  hands: 'Mains', white: 'Blanc', emerald: 'Émeraude', ruby: 'Rubis', sapphire: 'Saphir', amethyst: 'Améthyste', gold: 'Or', rainbow: 'Arc-en-ciel',
+  hands: 'Classique', custom: 'Perso',
 };
 
 const KEY = 'learn.stage.v1';
-const DEFAULTS: StageSettings = { style: 'classic', mood: 'hands', effects: 'max', led: true, keys: true };
+const DEFAULTS: StageSettings = { style: 'classic', mood: 'hands', effects: 'max', sparks: 'cloud', led: true, keys: 'glow', custom: { left: '#e8e8e8', right: '#f5c542' }, keyColor: '', ledColor: '' };
 // Styles there used to be.
 const OLD = ['neon', 'crystal', 'fire', 'liquid', 'galaxy'];
 
+const HEX = /^#[0-9a-f]{6}$/i;
+const color = (v: unknown, otherwise: string) => (typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : otherwise);
+
 const one = <T extends string>(value: unknown, of: readonly T[], otherwise: T): T => (of.includes(value as T) ? (value as T) : otherwise);
 
-export function cleanedStage(s: Partial<StageSettings>): StageSettings {
+export function cleanedStage(s: Partial<Omit<StageSettings, 'keys' | 'custom'>> & { keys?: unknown; custom?: Partial<StageSettings['custom']> }): StageSettings {
   return {
     style: one(s.style, STYLE_IDS, OLD.includes(s.style as string) ? 'glow' : DEFAULTS.style),
     mood: one(s.mood, MOOD_IDS, DEFAULTS.mood),
     effects: one(s.effects, ['off', 'soft', 'max'], DEFAULTS.effects),
+    sparks: one(s.sparks, ['cloud', 'embers'], DEFAULTS.sparks),
     led: typeof s.led === 'boolean' ? s.led : DEFAULTS.led,
-    keys: typeof s.keys === 'boolean' ? s.keys : DEFAULTS.keys,
+    // Once on or off.
+    keys: s.keys === false ? 'off' : one(s.keys, ['glow', 'solid', 'off'], DEFAULTS.keys),
+    custom: { left: color(s.custom?.left, DEFAULTS.custom.left), right: color(s.custom?.right, DEFAULTS.custom.right) },
+    keyColor: color(s.keyColor, ''),
+    ledColor: color(s.ledColor, ''),
   };
 }
 

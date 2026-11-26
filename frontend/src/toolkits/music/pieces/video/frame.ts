@@ -1,4 +1,4 @@
-import type { LyricLine, PieceNote } from '@learn/shared';
+import { frenchName, noteName, type LyricLine, type PieceNote } from '@learn/shared';
 import type { Look } from '../../../../lib/appearance';
 import { stage } from '../../stage/settings';
 import type { NoteSource } from '../FallingNotes';
@@ -25,6 +25,8 @@ export interface Film {
   numbers?: ReadonlyMap<PieceNote, number>;
   // From when the video starts (seconds in the piece).
   start: number;
+  // Loaded beforehand (loadCover); null: none, or it would not come.
+  cover?: CanvasImageSource | null;
 }
 
 export class FrameMaker {
@@ -48,13 +50,15 @@ export class FrameMaker {
   private get layout() {
     const { w, h } = this;
     const portrait = this.options.format === 'portrait';
-    const keysH = Math.round(portrait ? h * 0.13 : h * 0.2);
-    return { notesH: h - keysH, keysH, unit: Math.min(w, h) / 1080 };
+    const keysH = Math.round(portrait ? h * 0.12 : h * 0.2);
+    // Above the notes: the cover and the title (only standing up).
+    const top = portrait && this.options.cover ? Math.round(w * 0.86) : 0;
+    return { top, notesH: h - keysH - top, keysH, unit: Math.min(w, h) / 1080 };
   }
 
   draw(ctx: Ctx, at: number) {
     const { w, h, film, options, look } = this;
-    const { notesH, keysH, unit } = this.layout;
+    const { top, notesH, keysH, unit } = this.layout;
     const styled = stage.get().style !== 'classic';
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
@@ -66,19 +70,22 @@ export class FrameMaker {
     const keyCtx = this.keys.getContext('2d');
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, w, notesH);
+    ctx.rect(0, top, w, notesH);
     ctx.clip();
-    this.painter.paint(ctx, w, notesH, film.player, { numbers: options.numbers ? film.numbers : undefined, keys: styled ? keyCtx : null, keysSize: [w, keysH] }, at);
+    ctx.translate(0, top);
+    this.painter.paint(ctx, w, notesH, film.player, { numbers: options.numbers ? film.numbers : undefined, keys: styled && stage.get().keys !== 'off' ? keyCtx : null, keysSize: [w, keysH] }, at);
     ctx.restore();
-    this.keyboard(ctx, notesH, keysH, styled);
+    this.keyboard(ctx, top + notesH, keysH, styled, unit);
 
     const pos = film.player.position;
+    if (options.cover) this.header(ctx, unit, styled);
     if (options.lyrics && this.sung.length) this.lyrics(ctx, pos, unit);
-    if (options.title) this.titleCard(ctx, pos - film.start, unit);
+    // The title is already at the top.
+    if (options.title && !options.cover) this.titleCard(ctx, pos - film.start, unit);
     if (options.logo || this.logo) this.watermark(ctx, unit);
   }
 
-  private keyboard(ctx: Ctx, y: number, kh: number, styled: boolean) {
+  private keyboard(ctx: Ctx, y: number, kh: number, styled: boolean, unit: number) {
     const { w, look } = this;
     const layout = this.painter.layout;
     const sounding = new Map<number, string>();
@@ -93,10 +100,24 @@ export class FrameMaker {
       ctx.fillStyle = !styled && sounding.has(m) ? sounding.get(m)! : '#f4f4f4';
       ctx.fillRect(b.x * w + 0.5, y, b.width * w - 1, kh);
     }
-    if (styled) {
+    if (styled && stage.get().keys !== 'off') {
       ctx.globalCompositeOperation = 'multiply';
       ctx.drawImage(this.keys, 0, y);
       ctx.globalCompositeOperation = 'source-over';
+    }
+    // Names at the foot of the white keys.
+    const names = this.options.keyNames;
+    if (names !== 'none') {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      for (const [m, b] of layout) {
+        if (b.black) continue;
+        const size = Math.min(b.width * w * (names === 'names' ? 0.42 : 0.62), 26 * unit);
+        if (size < 6) continue;
+        ctx.font = FONT(600, size);
+        ctx.fillStyle = !styled && sounding.has(m) ? '#ffffff' : '#8a8a8a';
+        ctx.fillText(names === 'names' ? frenchName(m) : noteName(m).replace(/\d+$/, ''), (b.x + b.width / 2) * w, y + kh - size * 0.5);
+      }
     }
     for (const [m, b] of layout) {
       if (!b.black) continue;
@@ -109,12 +130,43 @@ export class FrameMaker {
     ctx.fillRect(0, y, w, 2);
   }
 
+  // The cover in the middle, the title and the artist under it, from its left edge.
+  private header(ctx: Ctx, unit: number, styled: boolean) {
+    const { w } = this;
+    const portrait = this.options.format === 'portrait';
+    const cover = this.film.cover;
+    const size = portrait ? w * 0.5 : this.h * 0.15;
+    const x = portrait ? (w - size) / 2 : 36 * unit;
+    const y = portrait ? w * 0.09 : 36 * unit;
+    if (cover) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(x, y, size, size, 10 * unit);
+      ctx.clip();
+      ctx.drawImage(cover, x, y, size, size);
+      ctx.restore();
+    }
+    const light = styled || this.look.theme === 'dark';
+    const [tx, ty] = portrait ? [x, y + size + 54 * unit] : [cover ? x + size + 24 * unit : x, y + size * 0.38];
+    const room = portrait ? Math.max(size, w * 0.6) : w * 0.5;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = FONT(800, 40 * unit);
+    ctx.fillStyle = light ? '#ffffff' : '#171717';
+    ctx.fillText(this.film.title.toUpperCase(), tx, ty, room);
+    if (this.film.artist) {
+      ctx.font = FONT(500, 26 * unit);
+      ctx.fillStyle = light ? 'rgba(255, 255, 255, 0.7)' : 'rgba(23, 23, 23, 0.65)';
+      ctx.fillText(this.film.artist, tx, ty + 38 * unit, room);
+    }
+  }
+
   private lyrics(ctx: Ctx, pos: number, unit: number) {
     const now = sungAt(this.sung, pos);
     const line = this.sung[now];
     const next = this.sung[now + 1];
     const portrait = this.options.format === 'portrait';
-    const y = portrait ? this.h * 0.36 : this.layout.notesH * 0.14;
+    const y = this.layout.top + this.layout.notesH * (portrait ? 0.1 : 0.14) + (portrait ? 0 : this.options.cover ? this.h * 0.12 : 0);
     const big = 54 * unit;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -189,17 +241,19 @@ export class FrameMaker {
   }
 
   private watermark(ctx: Ctx, unit: number) {
+    // At the top right: the cover may be at the left.
     const pad = 36 * unit;
-    let x = pad;
     const size = 64 * unit;
     ctx.globalAlpha = 0.7;
-    if (this.logo?.complete && this.logo.naturalWidth) {
-      const width = (this.logo.naturalWidth / this.logo.naturalHeight) * size;
-      ctx.drawImage(this.logo, x, pad, width, size);
-      x += width + 16 * unit;
+    ctx.font = FONT(800, 46 * unit);
+    const text = this.options.logo ? ctx.measureText(this.options.logo).width : 0;
+    const picture = this.logo?.complete && this.logo.naturalWidth ? (this.logo.naturalWidth / this.logo.naturalHeight) * size : 0;
+    let x = this.w - pad - text - (picture && text ? 16 * unit : 0) - picture;
+    if (picture) {
+      ctx.drawImage(this.logo!, x, pad, picture, size);
+      x += picture + 16 * unit;
     }
     if (this.options.logo) {
-      ctx.font = FONT(800, 46 * unit);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#ffffff';
@@ -210,4 +264,19 @@ export class FrameMaker {
     }
     ctx.globalAlpha = 1;
   }
+}
+
+// Covers come from Deezer or Apple Music, which let them be drawn: a bigger one
+// is asked for, the small one if not.
+export async function loadCover(url: string | null | undefined): Promise<HTMLImageElement | null> {
+  if (!url) return null;
+  const big = url.replace(/\/\d+x\d+(-0{6}-80-0-0\.jpg)$/, '/1000x1000$1').replace(/\/\d+x\d+bb\./, '/1000x1000bb.');
+  const load = (src: string) => new Promise<HTMLImageElement | null>((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+  return (await load(big)) ?? (big === url ? null : await load(url));
 }

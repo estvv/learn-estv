@@ -9,18 +9,23 @@ import { useObservable } from '../../../../lib/store';
 import { ensureAudio } from '../../audio';
 import { clock } from '../PlayerControls';
 import type { PiecePlayer } from '../player';
-import { FrameMaker, type Film } from './frame';
-import { canFilm, film as filmIt, fileType, heardAs, type Filming } from './record';
-import { audioClock } from '../../audio';
-import { MAX_LOGO, setVideo, sizeOf, videoOptions } from './settings';
+import { FrameMaker, loadCover, type Film } from './frame';
+import { canEncode, encodeVideo, Stopped } from './encode';
+import { renderSound } from '../../audio';
+import type { Voice } from '../voice/store';
+import { scoreOf } from './sound';
+import { MAX_LOGO, setVideo, sizeOf, videoOptions, type KeyNames } from './settings';
 
-// A video of the piece as it plays here, to share. Filmed in real time.
-export function VideoModal({ player, base, range, onBefore, onAfter, onClose }: {
+// A video of the piece as it plays here, to share. Worked out picture by picture.
+export function VideoModal({ player, base, range, voice, cover: coverUrl, onBefore, onAfter, onClose }: {
   player: PiecePlayer;
   base: Omit<Film, 'player' | 'start'>;
   // What is filmed: the loop, or the whole piece.
   range: { start: number; end: number; name: string };
   // The piece is made ready (listen mode, no loop), then given back.
+  // Heard along, when on.
+  voice: Voice | null;
+  cover: string | null;
   onBefore(): void;
   onAfter(): void;
   onClose(): void;
@@ -28,12 +33,22 @@ export function VideoModal({ player, base, range, onBefore, onAfter, onClose }: 
   const options = useObservable(videoOptions);
   const colors = useObservable(look);
   const size = sizeOf(options);
-  const [filming, setFilming] = useState<Filming | null>(null);
-  const [position, setPosition] = useState(range.start);
+  // While made: how far (0 to 1), or the sound being prepared.
+  const [making, setMaking] = useState<{ share: number; sound: boolean } | null>(null);
+  const stop = useRef(false);
+  const filming = !!making;
   const [result, setResult] = useState<{ url: string; name: string; bytes: number } | null>(null);
   const [error, setError] = useState('');
   const preview = useRef<HTMLCanvasElement>(null);
-  const filmData = useMemo((): Film => ({ ...base, player, start: range.start }), [base, player, range.start]);
+  const [cover, setCover] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    let stale = false;
+    void loadCover(coverUrl).then((img) => !stale && setCover(img));
+    return () => {
+      stale = true;
+    };
+  }, [coverUrl]);
+  const filmData = useMemo((): Film => ({ ...base, player, start: range.start, cover }), [base, player, range.start, cover]);
 
   // A picture, a second into it.
   useEffect(() => {
@@ -59,44 +74,59 @@ export function VideoModal({ player, base, range, onBefore, onAfter, onClose }: 
     setError('');
     if (result) URL.revokeObjectURL(result.url);
     setResult(null);
+    stop.current = false;
     await ensureAudio().catch(() => {});
     onBefore();
-    player.seek(Math.max(0, range.start - 0.5));
-    const late = options.sound ? audioClock()?.ahead ?? 0 : 0;
-    const maker = new FrameMaker({ ...filmData, player: heardAs(player, late) }, options, colors, size[0], size[1]);
-    const f = filmIt(player, maker, size, { end: range.end, sound: options.sound, onProgress: setPosition });
-    setFilming(f);
-    const blob = await f.done;
-    setFilming(null);
-    onAfter();
-    if (!blob) return;
-    const mp4 = blob.type.includes('mp4');
-    setResult({ url: URL.createObjectURL(blob), name: `${base.title}${range.name ? ` - ${range.name}` : ''}.${mp4 ? 'mp4' : 'webm'}`.replace(/[\\/:*?"<>|]+/g, ' '), bytes: blob.size });
+    player.pause();
+    try {
+      // The sound first, all of it, then the pictures at its exact times.
+      let sound: AudioBuffer | null = null;
+      if (options.sound) {
+        setMaking({ share: 0, sound: true });
+        sound = await renderSound(await scoreOf(player.notes, range.start, range.end, player.rate, voice));
+      }
+      setMaking({ share: 0, sound: false });
+      const place = { position: range.start };
+      const source = { get position() { return place.position; }, rate: player.rate, notes: player.notes, state: { get: () => ({ expected: [], playing: true }) } };
+      const maker = new FrameMaker({ ...filmData, player: source }, options, colors, size[0], size[1]);
+      const blob = await encodeVideo(maker, size, {
+        from: range.start, end: range.end, rate: player.rate, sound,
+        onFrame: (p) => (place.position = p),
+        onProgress: (share) => setMaking({ share, sound: false }),
+        stopped: () => stop.current,
+      });
+      setResult({ url: URL.createObjectURL(blob), name: `${base.title}${range.name ? ` - ${range.name}` : ''}.mp4`.replace(/[\\/:*?"<>|]+/g, ' '), bytes: blob.size });
+    } catch (e) {
+      if (!(e instanceof Stopped)) setError(`Vidéo impossible : ${(e as Error).message}`);
+    } finally {
+      setMaking(null);
+      onAfter();
+    }
   };
 
   const total = range.end - range.start;
-  const supported = canFilm() && !!fileType();
+  const supported = canEncode();
 
   return (
-    <Modal title="Exporter en vidéo" subtitle={range.name ? `Partie ${range.name}` : 'Morceau entier'} onClose={() => (filming ? filming.stop() : onClose())} width="lg">
+    <Modal title="Exporter en vidéo" subtitle={range.name ? `Partie ${range.name}` : 'Morceau entier'} onClose={() => (filming ? (stop.current = true) : onClose())} width="lg">
       {!supported ? (
-        <p className="text-sm text-neutral-600">Ce navigateur ne sait pas enregistrer de vidéo. Utilise Chrome, Edge ou Firefox sur ordinateur.</p>
-      ) : filming ? (
+        <p className="text-sm text-neutral-600">Ce navigateur ne sait pas fabriquer de vidéo. Utilise Chrome ou Edge à jour sur ordinateur.</p>
+      ) : making ? (
         <div className="space-y-4">
-          <p className="text-sm text-neutral-600">Enregistrement en cours : <b>reste sur cet onglet</b>, sinon la vidéo saccade.</p>
+          <p className="text-sm text-neutral-600">{making.sound ? 'Préparation du son…' : 'Fabrication de la vidéo, image par image. Tu peux changer d’onglet : ça ne change rien au résultat.'}</p>
           <div className="h-2 overflow-hidden rounded-full bg-neutral-100">
-            <div className="h-full bg-neutral-900 transition-[width]" style={{ width: `${Math.min(100, ((position - range.start) / total) * 100)}%` }} />
+            <div className="h-full bg-neutral-900 transition-[width]" style={{ width: `${Math.round(making.share * 100)}%` }} />
           </div>
           <div className="flex items-center justify-between text-sm tabular-nums text-neutral-500">
-            <span>{clock(Math.max(0, position - range.start))} / {clock(total)}</span>
-            <button type="button" onClick={() => filming.stop()} className={secondaryButton}>Arrêter</button>
+            <span>{making.sound ? '' : `${Math.round(making.share * 100)} %`}</span>
+            <button type="button" onClick={() => (stop.current = true)} className={secondaryButton}>Arrêter</button>
           </div>
         </div>
       ) : (
         <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" onKeyDown={(e) => e.key !== 'Escape' && e.stopPropagation()}>
           <div className="space-y-4">
             <Field label="Format">
-              <Segmented<'landscape' | 'portrait'> full value={options.format} onChange={(format) => setVideo({ format })} options={[{ value: 'landscape', label: 'Paysage 16:9' }, { value: 'portrait', label: 'Vertical 9:16' }]} />
+              <Segmented<'landscape' | 'portrait'> full value={options.format} onChange={(format) => setVideo({ format })} options={[{ value: 'portrait', label: 'Vertical 9:16' }, { value: 'landscape', label: 'Paysage 16:9' }]} />
             </Field>
             <Field label="Qualité">
               <Segmented<720 | 1080> full value={options.quality} onChange={(quality) => setVideo({ quality })} options={[{ value: 1080, label: '1080p' }, { value: 720, label: '720p (plus léger)' }]} />
@@ -105,8 +135,12 @@ export function VideoModal({ player, base, range, onBefore, onAfter, onClose }: 
               <Toggle checked={options.sound} onChange={(sound) => setVideo({ sound })} label="Son du piano (et de la voix)" />
               {base.lyrics && <Toggle checked={options.lyrics} onChange={(lyrics) => setVideo({ lyrics })} label="Paroles" />}
               <Toggle checked={options.numbers} onChange={(numbers) => setVideo({ numbers })} label="Chiffres sur les notes" />
-              <Toggle checked={options.title} onChange={(title) => setVideo({ title })} label="Titre au début" />
+              <Toggle checked={options.cover} onChange={(c) => setVideo({ cover: c })} label={options.format === 'portrait' ? 'Pochette et titre en haut' : 'Pochette et titre en coin'} />
+              {!options.cover && <Toggle checked={options.title} onChange={(title) => setVideo({ title })} label="Titre au début" />}
             </div>
+            <Field label="Noms sur les touches">
+              <Segmented<KeyNames> full value={options.keyNames} onChange={(keyNames) => setVideo({ keyNames })} options={[{ value: 'letters', label: 'C D E' }, { value: 'names', label: 'Do Ré Mi' }, { value: 'none', label: 'Aucun' }]} />
+            </Field>
             <Field label="Logo">
               <div className="flex gap-2">
                 <input value={options.logo} maxLength={40} placeholder="Ton nom, dans un coin" onChange={(e) => setVideo({ logo: e.target.value })} className={`${inputClass} min-w-0 flex-1`} />
@@ -117,7 +151,7 @@ export function VideoModal({ player, base, range, onBefore, onAfter, onClose }: 
           <div className="space-y-3">
             <canvas ref={preview} aria-label="Aperçu" className={`mx-auto block rounded-lg border border-neutral-200 ${options.format === 'portrait' ? 'max-h-80 w-auto' : 'w-full'}`} />
             <p className="text-xs text-neutral-400">
-              {size[0]}×{size[1]}, {fileType().includes('mp4') ? 'MP4' : 'WebM'} · dure {clock(total)} à filmer : le morceau se joue pendant l’enregistrement. Le style des notes est celui des Réglages.
+              {size[0]}×{size[1]}, MP4, 30 images/s · {clock(total)} de morceau. Le style des notes est celui des Réglages.
             </p>
             {result ? (
               <div className="space-y-2 rounded-xl bg-emerald-50 p-3">

@@ -9,6 +9,8 @@ export interface Tone {
   light: string;
   hot: string;
   dark: string;
+  // A little darker: the sides of a satin note.
+  shade: string;
   // "r, g, b", for the see-through ones.
   rgb: string;
 }
@@ -22,6 +24,7 @@ export function tone(main: string): Tone {
       light: mix(main, '#ffffff', 0.6),
       hot: mix(main, '#ffffff', 0.18),
       dark: mix(main, '#000000', 0.4),
+      shade: mix(main, '#000000', 0.22),
       rgb: [1, 3, 5].map((i) => parseInt(main.slice(i, i + 2), 16)).join(', '),
     };
     // Colours being picked go through many.
@@ -43,24 +46,13 @@ export function hex(hue: number, saturation: number, lightness: number): string 
 
 // Far from the keyboard, then on it: notes warm up as they come.
 type Pair = readonly [far: string, near: string];
-export const MOODS: Record<Exclude<MoodId, 'hands' | 'rainbow'>, Pair> = {
-  white: ['#aab4d0', '#ffffff'],
-  emerald: ['#0fbf84', '#d6f56b'],
-  ruby: ['#c2185b', '#ff4b3e'],
-  sapphire: ['#3555ff', '#4fd8ff'],
-  amethyst: ['#6d3bff', '#ff7ad9'],
-  gold: ['#ff8a1f', '#ffe08a'],
-};
-
-// From the lowest key to the highest, once around.
-const rainbow = (midi: number): Pair => {
-  const hue = (((midi - 21) / 87) * 320 + 350) % 360;
-  return [hex(hue, 0.9, 0.54), hex((hue + 14) % 360, 1, 0.66)];
-};
 
 export function pairOf(mood: MoodId, hand: Hand | null, midi: number, hands: Record<Hand, string>): Pair {
-  if (mood === 'rainbow') return rainbow(midi);
-  if (mood !== 'hands') return MOODS[mood];
+  // Chosen: as it is when it sounds, dimmer far away.
+  if (mood === 'custom') {
+    const own = hands[hand ?? (midi >= 60 ? 'right' : 'left')];
+    return [mix(own, '#000000', 0.35), own];
+  }
   const own = hands[hand ?? (midi >= 60 ? 'right' : 'left')];
   return [own, mix(own, '#ffffff', 0.82)];
 }

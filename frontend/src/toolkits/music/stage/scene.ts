@@ -1,5 +1,6 @@
 import type { Hand } from '@learn/shared';
 import type { KeyBox } from '../keyGeometry';
+import { mix } from '../../../lib/appearance';
 import { alpha, pairOf, tone, warm } from './colors';
 import { drawParticles, light, vertical, type Box } from './draw';
 import { Particles } from './particles';
@@ -42,6 +43,8 @@ const STRIKE = 0.3;
 const HOLD = 26;
 // A flash for so many notes.
 const FLASH = 0.2;
+// Embers as a key is struck, and a second while it is held.
+const EMBERS = { strike: 16, hold: 16 };
 // Pictures slower than this ask for fewer sparks (seconds).
 const SLOW = 0.026;
 
@@ -78,10 +81,9 @@ export class Scene {
 
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
-    for (const [midi, b] of layout) if (midi % 12 === 0) ctx.fillRect(Math.round(b.x * w), 0, 1, h);
 
-    const pair = (n: SeenNote) => pairOf(settings.mood, n.hand, n.midi, pic.hands);
+    const hands = settings.mood === 'custom' ? settings.custom : pic.hands;
+    const pair = (n: SeenNote) => pairOf(settings.mood, n.hand, n.midi, hands);
     const now = new Map<object, number>();
     for (const lamp of this.lamps.values()) lamp.on = false;
     for (const n of pic.notes) {
@@ -100,6 +102,10 @@ export class Scene {
       const wide = Math.max(8, n.box.w);
       const age = this.time - since;
       // As many, whatever the number of pictures a second.
+      if (settings.sparks === 'embers') {
+        this.embers(x, h, wide, color, fresh ? some(EMBERS.strike * much) : some(EMBERS.hold * dt * much), fresh, scale);
+        continue;
+      }
       this.cloud(x, h, wide, color, some((age < STRIKE ? BURST * (1 - age / STRIKE) + HOLD : HOLD) * dt * much), age, scale);
       if (fresh && Math.random() < FLASH * much) {
         this.particles.add({ kind: 'flash', color, x: x + around() * wide, y: h - 6, vx: around() * 110 * scale, vy: -between(330, 560) * scale, size: between(5, 9) * scale, life: between(0.6, 1.1) });
@@ -120,8 +126,25 @@ export class Scene {
     this.particles.step(dt, scale);
     drawParticles(ctx, this.particles.all);
     if (settings.led) this.line(ctx, pic, settings, scale);
-    this.flares(ctx, pic, scale);
+    this.flares(ctx, pic, scale, settings.ledColor);
     ctx.globalAlpha = 1;
+  }
+
+  // Embers: a few bright sparks as the key is struck, then some that rise slowly
+  // while it is held, warmer than the note.
+  private embers(x: number, h: number, wide: number, color: string, count: number, fresh: boolean, scale: number) {
+    const warm = mix(color, '#ffb347', 0.3);
+    for (let i = 0; i < count; i++) {
+      const big = Math.random() < 0.14;
+      const quick = fresh && Math.random() < 0.5;
+      this.particles.add({
+        kind: 'ember', color: Math.random() < 0.3 ? color : warm,
+        x: x + around() * wide * 0.6, y: h - 4 - Math.random() * 8,
+        vx: around() * (quick ? 90 : 30) * scale, vy: -(quick ? between(220, 420) : between(90, 200)) * scale,
+        size: (big ? between(2.8, 4.2) : between(0.8, 1.9)) * Math.max(0.8, Math.min(1.3, scale)),
+        life: big ? between(1.2, 2.2) : between(2, 4),
+      });
+    }
   }
 
   // A cloud, thrown up as one: all its motes go nearly the same way.
@@ -158,17 +181,20 @@ export class Scene {
   // spreads above.
   private line(ctx: Ctx, pic: Picture, settings: StageSettings, scale: number) {
     const { w, h } = pic;
+    const own = settings.ledColor;
     const lamps = [...this.lamps].flatMap(([midi, lamp]) => {
       const x = this.at(pic, midi);
-      return x === null ? [] : [{ ...lamp, x }];
+      return x === null ? [] : [{ ...lamp, color: own || lamp.color, x }];
     });
+    const hands = settings.mood === 'custom' ? settings.custom : pic.hands;
     const rest = (x: number) => {
+      if (own) return own;
       const pitch = 21 + (x / w) * 87;
-      return pairOf(settings.mood, x < w / 2 ? 'left' : 'right', pitch, pic.hands)[1];
+      return pairOf(settings.mood, x < w / 2 ? 'left' : 'right', pitch, hands)[1];
     };
     ctx.globalCompositeOperation = 'lighter';
     // The light it gives, from one end to the other.
-    const parts = settings.mood === 'rainbow' ? 14 : settings.mood === 'hands' ? 8 : 4;
+    const parts = own ? 2 : 8;
     for (let i = 0; i <= parts; i++) {
       const x = (i / parts) * w;
       light(ctx, rest(x), x, h, (w / parts) * 1.8, 110 * scale, 0.3 + 0.04 * Math.sin(this.time * 1.7 + i));
@@ -223,11 +249,12 @@ export class Scene {
   }
 
   // Where notes go into the keys.
-  private flares(ctx: Ctx, pic: Picture, scale: number) {
+  private flares(ctx: Ctx, pic: Picture, scale: number, own: string) {
     ctx.globalCompositeOperation = 'lighter';
-    for (const [midi, lamp] of this.lamps) {
+    for (const [midi, { ...lamp }] of this.lamps) {
       const x = this.at(pic, midi);
       if (x === null) continue;
+      if (own) lamp.color = own;
       const hot = tone(lamp.color).hot;
       const strong = lamp.level * (0.55 + 0.45 * lamp.strike);
       light(ctx, hot, x, pic.h, 26 * scale, 18 * scale, strong);
@@ -238,16 +265,25 @@ export class Scene {
   }
 
   // Laid over the keyboard and multiplied with it: coloured where there is light.
-  drawKeys(ctx: Ctx, w: number, h: number, layout: ReadonlyMap<number, KeyBox>) {
+  // `solid`: the keys played take the whole colour. `own`: theirs, not the notes'.
+  drawKeys(ctx: Ctx, w: number, h: number, layout: ReadonlyMap<number, KeyBox>, solid = false, own = '') {
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = vertical(ctx, { x: 0, y: 0, w, h }, [[0, '#ffffff'], [0.3, '#f3f4f8'], [1, '#e0e2ea']]);
     ctx.fillRect(0, 0, w, h);
     for (const [midi, lamp] of this.lamps) {
       const key = layout.get(midi);
       if (!key) continue;
+      if (solid) {
+        // White keys take it; black ones, darker, a little.
+        ctx.globalAlpha = Math.min(1, lamp.level * 1.2);
+        ctx.fillStyle = own || lamp.color;
+        ctx.fillRect(key.x * w + (key.black ? 0 : 1), 0, key.width * w - (key.black ? 0 : 2), key.black ? h * 0.62 : h);
+        ctx.globalAlpha = 1;
+        continue;
+      }
       const x = (key.x + key.width / 2) * w;
       const wide = Math.max(70, key.width * w * 3.4);
-      light(ctx, lamp.color, x, h * 0.05, wide * 1.2, h, 0.85 * lamp.level);
+      light(ctx, own || lamp.color, x, h * 0.05, wide * 1.2, h, 0.85 * lamp.level);
     }
   }
 }

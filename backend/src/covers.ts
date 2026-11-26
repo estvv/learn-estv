@@ -95,6 +95,14 @@ export const catalogCover: CoverFinder = async (title, artist) => {
 // --- Cover chosen from a link -------------------------------------------------------
 
 // Covers are only taken from the catalogues' image servers.
+// A cover sent from the owner's own files, as a data URL (resized beforehand).
+export const MAX_UPLOADED_COVER = 600_000;
+export const isUploadedCover = (s: string) => s.length <= MAX_UPLOADED_COVER && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(s);
+// Where an uploaded cover is served; the list gives this, not the image. `v`
+// changes with the image, so that browsers do not show the one before.
+export const coverPath = (id: number, data: string) => `/api/pieces/${id}/image?v=${data.length}`;
+export const coverPathId = (s: string) => Number(/^\/api\/pieces\/(\d+)\/image(\?v=\d+)?$/.exec(s)?.[1] ?? NaN);
+
 export const isCatalogImage = (url: string) => /^https:\/\/([a-z0-9-]+\.)?(dzcdn\.net|mzstatic\.com)\//i.test(url);
 
 // A Deezer or Apple Music link (song, album or artist page) -> its cover.

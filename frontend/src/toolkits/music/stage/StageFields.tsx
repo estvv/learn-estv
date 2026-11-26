@@ -6,8 +6,7 @@ import { Toggle } from '../../../components/settings';
 import { useObservable } from '../../../lib/store';
 import { FallingNotes, type NoteSource } from '../pieces/FallingNotes';
 import { PianoKeyboard } from '../PianoKeyboard';
-import { MOODS } from './colors';
-import { MOOD_IDS, MOOD_NAMES, setStage, stage, STYLE_IDS, STYLE_NAMES, type Effects, type MoodId, type StyleId } from './settings';
+import { MOOD_IDS, MOOD_NAMES, setStage, stage, STYLE_IDS, STYLE_NAMES, type Effects, type KeyLight as KeyLightMode, type Sparks, type MoodId, type StyleId } from './settings';
 
 // What each looks like, on a button.
 const SWATCHES: Record<StyleId, CSSProperties> = {
@@ -16,11 +15,7 @@ const SWATCHES: Record<StyleId, CSSProperties> = {
   glass: { background: '#7d9bff3d', border: '1.5px solid #a9bdff', boxShadow: '0 0 10px #6f8dff66' },
   outline: { border: '2px solid #8ea6ff', boxShadow: '0 0 12px #6f8dffaa, inset 0 0 6px #6f8dff66' },
   comet: { background: 'linear-gradient(transparent, #7d9bff 60%, #ffffff)', borderRadius: 99, boxShadow: '0 6px 12px -2px #8ea6ffcc' },
-};
-const MOOD_SWATCH: Record<MoodId, string> = {
-  hands: 'linear-gradient(90deg, var(--color-hand-l) 50%, var(--color-hand-r) 50%)',
-  rainbow: 'linear-gradient(90deg, #ff4d4d, #ffd24d, #4dff88, #4dc3ff, #a64dff)',
-  ...(Object.fromEntries(Object.entries(MOODS).map(([id, [far, near]]) => [id, `linear-gradient(${far}, ${near})`])) as Record<keyof typeof MOODS, string>),
+  plain: { background: '#f5c542', borderRadius: 3 },
 };
 
 export function StageFields() {
@@ -49,31 +44,54 @@ export function StageFields() {
       {!plain && (
         <>
           <Field label="Couleurs">
-            <div className="grid grid-cols-4 gap-2">
-              {MOOD_IDS.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setStage({ mood: id })}
-                  aria-pressed={s.mood === id}
-                  className={`overflow-hidden rounded-lg border text-center text-[11px] font-medium transition-colors ${s.mood === id ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 text-neutral-700 hover:border-neutral-400'}`}
-                >
-                  <span className="block h-5" style={{ background: MOOD_SWATCH[id] }} />
-                  <span className="block truncate px-0.5 py-1">{MOOD_NAMES[id]}</span>
-                </button>
-              ))}
-            </div>
+            <Segmented<MoodId> full value={s.mood} onChange={(mood) => setStage({ mood })} options={MOOD_IDS.map((id) => ({ value: id, label: MOOD_NAMES[id] }))} />
           </Field>
+          {s.mood === 'custom' && (
+            <div className="flex gap-4">
+              <ColorInput label="Main gauche" value={s.custom.left} onChange={(left) => setStage({ custom: { ...s.custom, left } })} />
+              <ColorInput label="Main droite" value={s.custom.right} onChange={(right) => setStage({ custom: { ...s.custom, right } })} />
+            </div>
+          )}
           <Field label="Particules">
             <Segmented<Effects> full value={s.effects} onChange={(effects) => setStage({ effects })} options={[{ value: 'off', label: 'Aucune' }, { value: 'soft', label: 'Douces' }, { value: 'max', label: 'Max' }]} />
           </Field>
+          {s.effects !== 'off' && (
+            <Field label="Genre de particules">
+              <Segmented<Sparks> full value={s.sparks} onChange={(sparks) => setStage({ sparks })} options={[{ value: 'cloud', label: 'Nuées' }, { value: 'embers', label: 'Braises' }]} />
+            </Field>
+          )}
+          <Field label="Touches jouées">
+            <Segmented<KeyLightMode> full value={s.keys} onChange={(keys) => setStage({ keys })} options={[{ value: 'glow', label: 'Éclairées' }, { value: 'solid', label: 'Pleines' }, { value: 'off', label: 'Normales' }]} />
+          </Field>
+          {s.keys !== 'off' && <OwnColor label="Couleur des touches" value={s.keyColor} onChange={(keyColor) => setStage({ keyColor })} />}
           <div className="space-y-2">
             <Toggle checked={s.led} onChange={(led) => setStage({ led })} label="Ligne de LED au-dessus du clavier" />
-            <Toggle checked={s.keys} onChange={(keys) => setStage({ keys })} label="Les notes éclairent les touches" />
+            {s.led && <OwnColor label="Couleur des LED" value={s.ledColor} onChange={(ledColor) => setStage({ ledColor })} />}
           </div>
         </>
       )}
     </div>
+  );
+}
+
+function ColorInput({ label, value, onChange }: { label: string; value: string; onChange(v: string): void }) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-neutral-700">
+      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-7 w-7 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" />
+      {label}
+    </label>
+  );
+}
+
+// That of the notes, or one chosen ('' or a colour).
+function OwnColor({ label, value, onChange }: { label: string; value: string; onChange(v: string): void }) {
+  return (
+    <Field label={label}>
+      <div className="flex items-center gap-3">
+        <Segmented<'notes' | 'own'> value={value ? 'own' : 'notes'} onChange={(v) => onChange(v === 'own' ? value || '#ff7a1a' : '')} options={[{ value: 'notes', label: 'Des notes' }, { value: 'own', label: 'Choisie' }]} />
+        {value && <input type="color" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className="h-7 w-7 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" />}
+      </div>
+    </Field>
   );
 }
 
@@ -108,6 +126,6 @@ export function StagePreview() {
 // Over the keys: see Scene.drawKeys.
 export function KeyLight({ canvas }: { canvas: React.RefObject<HTMLCanvasElement | null> }) {
   const { style, keys } = useObservable(stage);
-  if (style === 'classic' || !keys) return null;
+  if (style === 'classic' || keys === 'off') return null;
   return <canvas ref={canvas} aria-hidden className="pointer-events-none absolute inset-0 z-20 h-full w-full mix-blend-multiply" />;
 }

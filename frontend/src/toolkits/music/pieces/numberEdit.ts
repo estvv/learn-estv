@@ -3,7 +3,8 @@ import type { BeatGrid } from './grid';
 import type { Part } from './numbers';
 
 // Changing an imported piece through its numbers: what one hand plays in one
-// column. The notes kept do not move by a hair; new ones land on the grid.
+// column. The notes kept do not move by a hair; new ones land with the other
+// hand's, or on the grid.
 
 const VELOCITY = 0.7;
 const MIN_DURATION = 0.05;
@@ -18,10 +19,13 @@ export function setStep(notes: PieceNote[], part: Part, grid: BeatGrid, hand: Ha
   if (!gone.size && !added.length) return notes;
 
   const at = part.beat + step / part.division;
-  const time = Math.max(0, here?.time ?? grid.toTime(at));
+  // Played with what the other hand plays in that column, not on the grid: the
+  // notes of a recording are a hair early or late.
+  const along = part.rows.filter((r) => r.hand !== hand).flatMap((r) => r.steps).find((s) => s.step === step);
+  const time = Math.max(0, here?.time ?? along?.time ?? grid.toTime(at));
   const beat = grid.toTime(at + 1) - grid.toTime(at);
   const next = steps.find((s) => s.step > step)?.time ?? Infinity;
-  const duration = Math.max(MIN_DURATION, here ? here.end - here.time : Math.min(beat, next - time) * 0.95);
+  const duration = Math.max(MIN_DURATION, here ? here.end - here.time : Math.min(along ? along.end - along.time : beat, (next - time) * 0.95));
   const like = here?.notes[0];
   return [
     ...notes.filter((n) => !gone.has(n)),

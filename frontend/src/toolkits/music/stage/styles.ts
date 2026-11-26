@@ -65,4 +65,11 @@ const comet: DrawNote = (ctx, b, t, lit) => {
   ctx.globalCompositeOperation = 'source-over';
 };
 
-export const STYLES: Record<Exclude<StyleId, 'classic'>, DrawNote> = { glow, glass, outline, comet };
+// Sober: one flat colour, barely rounded, no halo; a touch brighter as it sounds.
+const plain: DrawNote = (ctx, b, t, lit) => {
+  round(ctx, b, Math.min(4, b.w * 0.2));
+  ctx.fillStyle = lit > 0.5 ? t.hot : t.main;
+  ctx.fill();
+};
+
+export const STYLES: Record<Exclude<StyleId, 'classic'>, DrawNote> = { glow, glass, outline, comet, plain };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { keyLayout } from '../keyGeometry';
-import { hex, MOODS, pairOf, tone, warm } from './colors';
+import { hex, pairOf, tone, warm } from './colors';
 import { Particles, presence, wind, type Kind } from './particles';
 import { Scene, type Picture, type SeenNote } from './scene';
 import { cleanedStage, MOOD_IDS, STYLE_IDS, type StageSettings } from './settings';
@@ -38,7 +38,10 @@ const picture = (notes: SeenNote[], moving = true): Picture => ({ w: 800, h: 400
 describe('how the notes look', () => {
   it('is the classic way unless chosen otherwise', () => {
     expect(cleanedStage({}).style).toBe('classic');
-    expect(cleanedStage({ style: 'glass', led: false, effects: 'lots' as never, mood: 'gold' })).toMatchObject({ style: 'glass', led: false, effects: 'max', keys: true, mood: 'gold' });
+    expect(cleanedStage({ style: 'glass', led: false, effects: 'lots' as never, mood: 'custom' })).toMatchObject({ style: 'glass', led: false, effects: 'max', keys: 'glow', sparks: 'cloud', mood: 'custom' });
+    // Moods there used to be.
+    expect(cleanedStage({ mood: 'gold' as never }).mood).toBe('hands');
+    expect(cleanedStage({ custom: { left: 'red', right: '#AABBCC' }, keyColor: '#123456', ledColor: 'x' })).toMatchObject({ custom: { left: '#e8e8e8', right: '#aabbcc' }, keyColor: '#123456', ledColor: '' });
     expect(cleanedStage({ style: 'gone' as never, mood: 'gone' as never })).toMatchObject({ style: 'classic', mood: 'hands' });
     // Styles there used to be: still in the dark.
     expect(cleanedStage({ style: 'crystal' as never }).style).toBe('glow');
@@ -47,9 +50,7 @@ describe('how the notes look', () => {
   it('takes the colours of the hands, of a mood or of the keys', () => {
     expect(pairOf('hands', 'left', 60, hands)[0]).toBe('#ff0000');
     expect(pairOf('hands', null, 40, hands)[0]).toBe('#ff0000');
-    expect(pairOf('gold', 'left', 40, hands)).toEqual(MOODS.gold);
-    const keys = [21, 50, 80, 108].map((m) => pairOf('rainbow', 'left', m, hands)[0]);
-    expect(new Set(keys).size).toBe(4);
+    expect(pairOf('custom', 'left', 40, hands)[1]).toBe('#ff0000');
     for (const mood of MOOD_IDS) for (const m of [21, 60, 108]) for (const c of pairOf(mood, 'right', m, hands)) expect(c).toMatch(/^#[0-9a-f]{6}$/);
     expect([hex(0, 1, 0.5), hex(120, 1, 0.5), hex(240, 1, 0.5)]).toEqual(['#ff0000', '#00ff00', '#0000ff']);
     expect(tone('#336699').rgb).toBe('51, 102, 153');

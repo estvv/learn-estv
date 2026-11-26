@@ -610,14 +610,19 @@ function EditModal({ piece, folders, onClose, onSaved }: { piece: PieceSummary; 
     };
   }, [title, artist, link, piece]);
   const linkCover = link.trim() && !preview.searching ? preview.cover : null;
+  // Sent from a file: above all the rest.
+  const [uploaded, setUploaded] = useState<string | null>(null);
+  const file = useRef<HTMLInputElement>(null);
+  const shown = uploaded ?? preview.cover;
 
   const save = async () => {
     const meta: PieceMeta = { title: title.trim(), artist: artist.trim() || null, description: description.trim() || null, folder_id: folder, difficulty };
     if (!meta.title) return setError('Le titre ne peut pas être vide.');
-    if (link.trim() && !linkCover) return setError('Ce lien ne donne pas de pochette : colle le lien d’un morceau, d’un album ou d’un artiste Deezer ou Apple Music.');
+    if (!uploaded && link.trim() && !linkCover) return setError('Ce lien ne donne pas de pochette : colle le lien d’un morceau, d’un album ou d’un artiste Deezer ou Apple Music.');
     setSaving(true);
     try {
-      const { cover } = await piecesApi.update(piece.id, linkCover ? { ...meta, cover: linkCover } : meta);
+      const picked = uploaded ?? linkCover;
+      const { cover } = await piecesApi.update(piece.id, picked ? { ...meta, cover: picked } : meta);
       onSaved({ ...meta, cover });
     } catch (e) {
       setError((e as Error).message);
@@ -648,10 +653,12 @@ function EditModal({ piece, folders, onClose, onSaved }: { piece: PieceSummary; 
       >
         <div className="flex gap-4">
           <div className="w-24 shrink-0 text-center">
-            <div className={`transition-opacity ${preview.searching ? 'opacity-40' : ''}`}>
-              <Cover key={preview.cover} src={preview.cover} size="lg" />
+            <div className={`transition-opacity ${preview.searching && !uploaded ? 'opacity-40' : ''}`}>
+              <Cover key={shown} src={shown} size="lg" />
             </div>
-            {link.trim() && !preview.searching && !preview.cover ? (
+            {uploaded ? (
+              <button type="button" onClick={() => setUploaded(null)} className="mt-1.5 text-[11px] text-neutral-400 underline-offset-2 hover:text-neutral-900 hover:underline">Retirer l’image</button>
+            ) : link.trim() && !preview.searching && !preview.cover ? (
               <p className="mt-1.5 text-[11px] leading-tight text-red-600">Lien non reconnu</p>
             ) : (
               <button
@@ -665,6 +672,24 @@ function EditModal({ piece, folders, onClose, onSaved }: { piece: PieceSummary; 
                 {linking ? 'Annuler' : 'Changer'}
               </button>
             )}
+            {!uploaded && (
+              <button type="button" onClick={() => file.current?.click()} className="block w-full text-[11px] text-neutral-400 underline-offset-2 hover:text-neutral-900 hover:underline">
+                Importer une image
+              </button>
+            )}
+            <input
+              ref={file}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const [f] = e.target.files ?? [];
+                e.target.value = '';
+                if (!f) return;
+                setError('');
+                coverFromFile(f).then(setUploaded, (err: Error) => setError(err.message));
+              }}
+            />
           </div>
           <div className="min-w-0 flex-1 space-y-3">
             <Field label="Titre">
@@ -740,4 +765,32 @@ function FolderModal({ folder, parentName, onClose, onSave }: { folder: PieceFol
       </form>
     </Modal>
   );
+}
+
+// A cover from the owner's files: square, cut in its middle, small enough to keep.
+const COVER_SIDE = 800;
+const MAX_COVER = 550_000;
+async function coverFromFile(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('Image illisible : choisis un PNG, un JPEG ou un WebP.'));
+      i.src = url;
+    });
+    const crop = Math.min(img.naturalWidth, img.naturalHeight);
+    const side = Math.min(COVER_SIDE, crop);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = side;
+    canvas.getContext('2d')!.drawImage(img, (img.naturalWidth - crop) / 2, (img.naturalHeight - crop) / 2, crop, crop, 0, 0, side, side);
+    // PNG if it is light enough (transparency kept), else JPEG.
+    for (const [type, quality] of [['image/png', undefined], ['image/jpeg', 0.9], ['image/jpeg', 0.75], ['image/jpeg', 0.6]] as const) {
+      const data = canvas.toDataURL(type, quality);
+      if (data.length <= MAX_COVER && data.startsWith(`data:${type}`)) return data;
+    }
+    throw new Error('Image trop lourde, même réduite.');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

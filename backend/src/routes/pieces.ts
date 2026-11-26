@@ -2,7 +2,7 @@ import express, { Router } from 'express';
 import { pieceDifficulties, pieceDuration, pieceEditsSchema, pieceLevels, pieceLyricsSchema, pieceNumberings, pieceNoteSchema, pieceNumbersSchema, pieceSchema, pieceSectionsSchema, renderScore, scoreSchema, trimSilence, type Score } from '@learn/shared';
 import { z } from 'zod';
 import { requireUser } from '../auth/session.js';
-import { coverFromLink, isCatalogImage, type CoverFinder } from '../covers.js';
+import { coverFromLink, coverPath, coverPathId, isCatalogImage, isUploadedCover, MAX_UPLOADED_COVER, type CoverFinder } from '../covers.js';
 import type { DB } from '../db/index.js';
 import { LyricsError, type LyricsFinder } from '../lyrics.js';
 import { addTime, practiceOf } from '../practice.js';
@@ -14,7 +14,15 @@ import { addTime, practiceOf } from '../practice.js';
 const folderId = z.number().int().positive().nullable();
 const difficulty = z.enum(pieceDifficulties).nullable();
 const description = z.string().trim().max(200).nullable();
-const cover = z.string().url().max(500).refine(isCatalogImage).nullable();
+// From Deezer or Apple Music, sent from a file, or that of another piece of the
+// owner's (when copied).
+const cover = z.union([
+  z.string().url().max(500).refine(isCatalogImage),
+  z.string().max(MAX_UPLOADED_COVER).refine(isUploadedCover),
+  z.string().max(40).refine((s) => Number.isInteger(coverPathId(s))),
+]).nullable();
+// What is shown of a stored cover.
+const COVER_SQL = `CASE WHEN cover LIKE 'data:%' THEN '/api/pieces/' || id || '/image?v=' || length(cover) ELSE NULLIF(cover, '') END AS cover`;
 
 const createBody = z.object({
   subject: z.string().min(1).max(64),
@@ -76,6 +84,15 @@ const BACKFILL = 5;
 
 export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFinder) {
   const router = Router();
+  // A cover as it is kept: that of another piece is copied, if the owner's.
+  const storedCover = (sent: string | null, userId: number): string | null => {
+    if (!sent) return null;
+    const other = coverPathId(sent);
+    if (!Number.isInteger(other)) return sent;
+    const row = db.prepare('SELECT cover FROM pieces WHERE id = ? AND user_id = ?').get(other, userId) as { cover: string | null } | undefined;
+    return row?.cover || null;
+  };
+
   router.use(requireUser);
 
   const searching = new Set<number>();
@@ -207,15 +224,23 @@ export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFi
   router.get('/', (req, res) => {
     const subject = typeof req.query.subject === 'string' ? req.query.subject : null;
     const rows = db.prepare(`
-      SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, note_count, duration, created_at
+      SELECT id, subject_id AS subject, title, artist, description, ${COVER_SQL}, folder_id, difficulty, source, bpm, note_count, duration, created_at
       FROM pieces WHERE user_id = ? AND (? IS NULL OR subject_id = ?) ORDER BY created_at DESC
     `).all(req.user!.id, subject, subject);
     res.json({ success: true, data: rows });
     backfill(req.user!.id);
   });
 
+  // A cover sent from a file.
+  router.get('/:id/image', (req, res) => {
+    const row = db.prepare('SELECT cover FROM pieces WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user!.id) as { cover: string | null } | undefined;
+    const found = row?.cover && /^data:(image\/(?:png|jpeg|webp));base64,(.*)$/.exec(row.cover);
+    if (!found) return void res.status(404).end();
+    res.set('Cache-Control', 'private, no-cache').type(found[1]).send(Buffer.from(found[2], 'base64'));
+  });
+
   router.get('/:id', (req, res) => {
-    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, sections, score, edits, numbers, lyrics, COALESCE(numbering, 'order') AS numbering, whole, COALESCE(level, 'original') AS level, data FROM pieces WHERE id = ? AND user_id = ?`)
+    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, ${COVER_SQL}, folder_id, difficulty, source, bpm, tracks, sections, score, edits, numbers, lyrics, COALESCE(numbering, 'order') AS numbering, whole, COALESCE(level, 'original') AS level, data FROM pieces WHERE id = ? AND user_id = ?`)
       .get(Number(req.params.id), req.user!.id) as { data: string } & Record<string, unknown> | undefined;
     if (!row) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
     const { data, tracks, sections, score, edits, numbers, lyrics, whole, ...meta } = row;
@@ -235,7 +260,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFi
     const notes = [...own].sort((a, z) => a.time - z.time || a.midi - z.midi);
     const now = Date.now();
     const artist = artistOrNull(piece.artist);
-    const found = b.cover ?? (await findCover(piece.title, artist)) ?? '';
+    const found = (b.cover !== undefined ? storedCover(b.cover, req.user!.id) : null) ?? (await findCover(piece.title, artist)) ?? '';
     const json = (value: unknown) => (value ? JSON.stringify(value) : null);
     const r = db.prepare(`
       INSERT INTO pieces (
@@ -284,7 +309,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFi
     const artist = b.artist !== undefined ? artistOrNull(b.artist) : old.artist;
     let cover = old.cover;
     if (b.cover !== undefined) {
-      cover = b.cover ?? '';
+      cover = storedCover(b.cover, req.user!.id) ?? '';
       sets.push('cover = ?');
       values.push(cover);
     } else if (title !== old.title || artist !== old.artist) {
@@ -293,7 +318,7 @@ export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFi
       values.push(cover);
     }
     db.prepare(`UPDATE pieces SET ${sets.join(', ')} WHERE id = ? AND user_id = ?`).run(...values, Number(req.params.id), req.user!.id);
-    res.json({ success: true, data: { cover: cover || null } });
+    res.json({ success: true, data: { cover: cover?.startsWith('data:') ? coverPath(Number(req.params.id), cover) : cover || null } });
   });
 
   // Notes corrected in the editor: they replace the piece's. Cutting

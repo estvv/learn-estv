@@ -541,6 +541,8 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
       {video && (
         <VideoModal
           player={player}
+          voice={voice?.on ? voice : null}
+          cover={piece.cover ?? null}
           base={{ from, to, title: piece.title, artist: piece.artist ?? null, lyrics: lyrics && lyricsOn ? lyrics : null, numbers: numbered.numbers }}
           range={range.part ? { start: range.start, end: range.end, name: range.part } : { start, end, name: '' }}
           onBefore={() => {

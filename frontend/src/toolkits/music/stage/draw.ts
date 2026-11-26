@@ -69,6 +69,18 @@ export function drawParticles(ctx: Ctx, all: readonly Particle[]) {
   for (const p of all) {
     const a = presence(p);
     if (a <= 0.01) continue;
+    if (p.kind === 'ember') {
+      // A hot core, some light around; the big ones are soft.
+      const big = p.size > 2.6;
+      light(ctx, p.color, p.x, p.y, p.size * (big ? 5 : 4), p.size * (big ? 5 : 4), a * (big ? 0.4 : 0.8));
+      ctx.globalAlpha = a * (big ? 0.6 : 1);
+      ctx.fillStyle = big ? tone(p.color).hot : '#fff6e0';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.8, p.size * (big ? 0.7 : 0.7)), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      continue;
+    }
     if (p.kind === 'mote') {
       const r = p.size * 4;
       ctx.globalAlpha = a;

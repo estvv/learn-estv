@@ -25,6 +25,11 @@ describe('changing imported notes by numbers', () => {
     expect(setStep(notes, part, grid, 'left', 0, [40])).toHaveLength(4);
   });
 
+  it('adds a note with what the other hand plays in that column', () => {
+    const out = setStep(notes, part, grid, 'left', 2, [48]);
+    expect(out.find((x) => x.midi === 48)).toMatchObject({ time: 0.51, duration: 0.4, hand: 'left' });
+  });
+
   it('adds to a chord, empties a column, and leaves the rest alone', () => {
     expect(text(setStep(notes, part, grid, 'right', 0, [60, 64]))).toBe('60@0 64@0 62@0.51 64@1.5');
     expect(text(setStep(notes, part, grid, 'right', 0, []))).toBe('62@0.51 64@1.5');

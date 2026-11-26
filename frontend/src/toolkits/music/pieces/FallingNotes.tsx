@@ -26,6 +26,26 @@ export interface NoteSource {
 }
 
 // Draws the notes of a moment on a canvas: on the screen, or in a video.
+// Pixels between a note and the same key played again.
+const REPEAT_GAP = 5;
+// When each note's key is played next (seconds), for each list of notes.
+const nextTimes = new WeakMap<readonly PieceNote[], Map<PieceNote, number>>();
+export function nextOf(notes: readonly PieceNote[]): Map<PieceNote, number> {
+  let out = nextTimes.get(notes);
+  if (!out) {
+    out = new Map();
+    const last = new Map<number, number>();
+    for (let i = notes.length - 1; i >= 0; i--) {
+      const n = notes[i];
+      const t = last.get(n.midi);
+      if (t !== undefined && t > n.time) out.set(n, t);
+      last.set(n.midi, n.time);
+    }
+    nextTimes.set(notes, out);
+  }
+  return out;
+}
+
 export class NotesPainter {
   private scene = new Scene();
   private before: { at: number; position: number } | null = null;
@@ -47,7 +67,9 @@ export class NotesPainter {
       if (!keyBox || n.time > pos + span || n.time + n.duration < pos) return null;
       const pps = h / span;
       const bottom = h - (n.time - pos) * pps;
-      const top = bottom - n.duration * pps;
+      // Played again soon: a gap is seen between them, as in the editor.
+      const again = nextOf(player.notes).get(n);
+      const top = Math.min(bottom - Math.min(4, n.duration * pps), Math.max(bottom - n.duration * pps, again === undefined ? -Infinity : h - (again - pos) * pps + REPEAT_GAP));
       // Thin keys (a whole keyboard on a phone) keep almost all their width.
       const gap = keyBox.black ? Math.min(1, keyBox.width * w * 0.1) : keyBox.width * w * WHITE_INSET;
       const x = keyBox.x * w + gap;
@@ -58,13 +80,8 @@ export class NotesPainter {
     const chosen = stage.get();
     const classic = chosen.style === 'classic';
 
-    // Faint guide on every C.
     const colors = look.get();
     const line = (share: number) => (colors.theme === 'dark' ? `rgba(255,255,255,${share * 1.5})` : `rgba(0,0,0,${share})`);
-    if (classic) {
-      ctx.fillStyle = line(0.035);
-      for (const [midi, b] of layout) if (midi % 12 === 0) ctx.fillRect(b.x * w, 0, 1, h);
-    }
 
     const pos = player.position;
     const span = LOOKAHEAD * player.rate;
@@ -88,7 +105,7 @@ export class NotesPainter {
         moving: player.state.get().playing && pos > before.position,
         hands: { left: colors.left.strong, right: colors.right.strong },
       }, settings, (at - before.at) / 1000);
-      if (extra.keys && extra.keysSize) this.scene.drawKeys(extra.keys, extra.keysSize[0], extra.keysSize[1], layout);
+      if (extra.keys && extra.keysSize && chosen.keys !== 'off') this.scene.drawKeys(extra.keys, extra.keysSize[0], extra.keysSize[1], layout, chosen.keys === 'solid', chosen.keyColor);
     }
     this.before = { at, position: pos };
 

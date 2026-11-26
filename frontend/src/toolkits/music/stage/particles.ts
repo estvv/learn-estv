@@ -2,7 +2,7 @@
 // that each cloud turns and stretches as one; and now and then a flash. No more
 // than a fixed number of them: the oldest make room for the new ones.
 
-export type Kind = 'mote' | 'flash';
+export type Kind = 'mote' | 'flash' | 'ember';
 
 export interface Particle {
   kind: Kind;
@@ -37,6 +37,8 @@ export function wind(x: number, y: number, time: number): [number, number] {
 
 // How quickly they take the speed of the air, and lose their own.
 const CARRIED = 1.7;
+// Of embers, pushed up (pixels a second each second).
+const EMBER_RISE = 22;
 const RISE = 46;
 
 export class Particles {
@@ -65,6 +67,11 @@ export class Particles {
         const free = Math.min(1, p.age * 1.6);
         p.vx = p.vx * keep + (wx * free * scale) * (1 - keep);
         p.vy = p.vy * keep + ((wy * free - RISE) * scale) * (1 - keep);
+      } else if (p.kind === 'ember') {
+        // Hot air: up, slower and slower, swaying each its own way.
+        const sway = Math.sin(p.seed * 3 + p.age * (1.6 + (p.seed % 1.3))) * 34 * scale;
+        p.vx = p.vx * Math.exp(-1.8 * dt) + sway * dt * 3;
+        p.vy = p.vy * Math.exp(-0.9 * dt) - EMBER_RISE * scale * dt;
       } else {
         p.vx += Math.cos(p.seed) * 260 * scale * dt;
         p.vy *= Math.exp(-0.8 * dt);
@@ -81,5 +88,7 @@ export class Particles {
 export function presence(p: Particle): number {
   const t = p.age / p.life;
   if (p.kind === 'flash') return Math.sin(Math.PI * Math.min(1, t)) ** 1.5;
+  // Embers flicker hard, now and then nearly out.
+  if (p.kind === 'ember') return Math.min(1, p.age * 12) * (1 - t) ** 0.9 * (0.55 + 0.45 * Math.sin(p.seed * 5 + p.age * (6 + (p.seed % 9))) ** 2);
   return Math.min(1, p.age * 30) * (1 - t) ** 1.3 * (0.72 + 0.28 * Math.sin(p.seed * 7 + p.age * (9 + (p.seed % 7))));
 }

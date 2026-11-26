@@ -18,6 +18,12 @@ let tone: ToneModule | null = null;
 let sampler: Sampler | null = null;
 let loading: Promise<void> | null = null;
 
+const newSampler = (t: ToneModule) => new t.Sampler({
+  urls: Object.fromEntries(SAMPLE_NOTES.map((n) => [n, `${n.replace('#', 's')}.mp3`])),
+  baseUrl: '/samples/piano/',
+  release: 1.2,
+});
+
 function volumeDb(v: number) {
   return v <= 0 ? -Infinity : 20 * Math.log10(v);
 }
@@ -36,11 +42,7 @@ export function ensureAudio(): Promise<void> {
     // Many notes at once, or a voice over them, would saturate.
     tone.getDestination().chain(new tone.Limiter(-1));
     background(tone);
-    sampler = new tone.Sampler({
-      urls: Object.fromEntries(SAMPLE_NOTES.map((n) => [n, `${n.replace('#', 's')}.mp3`])),
-      baseUrl: '/samples/piano/',
-      release: 1.2,
-    }).toDestination();
+    sampler = newSampler(tone).toDestination();
     sampler.volume.value = volumeDb(inputSettings.get().volume);
     await tone.loaded();
     audioState.set('ready');
@@ -123,15 +125,32 @@ function route() {
   if (!document.hidden && tone.getContext().state !== 'running') void tone.start();
 }
 
-// Everything heard, as a stream: to be recorded with a video. Null: no sound yet.
-export function soundStream(): { stream: MediaStream; stop(): void } | null {
-  if (!tone || audioState.get() !== 'ready') return null;
-  const t = tone;
-  const ctx = t.getContext().rawContext as AudioContext;
-  if (typeof ctx.createMediaStreamDestination !== 'function') return null;
-  const out = ctx.createMediaStreamDestination();
-  t.connect(t.getDestination().output, out);
-  return { stream: out.stream, stop: () => t.disconnect(t.getDestination().output, out) };
+// --- Sound worked out ahead (videos) ------------------------------------------------
+
+// Notes to play, from 0 (seconds), and recordings to lay over them.
+export interface Score {
+  notes: { midi: number; time: number; duration: number; velocity: number }[];
+  clips: { buffer: AudioBuffer; when: number; from: number; volume: number }[];
+  length: number;
+}
+
+// The whole sound at once, not in real time: nothing can crackle.
+export async function renderSound({ notes, clips, length }: Score): Promise<AudioBuffer> {
+  await ensureAudio();
+  const t = tone!;
+  const rendered = await t.Offline(async () => {
+    t.getDestination().chain(new t.Limiter(-1));
+    const piano = newSampler(t).toDestination();
+    piano.volume.value = volumeDb(inputSettings.get().volume);
+    await t.loaded();
+    for (const n of notes) piano.triggerAttackRelease(noteName(n.midi), Math.max(0.05, n.duration), Math.max(0, n.time), n.velocity);
+    for (const c of clips) {
+      const gain = new t.Gain(c.volume).toDestination();
+      new t.ToneBufferSource({ url: c.buffer, fadeIn: 0.01 }).connect(gain).start(Math.max(0, c.when), Math.max(0, c.from));
+    }
+  // 48 kHz: what video sound is made at (Opus takes nothing else).
+  }, length, 2, 48_000);
+  return rendered.get()!;
 }
 
 // A piece plays, or stops: the phone shows it, and lets it go on in the background.
