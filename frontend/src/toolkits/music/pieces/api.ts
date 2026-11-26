@@ -22,12 +22,30 @@ export const piecesApi = {
   saveNotes: (id: number, change: { bpm?: number; notes: PieceNote[]; sections?: PieceSection[] | null; edits?: PieceEdits | null; lyrics?: LyricLine[] | null }) => api(`/pieces/${id}/notes`, { method: 'PUT', json: change }),
   // What changeOf (derive.ts) says to save.
   saveChange: (id: number, { notes, bpm, ...rest }: PieceChange): Promise<unknown> => (notes ? piecesApi.saveNotes(id, { notes, bpm, ...rest }) : piecesApi.update(id, rest)),
+  practice: (subject: string) => api<Practice>(`/pieces/practice?subject=${encodeURIComponent(subject)}`),
+  // `leaving`: sent even as the page goes.
+  addTime: (id: number, seconds: number, leaving = false) => api(`/pieces/${id}/time`, { method: 'POST', json: { seconds }, keepalive: leaving }),
+  takes: (id: number) => api<Best[]>(`/pieces/${id}/takes`),
+  // Answers the best of each part again.
+  addTake: (id: number, take: { level: PieceLevel; part: string; score: number; chords: number; wrong: number; rate: number }) =>
+    api<Best[]>(`/pieces/${id}/takes`, { method: 'POST', json: take }),
   findLyrics: (title: string, artist: string | null) => api<FoundLyrics[]>(`/pieces/lyrics?${new URLSearchParams({ title, ...(artist ? { artist } : {}) })}`),
   coverFromLink: (link: string, signal?: AbortSignal) =>
     api<{ cover: string | null }>(`/pieces/cover?${new URLSearchParams({ link })}`, { signal }),
   findCover: (title: string, artist: string | null, signal?: AbortSignal) =>
     api<{ cover: string | null }>(`/pieces/cover?${new URLSearchParams({ title, ...(artist ? { artist } : {}) })}`, { signal }),
 };
+
+// The best take of a part, at a level.
+export interface Best { level: PieceLevel; part: string; best: number; count: number }
+
+// Time spent playing, and days in a row (backend/src/practice.ts).
+export interface Practice {
+  today: number;
+  streak: { current: number; best: number };
+  days: { day: string; seconds: number }[];
+  pieces: { id: number; title: string; artist: string | null; cover: string | null; seconds: number; last: string; best: number | null }[];
+}
 
 export const foldersApi = {
   list: (subject: string) => api<PieceFolder[]>(`/pieces/folders?subject=${encodeURIComponent(subject)}`),

@@ -5,6 +5,7 @@ import { requireUser } from '../auth/session.js';
 import { coverFromLink, isCatalogImage, type CoverFinder } from '../covers.js';
 import type { DB } from '../db/index.js';
 import { LyricsError, type LyricsFinder } from '../lyrics.js';
+import { addTime, practiceOf } from '../practice.js';
 
 // Imported pieces are private to their owner: often copyrighted songs, never
 // shown to other accounts or guests. The owner sorts them into folders (in
@@ -193,6 +194,12 @@ export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFi
     }
   });
 
+  // Time spent playing, and days in a row.
+  router.get('/practice', (req, res) => {
+    const subject = typeof req.query.subject === 'string' ? req.query.subject : null;
+    res.json({ success: true, data: practiceOf(db, req.user!.id, subject) });
+  });
+
   router.get('/', (req, res) => {
     const subject = typeof req.query.subject === 'string' ? req.query.subject : null;
     const rows = db.prepare(`
@@ -321,6 +328,48 @@ export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFi
     const notes = notesOf(score);
     db.prepare('UPDATE pieces SET score = ?, bpm = ?, data = ?, note_count = ?, duration = ?, sections = NULL WHERE id = ?')
       .run(JSON.stringify(score), score.bpm, JSON.stringify(notes), notes.length, pieceDuration(notes), Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // --- Takes ---------------------------------------------------------------------
+
+  const takeBody = z.object({
+    level: z.enum(pieceLevels),
+    part: z.string().trim().max(60),
+    score: z.number().int().min(0).max(100),
+    chords: z.number().int().min(1).max(100_000),
+    wrong: z.number().int().min(0).max(1_000_000),
+    rate: z.number().min(0.1).max(4),
+  });
+  const owns = (id: number, userId: number) => !!db.prepare('SELECT 1 FROM pieces WHERE id = ? AND user_id = ?').get(id, userId);
+  const bests = (id: number) => db.prepare(`
+    SELECT level, part, MAX(score) AS best, COUNT(*) AS count FROM piece_takes WHERE piece_id = ? GROUP BY level, part
+  `).all(id);
+
+  router.get('/:id/takes', (req, res) => {
+    const id = Number(req.params.id);
+    if (!owns(id, req.user!.id)) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
+    res.json({ success: true, data: bests(id) });
+  });
+
+  router.post('/:id/takes', (req, res) => {
+    const id = Number(req.params.id);
+    const parsed = takeBody.safeParse(req.body);
+    if (!parsed.success) return void res.status(400).json({ success: false, error: 'Prise invalide' });
+    if (!owns(id, req.user!.id)) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
+    const t = parsed.data;
+    db.prepare('INSERT INTO piece_takes (user_id, piece_id, level, part, score, chords, wrong, rate, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(req.user!.id, id, t.level, t.part, t.score, t.chords, t.wrong, t.rate, Date.now());
+    res.status(201).json({ success: true, data: bests(id) });
+  });
+
+  // Sent every minute or so while playing.
+  router.post('/:id/time', (req, res) => {
+    const id = Number(req.params.id);
+    const parsed = z.object({ seconds: z.number().min(1).max(600) }).safeParse(req.body);
+    if (!parsed.success) return void res.status(400).json({ success: false, error: 'Durée invalide' });
+    if (!owns(id, req.user!.id)) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
+    addTime(db, req.user!.id, id, parsed.data.seconds);
     res.json({ success: true });
   });
 

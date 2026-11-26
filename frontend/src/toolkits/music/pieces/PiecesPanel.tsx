@@ -9,6 +9,8 @@ import { ErrorText, primaryButton, secondaryButton } from '../../../components/u
 import { TOUCH, useMedia } from '../../../lib/useMedia';
 import { foldersApi, piecesApi } from './api';
 import { ExtractModal } from './ExtractModal';
+import { PracticeStrip } from './PracticeStrip';
+import { downloadMidi } from './midiExport';
 import { foldersToReveal, type FolderKey } from './folderPath';
 import { ImportModal } from './ImportModal';
 import { CopyModal, PasteModal } from './PasteModal';
@@ -251,6 +253,7 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
               )}
             </div>
 
+            <PracticeStrip subject={subject} onPick={onPick} />
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
               <button
                 type="button"
