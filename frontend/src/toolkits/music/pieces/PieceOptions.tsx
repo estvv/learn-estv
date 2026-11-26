@@ -8,6 +8,8 @@ import { StageFields, StagePreview } from '../stage/StageFields';
 import { HandColorsField, ThemeField } from '../../../components/AppearanceFields';
 import { Field } from '../../../components/Field';
 import type { PlayMode } from './player';
+import { FROM, GOOD, progressive, setProgressive, STEP, TO } from './progressive';
+import { useObservable } from '../../../lib/store';
 import { TrackList } from './PlayerControls';
 
 export type HandChoice = 'both' | Hand;
@@ -88,7 +90,9 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
             </Field>
             <Field label="Vitesse">
               <Segmented<number> full value={rate} onChange={onRate} options={RATES.map((r) => ({ value: r, label: `${Math.round(r * 100)} %` }))} />
+              {!RATES.includes(rate) && <p className="mt-1 text-xs text-neutral-500">En ce moment : {Math.round(rate * 100)} %</p>}
             </Field>
+            <div className="sm:col-span-2"><ProgressiveField climbing={climbing} /></div>
             <div className="space-y-3 sm:col-span-2">
               <Toggle checked={numbered} onChange={onNumbered} label="Chiffres sur les notes et les touches" />
               {lyrics !== null && <Toggle checked={lyrics} onChange={onLyrics} label="Paroles au-dessus des notes" />}

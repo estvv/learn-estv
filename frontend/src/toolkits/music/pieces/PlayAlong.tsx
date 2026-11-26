@@ -372,6 +372,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
           onMode={pickMode}
           onLevel={pickLevel}
           onRate={pickRate}
+          climbing={climbing}
           onHand={setHand}
           onNumbered={toggleNumbers}
           onTracks={pickTracks}
