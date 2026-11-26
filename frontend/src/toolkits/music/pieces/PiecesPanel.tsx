@@ -469,6 +469,7 @@ export function PiecesPanel({ subject, current, listening, onCreate, onPick, onS
     const actions: Action[] = [
       { label: 'Modifier (titre, artiste, dossier, difficulté)', icon: <PencilIcon className="h-4 w-4" />, onClick: () => setEditing(p) },
       { label: 'Nouveau morceau avec des parties de celui-ci', icon: <ScissorsIcon />, onClick: () => setExtracting(p) },
+      { label: 'Télécharger en MIDI', icon: <DownloadIcon />, onClick: () => void piecesApi.get(p.id).then(downloadMidi, (e: Error) => setError(e.message)) },
       { label: 'Copier le morceau', icon: <CopyIcon />, onClick: () => void copyPieces([p]) },
       { label: 'Supprimer', icon: <TrashIcon />, danger: true, onClick: () => setRemoving(p) },
     ];
@@ -537,6 +538,12 @@ const FolderPlusIcon = () => (
 const CopyIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
     <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+  </svg>
+);
+
+const DownloadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+    <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
   </svg>
 );
 
