@@ -54,3 +54,10 @@ describe('a loop that goes faster', () => {
     expect(cleanedProgressive({ from: 0.8, to: 0.8 })).toEqual({ on: false, from: 0.8, to: 0.9 });
   });
 });
+
+describe('notes heard by a microphone', () => {
+  it('count at any octave close by', async () => {
+    const { matches } = await import('./player');
+    expect([matches(60, 60), matches(60, 72), matches(60, 36), matches(60, 61), matches(60, 96)]).toEqual([true, true, true, false, false]);
+  });
+});

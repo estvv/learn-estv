@@ -46,6 +46,9 @@ export class PiecePlayer {
   position = 0;
   rate = 1;
   mode: PlayMode = 'listen';
+  // Notes heard by the microphone: the right note at any octave, one note of the
+  // chord is enough, and nothing heard counts as wrong (one note at a time, echoes).
+  lenient = false;
   // Played over and over while set.
   loop: Loop | null = null;
 
@@ -222,6 +225,10 @@ export class PiecePlayer {
   private onInput(e: NoteEvent) {
     if (e.type !== 'on' || this.mode !== 'wait' || !this.waiting) return;
     const { expected, played } = this.state.get();
+    if (this.lenient && e.source === 'mic') {
+      if (expected.some((n) => matches(n.midi, e.midi))) this.done(expected.map((n) => n.midi));
+      return;
+    }
     if (!expected.some((n) => n.midi === e.midi)) {
       clearTimeout(this.wrongTimer);
       this.wrongs.push(e.midi);
@@ -230,18 +237,22 @@ export class PiecePlayer {
       return;
     }
     const nowPlayed = played.includes(e.midi) ? played : [...played, e.midi];
-    if (nowPlayed.length >= expected.length) {
-      // Chord complete: go on.
-      this.nextGroup++;
-      this.waiting = false;
-      const group = this.groups[this.nextGroup - 1];
-      this.tell({ kind: 'chord', result: { wrong: this.wrongs.length, waited: (performance.now() - this.arrived) / 1000 / this.rate, at: group.time, notes: unique(group.notes), keys: this.wrongs } });
-      this.state.set((s) => ({ ...s, expected: [], played: [] }));
-    } else {
-      this.state.set((s) => ({ ...s, played: nowPlayed }));
-    }
+    if (nowPlayed.length >= expected.length) this.done(nowPlayed);
+    else this.state.set((s) => ({ ...s, played: nowPlayed }));
+  }
+
+  // Chord complete: go on.
+  private done(_played: number[]) {
+    this.nextGroup++;
+    this.waiting = false;
+    const group = this.groups[this.nextGroup - 1];
+    this.tell({ kind: 'chord', result: { wrong: this.wrongs.length, waited: (performance.now() - this.arrived) / 1000 / this.rate, at: group.time, notes: unique(group.notes), keys: this.wrongs } });
+    this.state.set((s) => ({ ...s, expected: [], played: [] }));
   }
 }
+
+// The same note, an octave or two away: microphones often hear it so.
+export const matches = (wanted: number, heard: number) => (wanted - heard) % 12 === 0 && Math.abs(wanted - heard) <= 24;
 
 function unique(notes: PieceNote[]): { midi: number; hand: Hand | null }[] {
   const seen = new Map<number, Hand | null>();

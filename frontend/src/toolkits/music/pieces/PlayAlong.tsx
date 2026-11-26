@@ -20,6 +20,8 @@ import { useTakes } from './useTakes';
 import { nextRate, progressive } from './progressive';
 import { usePracticeClock } from './usePracticeClock';
 import { CoachModal } from './CoachModal';
+import { WaitChoice, type WaitInput } from './WaitChoice';
+import { disableMic, enableMic, micState } from '../input/mic';
 import { PartNumbers } from './PartNumbers';
 import { VideoModal } from './video/VideoModal';
 import { contextOf } from './coach';
@@ -57,6 +59,7 @@ const NAMED_KEY = 18;
 // Numbers on or off: kept on this device.
 const NUMBERS_KEY = 'learn.numbers.v1';
 const LYRICS_KEY = 'learn.lyrics.v1';
+const WAIT_KEY = 'learn.wait-input.v1';
 const PANEL_KEY = 'learn.numbers-panel.v1';
 
 // A piece with falling notes above the keyboard: listen to it, or let it wait
@@ -290,6 +293,35 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
   const pickMode = (m: PlayMode) => {
     setMode(m);
     player.setMode(m);
+    if (m === 'listen') applyInput('keys');
+  };
+  // Waiting: for which notes, asked each time.
+  const [asking, setAsking] = useState(false);
+  const [input, setInput] = useState<WaitInput>(() => readJson(WAIT_KEY, { input: 'keys' as WaitInput }).input);
+  const mic = useObservable(micState).status;
+  const micOn = mic === 'on';
+  const listening = mode === 'wait' && input === 'mic';
+  const ownMic = useRef(false);
+  const applyInput = (next: WaitInput) => {
+    player.lenient = next === 'mic';
+    if (next === 'mic' && !micOn) {
+      ownMic.current = true;
+      void enableMic();
+    }
+    // Only the microphone opened here is closed here.
+    if (next === 'keys' && ownMic.current) {
+      ownMic.current = false;
+      disableMic();
+    }
+  };
+  useEffect(() => () => {
+    if (ownMic.current) disableMic();
+  }, []);
+  const chooseMode = (m: PlayMode) => {
+    if (m === 'wait') {
+      setOptions(false);
+      setAsking(true);
+    } else pickMode(m);
   };
   const pickRate = (r: number) => {
     setRate(r);
@@ -432,7 +464,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
           notes={piece.notes}
           enabled={enabled}
           bigKeys={touch ? bigKeys : null}
-          onMode={pickMode}
+          onMode={chooseMode}
           onLevel={pickLevel}
           numbering={numbering}
           whole={whole}
@@ -493,6 +525,19 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
       {lyrics && lyricsOn && <LyricsBanner lines={lyrics} player={player} short={short} />}
 
       {partShown && numbered.parts[current] && <PartNumbers parts={numbered.parts} start={current} onClose={() => setPartShown(false)} />}
+      {asking && (
+        <WaitChoice
+          current={input}
+          onClose={() => setAsking(false)}
+          onPick={(next) => {
+            setAsking(false);
+            setInput(next);
+            writeJson(WAIT_KEY, { input: next });
+            pickMode('wait');
+            applyInput(next);
+          }}
+        />
+      )}
       {video && (
         <VideoModal
           player={player}
@@ -522,8 +567,10 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
           onClose={() => setCoach(null)}
         />
       )}
-      {mode === 'wait' && state.expected.length > 0 && (
-        <div className="pb-2 text-center text-xs text-neutral-500">Joue {state.expected.length > 1 ? 'les notes en surbrillance' : 'la note en surbrillance'} pour continuer</div>
+      {listening && mic !== 'on' ? (
+        <div className="pb-2 text-center text-xs text-red-600">{mic === 'denied' ? 'Micro refusé par le navigateur : autorise-le dans la barre d’adresse, ou passe en mode Clavier.' : 'Ouverture du micro…'}</div>
+      ) : mode === 'wait' && state.expected.length > 0 && (
+        <div className="pb-2 text-center text-xs text-neutral-500">{listening ? 'Micro : ' : ''}Joue {state.expected.length > 1 ? (listening ? 'une des notes en surbrillance' : 'les notes en surbrillance') : 'la note en surbrillance'} pour continuer</div>
       )}
 
       {big && part && (
