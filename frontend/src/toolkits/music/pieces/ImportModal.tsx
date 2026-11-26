@@ -14,6 +14,7 @@ import { importPdf, NotAScore, pdfPictures } from './importPdf';
 import { importVideo, NoKeyboard } from './importVideo';
 import { guessNames } from './names';
 import { snapPiece } from './snap';
+import { videoLink } from './youtube';
 import { DifficultyPicker, FolderSelect } from './pieceFields';
 import type { ScoreDraft } from './ScoreEditor';
 import { sourceLabels, type ImportResult, type PieceFolder } from './types';
@@ -53,6 +54,9 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
   // A tab being recorded.
   const [capture, setCapture] = useState<Capture | null>(null);
   const [seconds, setSeconds] = useState(0);
+  // A video opened in another tab, to be captured.
+  const [link, setLink] = useState('');
+  const [opened, setOpened] = useState(false);
   const open = useRef(true);
   useEffect(() => {
     open.current = true;
@@ -212,14 +216,47 @@ export function ImportModal({ subject, folders, onClose, onSaved, onNumbers }: {
         {capture ? (
           <div className="space-y-3 rounded-lg bg-neutral-50 p-4">
             <p className="text-sm text-neutral-700">
-              <b className="tabular-nums">{formatDuration(seconds)}</b> · Lance la vidéo depuis le début, sans pause et sans cacher son clavier, puis reviens ici.
+              <b className="tabular-nums">{formatDuration(seconds)}</b> · Dans l’onglet de la vidéo, lance-la depuis le début, sans pause et sans cacher son clavier, puis reviens ici.
             </p>
             <button type="button" onClick={() => capture.stop()} className={primaryButton}>Terminer et lire</button>
           </div>
         ) : !busy && !file && canCapture() && (
-          <button type="button" onClick={() => void record()} className={`${secondaryButton} w-full`}>
-            Capturer un onglet (YouTube, TikTok…)
-          </button>
+          <div className="space-y-2 rounded-lg border border-neutral-200 p-3">
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const url = videoLink(link);
+                if (!url) return setError('Ce n’est pas un lien de vidéo.');
+                setError('');
+                window.open(url, '_blank', 'noopener');
+                setOpened(true);
+              }}
+            >
+              <input
+                value={link}
+                onChange={(e) => {
+                  setLink(e.target.value);
+                  setOpened(false);
+                }}
+                placeholder="Lien d’une vidéo de notes qui tombent (YouTube, TikTok…)"
+                inputMode="url"
+                aria-label="Lien de la vidéo"
+                className={`${inputClass} min-w-0 flex-1`}
+              />
+              <button type="submit" disabled={!link.trim()} className={secondaryButton}>Ouvrir</button>
+            </form>
+            {opened ? (
+              <div className="space-y-2">
+                <p className="text-xs text-neutral-500">La vidéo est ouverte dans un autre onglet. Reviens ici, clique Capturer, choisis cet onglet dans la fenêtre du navigateur, puis lance la vidéo depuis le début.</p>
+                <button type="button" onClick={() => void record()} className={`${primaryButton} w-full`}>Capturer l’onglet de la vidéo</button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => void record()} className="w-full text-center text-xs text-neutral-500 underline hover:text-neutral-900">
+                ou capturer un onglet déjà ouvert
+              </button>
+            )}
+          </div>
         )}
         {busy && <p className="text-sm text-neutral-500">{progress}</p>}
 

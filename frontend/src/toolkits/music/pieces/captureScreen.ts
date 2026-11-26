@@ -12,7 +12,13 @@ export interface Capture {
 const TYPES = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
 
 export async function captureScreen(): Promise<Capture> {
-  const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30 } }, audio: true });
+  // Tabs first: that is where the video plays; this one is no use.
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: { frameRate: { ideal: 30 }, displaySurface: 'browser' },
+    audio: true,
+    selfBrowserSurface: 'exclude',
+    preferCurrentTab: false,
+  } as DisplayMediaStreamOptions);
   const mimeType = TYPES.find((t) => MediaRecorder.isTypeSupported(t));
   const recorder = new MediaRecorder(stream, {
     mimeType,
