@@ -3,6 +3,7 @@ import { Observable } from '../../../lib/store';
 import { ensureAudio, keepPlaying, playNote, releaseAll } from '../audio';
 import { inputBus, type NoteEvent } from '../input/bus';
 import { startBackgroundTimer } from './backgroundTimer';
+import type { TakeEvent } from './takes';
 
 export type PlayMode = 'listen' | 'wait';
 
@@ -58,6 +59,11 @@ export class PiecePlayer {
   private stopTimer: (() => void) | null = null;
   private wrongTimer: ReturnType<typeof setTimeout> | undefined;
   private unsubscribe: () => void;
+  // Wait mode: when it stopped on the chord, and the wrong keys since.
+  private arrived = 0;
+  private wrongs: number[] = [];
+  private watchers = new Set<(e: TakeEvent) => void>();
+  private wrapping = false;
 
   constructor(notes: PieceNote[], duration?: number) {
     this.load(notes);
@@ -118,7 +124,22 @@ export class PiecePlayer {
     else void this.play();
   }
 
+  // What is played in wait mode, chord after chord.
+  watch(fn: (e: TakeEvent) => void): () => void {
+    this.watchers.add(fn);
+    return () => void this.watchers.delete(fn);
+  }
+  private tell(e: TakeEvent) {
+    for (const fn of this.watchers) fn(e);
+  }
+
+  // Chords between two times.
+  chordsBetween(start: number, end: number): number {
+    return this.groups.filter((g) => g.time >= start - LOOP_SLACK && g.time < end - LOOP_SLACK).length;
+  }
+
   seek(seconds: number) {
+    if (!this.wrapping) this.tell({ kind: 'jump' });
     releaseAll();
     this.position = Math.max(this.start, Math.min(this.duration, seconds));
     this.nextNote = this.notes.findIndex((n) => n.time >= this.position);
@@ -160,11 +181,15 @@ export class PiecePlayer {
     if (!this.waiting) {
       const next = this.position + dt * this.rate;
       if (this.loop && next >= this.loop.end - LOOP_SLACK) {
+        if (this.mode === 'wait') this.tell({ kind: 'end' });
+        this.wrapping = true;
         this.seek(Math.max(0, this.loop.start - LOOP_SLACK));
+        this.wrapping = false;
       } else if (this.mode === 'wait') this.advanceWaiting(next);
       else this.advanceListening(next);
     }
     if (this.position >= this.duration + 0.5) {
+      if (this.mode === 'wait') this.tell({ kind: 'end' });
       this.pause();
       this.state.set((s) => ({ ...s, finished: true }));
       return false;
@@ -186,6 +211,8 @@ export class PiecePlayer {
       // Stop on the chord until the player plays it.
       this.position = group.time;
       this.waiting = true;
+      this.arrived = performance.now();
+      this.wrongs = [];
       this.state.set((s) => ({ ...s, expected: unique(group.notes), played: [] }));
       return;
     }
@@ -197,6 +224,7 @@ export class PiecePlayer {
     const { expected, played } = this.state.get();
     if (!expected.some((n) => n.midi === e.midi)) {
       clearTimeout(this.wrongTimer);
+      this.wrongs.push(e.midi);
       this.state.set((s) => ({ ...s, wrong: e.midi }));
       this.wrongTimer = setTimeout(() => this.state.set((s) => ({ ...s, wrong: null })), 400);
       return;
@@ -206,6 +234,8 @@ export class PiecePlayer {
       // Chord complete: go on.
       this.nextGroup++;
       this.waiting = false;
+      const group = this.groups[this.nextGroup - 1];
+      this.tell({ kind: 'chord', result: { wrong: this.wrongs.length, waited: (performance.now() - this.arrived) / 1000 / this.rate, at: group.time, notes: unique(group.notes), keys: this.wrongs } });
       this.state.set((s) => ({ ...s, expected: [], played: [] }));
     } else {
       this.state.set((s) => ({ ...s, played: nowPlayed }));
