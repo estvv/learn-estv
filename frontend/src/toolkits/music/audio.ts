@@ -35,6 +35,7 @@ export function ensureAudio(): Promise<void> {
     await tone.start();
     // Many notes at once, or a voice over them, would saturate.
     tone.getDestination().chain(new tone.Limiter(-1));
+    background(tone);
     sampler = new tone.Sampler({
       urls: Object.fromEntries(SAMPLE_NOTES.map((n) => [n, `${n.replace('#', 's')}.mp3`])),
       baseUrl: '/samples/piano/',

@@ -1,6 +1,6 @@
 import type { Hand, PieceNote } from '@learn/shared';
 import { Observable } from '../../../lib/store';
-import { ensureAudio, playNote, releaseAll } from '../audio';
+import { ensureAudio, keepPlaying, playNote, releaseAll } from '../audio';
 import { inputBus, type NoteEvent } from '../input/bus';
 import { startBackgroundTimer } from './backgroundTimer';
 
@@ -96,6 +96,7 @@ export class PiecePlayer {
     if (this.state.get().finished) this.seek(this.start);
     this.lastFrame = performance.now();
     this.state.set((s) => ({ ...s, playing: true }));
+    keepPlaying(true);
     cancelAnimationFrame(this.raf);
     this.raf = requestAnimationFrame(this.tick);
     // The music goes on while the tab is hidden.
@@ -108,6 +109,7 @@ export class PiecePlayer {
     this.stopTimer?.();
     this.stopTimer = null;
     releaseAll();
+    if (this.state.get().playing) keepPlaying(false);
     this.state.set((s) => ({ ...s, playing: false }));
   }
 
