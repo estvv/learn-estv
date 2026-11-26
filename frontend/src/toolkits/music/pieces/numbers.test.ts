@@ -8,6 +8,36 @@ const grid = BeatGrid.regular(0, 0.5);
 const text = (notes: PieceNote[]) => partText(numberPiece(notes, [], grid).parts[0]);
 
 describe('numbers', () => {
+  describe('other ways to number', () => {
+    const notes = [n(50, 0), n(52, 1), n(60, 4), n(50, 5), n(52, 8), n(50, 9), n(53, 10), n(72, 0, 'right'), n(67, 1, 'right'), n(76, 9, 'right')];
+    const sections = [{ start: 0, end: 2, label: 'A' }, { start: 2, end: 4, label: 'B' }, { start: 4, end: 6, label: 'A' }];
+    const own = new Map([['A', [{ hand: 'left' as const, midi: 52, number: 9 }]]]);
+    const of = (given: Parameters<typeof numberPiece>[3]) => {
+      const { numbers } = numberPiece(notes, sections, grid, given);
+      return notes.map((x) => numbers.get(x));
+    };
+
+    it('by position, each hand from its lowest key, part by part', () => {
+      // A (both times): left 50 52 53, right 67 72 76. B: left 50 60.
+      expect(of({ numbering: 'hand' })).toEqual([1, 2, 2, 1, 2, 1, 3, 2, 1, 3]);
+    });
+
+    it('by position on the whole keyboard, the same in every part', () => {
+      expect(of({ numbering: 'fixed' })).toEqual(notes.map((x) => x.midi - 20));
+    });
+
+    it('without parts: one count for the whole piece', () => {
+      expect(of({ whole: true })).toEqual([1, 2, 3, 1, 2, 1, 4, 1, 2, 3]);
+      expect(of({ whole: true, numbering: 'hand' })).toEqual([1, 2, 4, 1, 2, 1, 3, 2, 1, 3]);
+    });
+
+    it('leaves the owner’s numbers for the usual way', () => {
+      expect(of({ keys: own })[1]).toBe(9);
+      expect(of({ keys: own, numbering: 'hand' })[1]).toBe(2);
+      expect(of({ keys: own, whole: true })[1]).toBe(2);
+    });
+  });
+
   it('numbers keys in the order they are first pressed', () => {
     // G Bb D, F A C, Eb G Bb: the G and the Bb come back with their number.
     const keys = [55, 58, 62, 53, 57, 60, 51, 55, 58];

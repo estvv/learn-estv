@@ -1,4 +1,4 @@
-import type { LyricLine, Piece, PieceDifficulty, PieceEdits, PieceLevel, PieceNumber, PieceSection, Score } from '@learn/shared';
+import type { LyricLine, Piece, PieceNumbering, PieceDifficulty, PieceEdits, PieceLevel, PieceNumber, PieceSection, Score } from '@learn/shared';
 
 export interface ImportResult extends Piece {
   // Things the user should know about the conversion.
@@ -37,6 +37,9 @@ export interface StoredPiece extends Piece {
   numbers?: PieceNumber[] | null;
   // Changes made by hand to the easier levels (see levelEdits.ts).
   edits?: PieceEdits | null;
+  // How the player numbers keys; `whole`: across parts (see numbers.ts).
+  numbering?: PieceNumbering;
+  whole?: boolean;
   // Sung along (see lyrics.ts).
   lyrics?: LyricLine[] | null;
   // Pieces written by hand; null: imported.

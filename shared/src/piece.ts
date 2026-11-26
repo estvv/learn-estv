@@ -69,6 +69,11 @@ export const pieceLyricsSchema = z.array(z.object({
 })).max(500);
 export type LyricLine = z.infer<typeof pieceLyricsSchema>[number];
 
+// How keys get their numbers in the player: in the order they are first played,
+// from the lowest key played by each hand, or the same for each key of the piano.
+export const pieceNumberings = ['order', 'hand', 'fixed'] as const;
+export type PieceNumbering = (typeof pieceNumberings)[number];
+
 // Changes made by hand to an easier level, kept apart from the piece's notes.
 export const pieceLevelEditSchema = z.object({
   removed: z.array(z.object({ midi: z.number().int().min(0).max(127), time: z.number().min(0) })).max(10_000),

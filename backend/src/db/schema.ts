@@ -146,6 +146,10 @@ CREATE TABLE IF NOT EXISTS pieces (
   sections TEXT,
   -- Numbers given to keys by hand, JSON [{ label, hand, midi, number }].
   numbers TEXT,
+  -- How the player numbers keys (order, hand, fixed; NULL: order), and whether
+  -- across parts (whole = 1).
+  numbering TEXT,
+  whole INTEGER,
   -- Lyrics, JSON [{ time, text }], times in seconds.
   lyrics TEXT,
   -- Changes made by hand to the easier levels, JSON { simplified?, melody? }.
@@ -160,6 +164,31 @@ CREATE TABLE IF NOT EXISTS pieces (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pieces_user ON pieces (user_id, subject_id);
+
+-- Pieces played through in wait mode: the piece, or the parts looped (part, by
+-- their letters; '' for the whole piece), at a level.
+CREATE TABLE IF NOT EXISTS piece_takes (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  piece_id INTEGER NOT NULL REFERENCES pieces(id) ON DELETE CASCADE,
+  level TEXT NOT NULL,
+  part TEXT NOT NULL,
+  score INTEGER NOT NULL,
+  chords INTEGER NOT NULL,
+  wrong INTEGER NOT NULL,
+  rate REAL NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_piece_takes ON piece_takes (piece_id, level, part);
+
+-- Seconds spent playing a piece, each day (in the owner's time zone).
+CREATE TABLE IF NOT EXISTS piece_time (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  piece_id INTEGER NOT NULL REFERENCES pieces(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  seconds INTEGER NOT NULL,
+  PRIMARY KEY (user_id, piece_id, day)
+);
 
 CREATE TABLE IF NOT EXISTS step_progress (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

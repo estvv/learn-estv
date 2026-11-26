@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import type { Hand, PieceLevel, PieceNote, PieceTrack } from '@learn/shared';
+import type { Hand, PieceLevel, PieceNote, PieceNumbering, PieceTrack } from '@learn/shared';
 import { PencilIcon, PlusIcon } from '../../../components/icons';
 import { Modal } from '../../../components/Modal';
 import { Segmented } from '../../../components/Segmented';
@@ -21,7 +21,7 @@ type Tab = 'play' | 'look' | 'edit';
 let lastTab: Tab = 'play';
 
 // Everything that is not needed while playing, in a window.
-export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onExtract, lyrics, onLyrics, onKaraoke, voice, onVoice, onVoiceFile, onClose }: {
+export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tracks, notes, enabled, bigKeys, onMode, onLevel, onRate, onHand, onNumbered, onTracks, onBigKeys, onEdit, onEditNumbers, onExtract, lyrics, onLyrics, onKaraoke, voice, onVoice, onVoiceFile, onMidi, onCoach, onVideo, climbing, numbering, whole, onNumbering, onClose }: {
   mode: PlayMode;
   level: PieceLevel;
   rate: number;
@@ -55,6 +55,16 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
   voice: { on: boolean; volume: number } | null;
   onVoice(patch: Partial<{ on: boolean; volume: number }>): void;
   onVoiceFile(): void;
+  // Downloads it, as it is played.
+  onMidi(): void;
+  onCoach(): void;
+  onVideo(): void;
+  // How keys get their numbers.
+  numbering: PieceNumbering;
+  whole: boolean;
+  onNumbering(change: { numbering?: PieceNumbering; whole?: boolean }): void;
+  // The tempo goes up by itself: a loop, in wait mode.
+  climbing: boolean;
   onClose(): void;
 }) {
   const [tab, setTab] = useState<Tab>(lastTab);
@@ -95,6 +105,15 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
             <div className="sm:col-span-2"><ProgressiveField climbing={climbing} /></div>
             <div className="space-y-3 sm:col-span-2">
               <Toggle checked={numbered} onChange={onNumbered} label="Chiffres sur les notes et les touches" />
+              {numbered && (
+                <div className="space-y-2 rounded-xl border border-neutral-200 p-3">
+                  <Field label="Numéros" hint={NUMBERING_HINTS[numbering]}>
+                    <Segmented<PieceNumbering> full value={numbering} onChange={(n) => onNumbering({ numbering: n })} options={[{ value: 'order', label: 'Ordre' }, { value: 'hand', label: 'Position (par main)' }, { value: 'fixed', label: 'Position fixe' }]} />
+                  </Field>
+                  <Toggle checked={whole} onChange={(w) => onNumbering({ whole: w })} label="Sans parties : une seule suite pour tout le morceau" />
+                  {(numbering !== 'order' || whole) && <p className="text-xs text-neutral-400">Tes propres numéros sont mis de côté, et reviennent en « Ordre » avec les parties.</p>}
+                </div>
+              )}
               {lyrics !== null && <Toggle checked={lyrics} onChange={onLyrics} label="Paroles au-dessus des notes" />}
               {voice && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -152,6 +171,57 @@ export function PieceOptions({ mode, level, rate, hand, bothHands, numbered, tra
         )}
       </div>
     </Modal>
+  );
+}
+
+const VideoIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+    <rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />
+  </svg>
+);
+
+const ChatIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+    <path d="M5 18.5 3.5 21l.5-4A8 8 0 1 1 7 19.5Z" /><path d="M8.5 11h.01M12 11h.01M15.5 11h.01" />
+  </svg>
+);
+
+const DownloadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+    <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+  </svg>
+);
+
+const NUMBERING_HINTS: Record<PieceNumbering, string> = {
+  order: 'La première touche jouée = 1, la suivante = 2…',
+  hand: 'Dans chaque main, la touche la plus grave jouée = 1, puis vers l’aigu.',
+  fixed: 'Chaque touche du piano a toujours le même numéro : la plus grave = 1, la plus aiguë = 88.',
+};
+
+function ProgressiveField({ climbing }: { climbing: boolean }) {
+  const p = useObservable(progressive);
+  const pct = (r: number) => `${Math.round(r * 100)} %`;
+  return (
+    <div className="rounded-xl border border-neutral-200 p-3">
+      <Toggle checked={p.on} onChange={(on) => setProgressive({ on })} label="Tempo progressif" />
+      <p className="mt-1 text-xs text-neutral-500">
+        {p.on && !climbing
+          ? 'S’active sur une boucle, en mode Attente.'
+          : `Une boucle commence lentement et accélère de ${Math.round(STEP * 100)} % après chaque passage noté ${GOOD} ou plus.`}
+      </p>
+      {p.on && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-neutral-600">
+          De
+          <select value={p.from} onChange={(e) => setProgressive({ from: Number(e.target.value) })} aria-label="Tempo de départ" className="rounded-lg border border-neutral-200 bg-white px-2 py-1">
+            {FROM.map((r) => <option key={r} value={r}>{pct(r)}</option>)}
+          </select>
+          à
+          <select value={p.to} onChange={(e) => setProgressive({ to: Number(e.target.value) })} aria-label="Tempo visé" className="rounded-lg border border-neutral-200 bg-white px-2 py-1">
+            {TO.filter((r) => r > p.from).map((r) => <option key={r} value={r}>{pct(r)}</option>)}
+          </select>
+        </div>
+      )}
+    </div>
   );
 }
 

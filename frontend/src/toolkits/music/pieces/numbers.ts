@@ -1,4 +1,4 @@
-import type { Hand, PieceNote, PieceNumber, Score } from '@learn/shared';
+import type { Hand, PieceNote, PieceNumber, PieceNumbering, Score } from '@learn/shared';
 import { BeatGrid, BEATS_PER_BAR, CHORD_WINDOW } from './grid';
 import type { Section } from './sections';
 import { handOf } from './simplify';
@@ -63,7 +63,14 @@ export interface Given {
   keys?: ReadonlyMap<string, Key[]>;
   // The last part stops at its end instead of after its last note.
   exact?: boolean;
+  // How numbers are given (the order by default); `whole`: one count for the
+  // whole piece rather than one for each letter.
+  numbering?: PieceNumbering;
+  whole?: boolean;
 }
+
+// The lowest key = 1.
+export const FIXED_FROM = 20;
 
 // Pieces written by hand keep the numbers of their owner.
 export const givenByScore = (score: Score): Given => ({
@@ -96,7 +103,25 @@ export function numberPiece(notes: PieceNote[], sections: Section[], grid: BeatG
     bySpan[current].push(n);
   }
 
+  const numbering = given.numbering ?? 'order';
+  // The owner's numbers are for the usual way only.
+  const own = numbering === 'order' && !given.whole ? given.keys : undefined;
+  const scopeOf = (label: string, hand: Hand) => `${given.whole ? '*' : label} ${hand}`;
+  // From the lowest key: every key of the scope is known beforehand.
+  const lowest = new Map<string, number[]>();
+  if (numbering === 'hand') {
+    spans.forEach((span, i) => {
+      for (const n of bySpan[i]) {
+        const id = scopeOf(span.label, handOf(n));
+        lowest.set(id, [...(lowest.get(id) ?? []), n.midi]);
+      }
+    });
+  }
   const known = new Map<string, Map<number, number>>(); // letter and hand -> key -> number
+  const start = (id: string, label: string, hand: Hand): Map<number, number> => {
+    if (numbering === 'hand') return new Map([...new Set(lowest.get(id) ?? [])].sort((a, b) => a - b).map((m, k) => [m, k + 1]));
+    return new Map((own?.get(label) ?? []).filter((k) => k.hand === hand).map((k) => [k.midi, k.number]));
+  };
   const parts = spans.map((span, i): Part => {
     const own = bySpan[i];
     const beat = firstBeats[i];
@@ -115,14 +140,14 @@ export function numberPiece(notes: PieceNote[], sections: Section[], grid: BeatG
     for (const hand of HANDS) {
       const played = own.filter((n) => handOf(n) === hand);
       if (!played.length) continue;
-      const id = `${span.label} ${hand}`;
-      const numbered = known.get(id) ?? new Map((given.keys?.get(span.label) ?? []).filter((k) => k.hand === hand).map((k) => [k.midi, k.number]));
+      const id = scopeOf(span.label, hand);
+      const numbered = known.get(id) ?? start(id, span.label, hand);
       known.set(id, numbered);
 
       const steps: Step[] = [];
       for (const chord of chords(played, (n) => Math.min(columns - 1, column(n)), division, beats)) {
         for (const n of chord.notes) {
-          if (!numbered.has(n.midi)) numbered.set(n.midi, freeNumber(numbered.values()));
+          if (!numbered.has(n.midi)) numbered.set(n.midi, numbering === 'fixed' ? n.midi - FIXED_FROM : freeNumber(numbered.values()));
           numbers.set(n, numbered.get(n.midi)!);
         }
         const values = [...new Set(chord.notes.map((n) => numbered.get(n.midi)!))];
@@ -141,7 +166,7 @@ export function numberPiece(notes: PieceNote[], sections: Section[], grid: BeatG
       const used = new Set(played.map((n) => n.midi));
       for (const [midi, number] of numbered) if (used.has(midi)) keys.push({ hand, midi, number });
     }
-    if (given.keys) keys.sort((a, b) => (a.hand === b.hand ? a.number - b.number : 0));
+    if (own || numbering !== 'order') keys.sort((a, b) => (a.hand === b.hand ? a.number - b.number : 0));
     return { label: span.label, start: span.start, end: span.end, division, columns, beat, rows, keys };
   });
   return { parts, numbers };

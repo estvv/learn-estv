@@ -1,4 +1,4 @@
-import { isBlack, pieceDuration, type Hand, type PieceLevel, type PieceSection } from '@learn/shared';
+import { isBlack, pieceDuration, type PieceNumbering, type Hand, type PieceLevel, type PieceSection } from '@learn/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RepeatIcon, ShuffleIcon } from '../../../components/icons';
 import { readJson, writeJson } from '../../../lib/storage';
@@ -151,13 +151,34 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
   // Beside the notes on a computer, over them on a smaller screen.
   const [panel, setPanel] = useState(() => !compact && readJson(PANEL_KEY, { open: true }).open);
   const [big, setBig] = useState(false);
-  const numbered = useMemo(() => numberPiece(notes, sections, grid, given), [notes, sections, grid, given]);
+  const numbering = piece.numbering ?? 'order';
+  const whole = !!piece.whole;
+  const numbered = useMemo(() => numberPiece(notes, sections, grid, { ...given, numbering, whole }), [notes, sections, grid, given, numbering, whole]);
   const shownParts = useMemo(() => {
     const own = <T extends { hand: Hand }>(list: T[]) => (hand === 'both' ? list : list.filter((x) => x.hand === hand));
     return numbered.parts.map((p) => ({ ...p, rows: own(p.rows), keys: own(p.keys) }));
   }, [numbered, hand]);
   // Looped sections, first and last index (inclusive).
   const [loop, setLoop] = useState<[number, number] | null>(null);
+  // Takes in wait mode: the loop, or the whole piece.
+  const range = loop && sections[loop[0]] && sections[loop[1]]
+    ? { start: sections[loop[0]].start, end: Math.min(end, sections[loop[1]].end), part: sections.slice(loop[0], loop[1] + 1).map((s) => s.label).join(' ') }
+    : { start, end, part: '' };
+  // A loop in wait mode, a little faster after each good take.
+  const faster = useObservable(progressive);
+  const climbing = faster.on && !!loop && mode === 'wait';
+  const takes = useTakes(player, piece.id, level, range, (score) => {
+    if (!climbing) return null;
+    const next = nextRate(player.rate, score, faster);
+    if (next !== player.rate) pickRate(next);
+    return next;
+  });
+  // From its slow start, as it begins.
+  const restart = climbing ? `${faster.from}|${loop?.join("-")}` : null;
+  useEffect(() => {
+    if (restart !== null) pickRate(faster.from);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restart]);
 
   const applyLoop = (next: [number, number] | null) => {
     setLoop(next);
@@ -279,6 +300,10 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
     applyLoop(null);
     onChange({ level: next });
     void piecesApi.update(piece.id, { level: next }).catch(() => {});
+  };
+  const pickNumbers = (change: { numbering?: PieceNumbering; whole?: boolean }) => {
+    onChange(change);
+    void piecesApi.update(piece.id, change).catch(() => {});
   };
   const pickTracks = (next: boolean[]) => {
     applyLoop(null);
@@ -409,6 +434,9 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
           bigKeys={touch ? bigKeys : null}
           onMode={pickMode}
           onLevel={pickLevel}
+          numbering={numbering}
+          whole={whole}
+          onNumbering={pickNumbers}
           onRate={pickRate}
           climbing={climbing}
           onHand={setHand}

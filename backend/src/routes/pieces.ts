@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { pieceDifficulties, pieceDuration, pieceEditsSchema, pieceLevels, pieceLyricsSchema, pieceNoteSchema, pieceNumbersSchema, pieceSchema, pieceSectionsSchema, renderScore, scoreSchema, trimSilence, type Score } from '@learn/shared';
+import { pieceDifficulties, pieceDuration, pieceEditsSchema, pieceLevels, pieceLyricsSchema, pieceNumberings, pieceNoteSchema, pieceNumbersSchema, pieceSchema, pieceSectionsSchema, renderScore, scoreSchema, trimSilence, type Score } from '@learn/shared';
 import { z } from 'zod';
 import { requireUser } from '../auth/session.js';
 import { coverFromLink, isCatalogImage, type CoverFinder } from '../covers.js';
@@ -31,6 +31,8 @@ const createBody = z.object({
   edits: pieceEditsSchema.nullable().optional(),
   numbers: pieceNumbersSchema.nullable().optional(),
   lyrics: pieceLyricsSchema.nullable().optional(),
+  numbering: z.enum(pieceNumberings).optional(),
+  whole: z.boolean().optional(),
 });
 const updateBody = z.object({
   title: z.string().trim().min(1).max(120).optional(),
@@ -47,6 +49,8 @@ const updateBody = z.object({
   edits: pieceEditsSchema.nullable().optional(),
   // Null: none.
   lyrics: pieceLyricsSchema.nullable().optional(),
+  numbering: z.enum(pieceNumberings).optional(),
+  whole: z.boolean().optional(),
   // Which tracks are on, one flag per track of the piece.
   tracks_enabled: z.array(z.boolean()).max(64).optional(),
   // Cover picked by hand (from a link): a catalogue image, or null for none.
@@ -211,11 +215,11 @@ export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFi
   });
 
   router.get('/:id', (req, res) => {
-    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, sections, score, edits, numbers, lyrics, COALESCE(level, 'original') AS level, data FROM pieces WHERE id = ? AND user_id = ?`)
+    const row = db.prepare(`SELECT id, subject_id AS subject, title, artist, description, NULLIF(cover, '') AS cover, folder_id, difficulty, source, bpm, tracks, sections, score, edits, numbers, lyrics, COALESCE(numbering, 'order') AS numbering, whole, COALESCE(level, 'original') AS level, data FROM pieces WHERE id = ? AND user_id = ?`)
       .get(Number(req.params.id), req.user!.id) as { data: string } & Record<string, unknown> | undefined;
     if (!row) return void res.status(404).json({ success: false, error: 'Morceau introuvable' });
-    const { data, tracks, sections, score, edits, numbers, lyrics, ...meta } = row;
-    res.json({ success: true, data: { ...meta, tracks: tracks ? JSON.parse(tracks as string) : undefined, sections: sections ? JSON.parse(sections as string) : null, score: score ? JSON.parse(score as string) : null, edits: edits ? JSON.parse(edits as string) : null, numbers: numbers ? JSON.parse(numbers as string) : null, lyrics: lyrics ? JSON.parse(lyrics as string) : null, notes: JSON.parse(data) } });
+    const { data, tracks, sections, score, edits, numbers, lyrics, whole, ...meta } = row;
+    res.json({ success: true, data: { ...meta, whole: !!whole, tracks: tracks ? JSON.parse(tracks as string) : undefined, sections: sections ? JSON.parse(sections as string) : null, score: score ? JSON.parse(score as string) : null, edits: edits ? JSON.parse(edits as string) : null, numbers: numbers ? JSON.parse(numbers as string) : null, lyrics: lyrics ? JSON.parse(lyrics as string) : null, notes: JSON.parse(data) } });
   });
 
   // Large pieces exceed the global JSON limit.
@@ -235,13 +239,13 @@ export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFi
     const json = (value: unknown) => (value ? JSON.stringify(value) : null);
     const r = db.prepare(`
       INSERT INTO pieces (
-        user_id, subject_id, title, artist, description, cover, folder_id, difficulty, source, bpm, tracks, score, level, sections, edits, numbers, lyrics,
+        user_id, subject_id, title, artist, description, cover, folder_id, difficulty, source, bpm, tracks, score, level, sections, edits, numbers, lyrics, numbering, whole,
         data, note_count, duration, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       req.user!.id, subject, piece.title, artist, textOrNull(b.description), found, b.folder_id ?? null, b.difficulty ?? null,
       score ? 'manual' : piece.source, score ? score.bpm : piece.bpm, !score && piece.tracks?.length ? json(piece.tracks) : null, json(score), b.level ?? null,
-      json(sections), json(edits), json(b.numbers), json(lyrics), JSON.stringify(notes), notes.length, pieceDuration(notes), now,
+      json(sections), json(edits), json(b.numbers), json(lyrics), b.numbering ?? null, b.whole ? 1 : null, JSON.stringify(notes), notes.length, pieceDuration(notes), now,
     );
     res.status(201).json({ success: true, data: { id: Number(r.lastInsertRowid) } });
   });
@@ -265,6 +269,8 @@ export function pieceRoutes(db: DB, findCover: CoverFinder, findLyrics: LyricsFi
     if (b.level !== undefined) { sets.push('level = ?'); values.push(b.level); }
     if (b.sections !== undefined) { sets.push('sections = ?'); values.push(b.sections && JSON.stringify(b.sections)); }
     if (b.numbers !== undefined) { sets.push('numbers = ?'); values.push(b.numbers && JSON.stringify(b.numbers)); }
+    if (b.numbering !== undefined) { sets.push('numbering = ?'); values.push(b.numbering); }
+    if (b.whole !== undefined) { sets.push('whole = ?'); values.push(b.whole ? 1 : 0); }
     if (b.lyrics !== undefined) { sets.push('lyrics = ?'); values.push(b.lyrics?.length ? JSON.stringify(b.lyrics) : null); }
     if (b.edits !== undefined) { sets.push('edits = ?'); values.push(b.edits && JSON.stringify(b.edits)); }
     if (b.description !== undefined) { sets.push('description = ?'); values.push(textOrNull(b.description)); }

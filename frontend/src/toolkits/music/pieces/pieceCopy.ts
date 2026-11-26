@@ -1,4 +1,4 @@
-import type { LyricLine, Piece, PieceDifficulty, PieceEdits, PieceLevel, PieceNumber, PieceSection, Score } from '@learn/shared';
+import type { LyricLine, Piece, PieceNumbering, PieceDifficulty, PieceEdits, PieceLevel, PieceNumber, PieceSection, Score } from '@learn/shared';
 import type { StoredPiece } from './types';
 
 // Whole pieces as a line of text, to copy them from a site to another: local
@@ -16,6 +16,8 @@ export interface PieceCopy {
   numbers: PieceNumber[] | null;
   // Left out of those copied before there were any.
   lyrics?: LyricLine[] | null;
+  numbering?: PieceNumbering;
+  whole?: boolean;
 }
 
 const MARK = 'learn-estv:morceaux:1:';
@@ -32,6 +34,8 @@ export const copyOf = (p: StoredPiece): PieceCopy => ({
   edits: p.edits ?? null,
   numbers: p.numbers ?? null,
   lyrics: p.lyrics ?? null,
+  numbering: p.numbering ?? 'order',
+  whole: !!p.whole,
 });
 
 export async function encodePieces(pieces: PieceCopy[]): Promise<string> {

@@ -205,6 +205,35 @@ describe('auth and progress', () => {
     expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.lyrics).toEqual(lyrics.slice(0, 1));
     await me.patch(`/api/pieces/${id}`).send({ lyrics: null }).expect(200);
     expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data.lyrics).toBeNull();
+    // Takes: the best of each part, at each level, for the owner only.
+    const take = { level: 'original', part: 'B', score: 80, chords: 12, wrong: 3, rate: 1 };
+    await me.post(`/api/pieces/${id}/takes`).send(take).expect(201);
+    const bests = (await me.post(`/api/pieces/${id}/takes`).send({ ...take, score: 92 }).expect(201)).body.data;
+    expect(bests).toEqual([{ level: 'original', part: 'B', best: 92, count: 2 }]);
+    await me.post(`/api/pieces/${id}/takes`).send({ ...take, score: 101 }).expect(400);
+    await other.post(`/api/pieces/${id}/takes`).send(take).expect(404);
+    await other.get(`/api/pieces/${id}/takes`).expect(404);
+    expect((await me.get(`/api/pieces/${id}/takes`).expect(200)).body.data).toEqual(bests);
+    // Time played: added up by day, with the days in a row.
+    await me.post(`/api/pieces/${id}/time`).send({ seconds: 50 }).expect(200);
+    await me.post(`/api/pieces/${id}/time`).send({ seconds: 25.4 }).expect(200);
+    await me.post(`/api/pieces/${id}/time`).send({ seconds: 601 }).expect(400);
+    await other.post(`/api/pieces/${id}/time`).send({ seconds: 30 }).expect(404);
+    const practice = (await me.get('/api/pieces/practice?subject=piano').expect(200)).body.data;
+    expect(practice).toMatchObject({ today: 75, streak: { current: 1, best: 1 } });
+    expect(practice.days.at(-1).seconds).toBe(75);
+    expect(practice.pieces[0]).toMatchObject({ id, seconds: 75, best: 92 });
+    expect((await other.get('/api/pieces/practice').expect(200)).body.data).toMatchObject({ today: 0, pieces: [] });
+    // The coach, for accounts only.
+    expect((await me.post('/api/ai/coach').send({ context: 'x', messages: [{ role: 'user', text: 'Doigté ?' }] }).expect(200)).body.data.text).toBe('Réponse à : Doigté ?');
+    await me.post('/api/ai/coach').send({ context: 'x', messages: [] }).expect(400);
+    await request(app).post('/api/ai/coach').send({ context: 'x', messages: [{ role: 'user', text: 'a' }] }).expect(401);
+    // How the player numbers keys.
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data).toMatchObject({ numbering: 'order', whole: false });
+    await me.patch(`/api/pieces/${id}`).send({ numbering: 'fixed', whole: true }).expect(200);
+    expect((await me.get(`/api/pieces/${id}`).expect(200)).body.data).toMatchObject({ numbering: 'fixed', whole: true });
+    await me.patch(`/api/pieces/${id}`).send({ numbering: 'random' }).expect(400);
+    await me.patch(`/api/pieces/${id}`).send({ numbering: 'order', whole: false }).expect(200);
     // The tempo only changes when it is sent.
     const bpm = (await me.get(`/api/pieces/${id}`).expect(200)).body.data.bpm;
     await me.put(`/api/pieces/${id}/notes`).send({ notes: piece.notes, bpm: 87.5 }).expect(200);
