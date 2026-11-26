@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RepeatIcon, ShuffleIcon } from '../../../components/icons';
 import { readJson, writeJson } from '../../../lib/storage';
 import { useObservable } from '../../../lib/store';
-import { COMPACT, SHORT, TOUCH, useMedia } from '../../../lib/useMedia';
+import { COMPACT, PHONE, SHORT, TOUCH, useMedia } from '../../../lib/useMedia';
 import { useWakeLock } from '../../../lib/useWakeLock';
 import { useNoteInput } from '../input/hooks';
 import { PianoKeyboard, type KeyLabels, type KeyMark, type Sticker } from '../PianoKeyboard';
@@ -92,6 +92,8 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
   const [, setFrame] = useState(0);
   const compact = useMedia(COMPACT);
   const short = useMedia(SHORT);
+  // No room for the numbers' panel on a phone.
+  const phone = useMedia(PHONE);
   const touch = useMedia(TOUCH);
   const [options, setOptions] = useState(false);
   const closeOptions = useCallback(() => setOptions(false), []);
@@ -465,7 +467,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
             </div>
           </div>
         </div>
-        {part && !big && !full && (
+        {part && !big && !full && !phone && (
           <NumbersPanel
             title={piece.title}
             parts={shownParts}
