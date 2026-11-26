@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 
 export interface User {
   id: number;
@@ -17,6 +17,9 @@ interface AuthState {
   logout(): Promise<void>;
 }
 
+const RETRIES = 10;
+const RETRY_MS = 1500;
+
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -24,13 +27,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    try {
-      setUser(await api<User | null>('/auth/me'));
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
+    // The server restarting, or no network, is no logging out: asked again, for a while.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        setUser(await api<User | null>('/auth/me'));
+        break;
+      } catch (e) {
+        const down = !(e instanceof ApiError) || e.status >= 500;
+        if (!down || attempt >= RETRIES) {
+          setUser(null);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, RETRY_MS));
+      }
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => void refresh(), [refresh]);
