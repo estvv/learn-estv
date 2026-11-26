@@ -8,11 +8,13 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   width?: 'sm' | 'md' | 'lg';
+  // Title in the middle, no close button: closed from outside or with Escape.
+  centered?: boolean;
 }
 
 const WIDTHS = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl' };
 
-export function Modal({ title, subtitle, onClose, children, footer, width = 'sm' }: ModalProps) {
+export function Modal({ title, subtitle, onClose, children, footer, width = 'sm', centered = false }: ModalProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -36,21 +38,23 @@ export function Modal({ title, subtitle, onClose, children, footer, width = 'sm'
         aria-modal="true"
         className={`w-full ${WIDTHS[width]} max-h-[90dvh] flex flex-col bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-neutral-200 animate-[pop-in_160ms_ease-out]`}
       >
-        <div className={`flex ${subtitle ? 'items-start' : 'items-center'} justify-between gap-4 px-5 pt-5 pb-4 sm:px-6`}>
+        <div className={`flex ${subtitle ? 'items-start' : 'items-center'} ${centered ? 'justify-center' : 'justify-between'} gap-4 px-5 pt-5 pb-4 sm:px-6`}>
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-neutral-900 truncate">{title}</h2>
             {subtitle && <div className="text-sm text-neutral-500 mt-0.5">{subtitle}</div>}
           </div>
-          <button
-            onClick={onClose}
-            className="-mr-2 shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
-            title="Fermer"
-            type="button"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          {!centered && (
+            <button
+              onClick={onClose}
+              className="-mr-2 shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+              title="Fermer"
+              type="button"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
         <div className="px-5 pb-6 overflow-y-auto overscroll-contain min-h-0 sm:px-6">{children}</div>
         {footer && <div className="px-5 py-4 sm:px-6 border-t border-neutral-100 flex justify-end gap-2">{footer}</div>}

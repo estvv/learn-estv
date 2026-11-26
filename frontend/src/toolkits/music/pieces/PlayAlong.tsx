@@ -14,6 +14,16 @@ import { layoutOf, levelNames, levelNotes, levelOf, playedSpan } from './derive'
 import { FallingNotes } from './FallingNotes';
 import { LyricsBanner } from './LyricsBanner';
 import { LyricsModal } from './LyricsModal';
+import { downloadMidi } from './midiExport';
+import { TakeCard } from './TakeCard';
+import { useTakes } from './useTakes';
+import { nextRate, progressive } from './progressive';
+import { usePracticeClock } from './usePracticeClock';
+import { CoachModal } from './CoachModal';
+import { PartNumbers } from './PartNumbers';
+import { VideoModal } from './video/VideoModal';
+import { contextOf } from './coach';
+import { useMediaSession } from './useMediaSession';
 import { useVoice, useVoicePlayer } from './voice/useVoice';
 import { VoiceModal } from './voice/VoiceModal';
 import { FullscreenControls, FullscreenIcon } from './FullscreenControls';
@@ -98,6 +108,33 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
   const [options, setOptions] = useState(false);
   const closeOptions = useCallback(() => setOptions(false), []);
   useWakeLock(state.playing);
+  usePracticeClock(player, piece.id);
+  // The coach: what it is told is written as it opens.
+  // Filming a video, and how the piece was before.
+  const [video, setVideo] = useState(false);
+  // The numbers of the part being played, large.
+  const [partShown, setPartShown] = useState(false);
+  const filmed = useRef<{ mode: PlayMode; loop: [number, number] | null } | null>(null);
+  const [coach, setCoach] = useState<{ context: string; part: string; take: boolean; ask: boolean } | null>(null);
+  const openCoach = (ask: boolean) => {
+    player.pause();
+    setOptions(false);
+    takes.dismiss();
+    const i = sectionAt(player.position);
+    const part = range.part
+      ? { name: `la partie ${range.part}`, start: range.start, end: range.end }
+      : sections[i]
+        ? { name: `la partie ${sections[i].label}`, start: sections[i].start, end: sections[i].end }
+        : { name: 'le morceau', start, end };
+    const take = takes.last;
+    setCoach({
+      context: contextOf({ title: piece.title, artist: piece.artist ?? null, level: levelNames[level], bpm: piece.score?.bpm ?? piece.bpm, rate, grid, part, notes: heard }, take),
+      part: part.name,
+      take: !!take,
+      ask,
+    });
+  };
+  useMediaSession(player, { title: piece.title, artist: piece.artist ?? null, cover: piece.cover ?? null }, { next: () => nav.next(true), previous: () => nav.previous(true) });
   const styled = useObservable(stage).style !== 'classic';
   const keyLight = useRef<HTMLCanvasElement>(null);
   const [from, to] = useMemo(() => pieceRange(notes.length ? notes : piece.notes), [notes, piece.notes]);
@@ -339,6 +376,7 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
       {timeline}
       <span className={`w-9 shrink-0 text-xs tabular-nums text-neutral-400 ${compact ? 'phone:hidden' : ''}`}>{clock(end - start)}</span>
       {loopButton}
+      {numbered.parts[current] && <ControlButton title="Chiffres de la partie" onClick={() => { player.pause(); setPartShown(true); }}><NumbersIcon /></ControlButton>}
       <ControlButton title="Plein écran (F)" onClick={enterFull}><FullscreenIcon /></ControlButton>
     </div>
   );
@@ -426,6 +464,36 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
       )}
       {lyrics && lyricsOn && <LyricsBanner lines={lyrics} player={player} short={short} />}
 
+      {partShown && numbered.parts[current] && <PartNumbers parts={numbered.parts} start={current} onClose={() => setPartShown(false)} />}
+      {video && (
+        <VideoModal
+          player={player}
+          base={{ from, to, title: piece.title, artist: piece.artist ?? null, lyrics: lyrics && lyricsOn ? lyrics : null, numbers: numbered.numbers }}
+          range={range.part ? { start: range.start, end: range.end, name: range.part } : { start, end, name: '' }}
+          onBefore={() => {
+            filmed.current = { mode, loop };
+            pickMode('listen');
+            applyLoop(null);
+          }}
+          onAfter={() => {
+            const was = filmed.current;
+            if (!was) return;
+            pickMode(was.mode);
+            applyLoop(was.loop);
+          }}
+          onClose={() => setVideo(false)}
+        />
+      )}
+      {takes.done && <TakeCard done={takes.done} onClose={takes.dismiss} onCoach={() => openCoach(true)} />}
+      {coach && (
+        <CoachModal
+          context={coach.context}
+          part={coach.part}
+          hasTake={coach.take}
+          startWith={coach.ask ? 'Qu’est-ce qui coince dans ma dernière prise, et comment le travailler ?' : undefined}
+          onClose={() => setCoach(null)}
+        />
+      )}
       {mode === 'wait' && state.expected.length > 0 && (
         <div className="pb-2 text-center text-xs text-neutral-500">Joue {state.expected.length > 1 ? 'les notes en surbrillance' : 'la note en surbrillance'} pour continuer</div>
       )}
@@ -498,3 +566,9 @@ export function PlayAlong({ piece, labels, nav, autoPlay, fullscreen, onEdit, on
     </div>
   );
 }
+
+const NumbersIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+    <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7.5 9.5 9 8.5v7M12.5 9a1.5 1.5 0 1 1 2.6 1L12.5 15.5h3" />
+  </svg>
+);
