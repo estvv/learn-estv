@@ -1,5 +1,4 @@
 import Database from 'better-sqlite3';
-import { pieceDuration, trimSilence } from '@learn/shared';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
@@ -41,24 +40,6 @@ function migrate(db: DB) {
   }
 }
 
-// Pieces imported before imports cut the silence at their start. Once cut, a
-// piece is not found again. Those written by hand keep their rests.
-function trimPieces(db: DB) {
-  type Row = { id: number; data: string; sections: string | null; edits: string | null };
-  const rows = db.prepare(`
-    SELECT id, data, sections, edits FROM pieces
-    WHERE score IS NULL AND json_valid(data) AND json_extract(data, '$[0].time') > 0.01
-  `).all() as Row[];
-  const save = db.prepare('UPDATE pieces SET data = ?, sections = ?, edits = ?, duration = ? WHERE id = ?');
-  const json = (value: unknown) => (value ? JSON.stringify(value) : null);
-  db.transaction(() => {
-    for (const r of rows) {
-      const { notes, sections, edits } = trimSilence({ notes: JSON.parse(r.data), sections: r.sections && JSON.parse(r.sections), edits: r.edits && JSON.parse(r.edits) });
-      save.run(JSON.stringify(notes), json(sections), json(edits), pieceDuration(notes), r.id);
-    }
-  })();
-}
-
 export function openDatabase(file = config.dbPath): DB {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new Database(file);
@@ -66,6 +47,5 @@ export function openDatabase(file = config.dbPath): DB {
   db.pragma('foreign_keys = ON');
   db.exec(schema);
   migrate(db);
-  trimPieces(db);
   return db;
 }

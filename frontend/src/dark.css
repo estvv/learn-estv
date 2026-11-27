@@ -1,6 +1,6 @@
 /* The night theme: Tailwind's palettes the other way round, so that every class
    keeps its meaning (neutral-900 is the strongest text, white the panels). What
-   must not turn over (veils, piano keys) does not use them. */
+   must not turn over (veils) does not use them. */
 [data-theme='dark'] {
   color-scheme: dark;
   --color-page: #121212;
@@ -15,7 +15,6 @@
   --color-blue-50: oklch(28.2% 0.091 267.935); --color-blue-100: oklch(37.9% 0.146 265.522); --color-blue-200: oklch(42.4% 0.199 265.638); --color-blue-300: oklch(48.8% 0.243 264.376); --color-blue-400: oklch(54.6% 0.245 262.881); --color-blue-500: oklch(62.3% 0.214 259.815); --color-blue-600: oklch(70.7% 0.165 254.624); --color-blue-700: oklch(80.9% 0.105 251.813); --color-blue-800: oklch(88.2% 0.059 254.128); --color-blue-900: oklch(93.2% 0.032 255.585); --color-blue-950: oklch(97% 0.014 254.604);
   --color-violet-50: oklch(28.3% 0.141 291.089); --color-violet-100: oklch(38% 0.189 293.745); --color-violet-200: oklch(43.2% 0.232 292.759); --color-violet-300: oklch(49.1% 0.27 292.581); --color-violet-400: oklch(54.1% 0.281 293.009); --color-violet-500: oklch(60.6% 0.25 292.717); --color-violet-600: oklch(70.2% 0.183 293.541); --color-violet-700: oklch(81.1% 0.111 293.571); --color-violet-800: oklch(89.4% 0.057 293.283); --color-violet-900: oklch(94.3% 0.029 294.588); --color-violet-950: oklch(96.9% 0.016 293.756);
 
-  --color-key-white: #e4e4e4; --color-key-black: #161616; --color-key-line: #b8b8b8; --color-key-down: #c4c4c4; --color-key-name: #6b6b6b;
 }
 [data-theme='light'] { color-scheme: light; }
 

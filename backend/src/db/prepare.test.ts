@@ -77,27 +77,4 @@ describe('prepareDatabase', () => {
     expect(backups()).toHaveLength(10);
     expect(backups()[0]).toContain('2020-01-13');
   });
-
-  it('cuts the silence at the start of pieces already imported, once', () => {
-    const add = (id: number, notes: unknown[], more: { score?: string; sections?: string } = {}) => {
-      const db = openDatabase(file);
-      db.prepare("INSERT OR IGNORE INTO users (id, username, password_hash, created_at) VALUES (1, 'me', 'x', 0)").run();
-      db.prepare(`INSERT INTO pieces (id, user_id, subject_id, title, source, data, note_count, duration, created_at, score, sections) VALUES (?, 1, 's', 't', 'midi', ?, 1, 9, 0, ?, ?)`)
-        .run(id, JSON.stringify(notes), more.score ?? null, more.sections ?? null);
-      db.close();
-    };
-    const note = (time: number) => ({ midi: 60, time, duration: 1, velocity: 0.7, hand: null });
-    add(1, [note(2), note(5)], { sections: JSON.stringify([{ start: 0, label: 'A' }, { start: 5, label: 'B' }]) });
-    add(2, [note(0), note(5)]);
-    add(3, [note(2)], { score: '{}' });
-    const read = () => {
-      const db = openDatabase(file);
-      const rows = db.prepare('SELECT data, sections, duration FROM pieces ORDER BY id').all() as { data: string; sections: string | null; duration: number }[];
-      db.close();
-      return rows.map((r) => [(JSON.parse(r.data) as { time: number }[]).map((x) => x.time), r.sections && JSON.parse(r.sections), r.duration]);
-    };
-    const expected = [[[0, 3], [{ start: 0, label: 'A' }, { start: 3, label: 'B' }], 4], [[0, 5], null, 9], [[2], null, 9]];
-    expect(read()).toEqual(expected);
-    expect(read()).toEqual(expected);
-  });
 });

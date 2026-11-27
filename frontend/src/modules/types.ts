@@ -28,7 +28,7 @@ export interface ActivityModule<Config = unknown> {
   label: string;
   // Same schema as the backend's pack validation (@learn/shared).
   configSchema: z.ZodType<Config>;
-  // Toolkits the module relies on (e.g. "music" for note input and sound).
+  // Toolkits the module relies on (e.g. "code" for the editor and runner).
   toolkits?: string[];
   // Uses the whole width of the page.
   wide?: boolean;

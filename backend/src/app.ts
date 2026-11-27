@@ -5,20 +5,14 @@ import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
 import { loadSession } from './auth/session.js';
 import type { DB } from './db/index.js';
-import { readImages as readWithAi, type ImageReader } from './ai/index.js';
 import { adminRoutes } from './routes/admin.js';
-import { aiRoutes } from './routes/ai.js';
-import { askCoach, type Coach } from './ai/coach.js';
 import { authRoutes } from './routes/auth.js';
 import { config } from './config.js';
 import { contentRoutes } from './routes/content.js';
 import { progressRoutes } from './routes/progress.js';
-import { pieceRoutes } from './routes/pieces.js';
 import { userRoutes } from './routes/users.js';
-import { catalogCover, type CoverFinder } from './covers.js';
-import { catalogLyrics, type LyricsFinder } from './lyrics.js';
 
-export function createApp(db: DB, { findCover = catalogCover, findLyrics = catalogLyrics, readImages = readWithAi, coach = askCoach }: { findCover?: CoverFinder; findLyrics?: LyricsFinder; readImages?: ImageReader; coach?: Coach } = {}) {
+export function createApp(db: DB) {
   const app = express();
   // Caddy -> nginx -> here: two proxies in front.
   app.set('trust proxy', 2);
@@ -29,8 +23,7 @@ export function createApp(db: DB, { findCover = catalogCover, findLyrics = catal
     crossOriginResourcePolicy: { policy: 'same-site' },
   }));
   app.use(compression());
-  // Pieces and corrected notes have their own, larger limit.
-  app.use((req, res, next) => (/^\/api\/pieces(\/\d+\/notes)?$/.test(req.path) ? next() : express.json({ limit: '2mb' })(req, res, next)));
+  app.use(express.json({ limit: '2mb' }));
   app.use(cookieParser());
 
   app.get('/health', (_req, res) => void res.json({ status: 'ok', commit: config.commit }));
@@ -48,8 +41,6 @@ export function createApp(db: DB, { findCover = catalogCover, findLyrics = catal
   app.use('/api/subjects', contentRoutes(db));
   app.use('/api/progress', progressRoutes(db));
   app.use('/api/users', userRoutes(db));
-  app.use('/api/ai', aiRoutes(readImages, coach));
-  app.use('/api/pieces', pieceRoutes(db, findCover, findLyrics));
 
   app.use('/api', (_req, res) => void res.status(404).json({ success: false, error: 'Introuvable' }));
 

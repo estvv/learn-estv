@@ -1,7 +1,6 @@
 import { mastery, type StoredCard } from '@learn/shared';
 import { getPack } from './content/store.js';
 import type { DB } from './db/index.js';
-import { playedDays } from './practice.js';
 
 // Days are counted in the owner's time zone, not the server's (UTC in Docker).
 const TIME_ZONE = process.env.TZ_STATS ?? 'Europe/Paris';
@@ -46,8 +45,6 @@ export function profileStats(db: DB, userId: number, now = Date.now()): ProfileS
   const perDay = new Map<string, number>();
   for (const r of reviews) perDay.set(dayKey(r.at), (perDay.get(dayKey(r.at)) ?? 0) + 1);
   for (const s of steps) perDay.set(dayKey(s.completed_at), (perDay.get(dayKey(s.completed_at)) ?? 0) + 1);
-  // A day at the piano counts too.
-  for (const day of playedDays(db, userId)) perDay.set(day, (perDay.get(day) ?? 0) + 1);
 
   const today = dayKey(now);
   const heatmap = Array.from({ length: HEATMAP_DAYS }, (_, i) => {

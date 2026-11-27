@@ -111,6 +111,9 @@ CREATE TABLE IF NOT EXISTS srs_state (
   PRIMARY KEY (user_id, element_id, facet)
 );
 
+-- Pieces: the piano moved to piano-estv (copied by its deploy/import-from-learn.sh).
+-- The tables stay, unused: a rollback needs them, and they are what is copied.
+
 -- Folders of imported pieces, in the owner's order of priority.
 CREATE TABLE IF NOT EXISTS piece_folders (
   id INTEGER PRIMARY KEY,

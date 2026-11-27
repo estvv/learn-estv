@@ -134,11 +134,16 @@ function readPack(entry: string): unknown {
   return buildPack(base, units);
 }
 
+// Seeds taken out of content/packs: the piano has its own app (piano-estv).
+// Only the subject goes; progress and pieces stay in their tables.
+const RETIRED_SEEDS = ['piano'];
+
 // Imports every pack of the content directory whose content changed since the
 // last import. A subject edited in the app (source != seed) is left alone.
 // Returns the packs that could not be imported.
 export function importSeeds(db: DB, dir: string, log = console.log): string[] {
   const failed: string[] = [];
+  const seen = new Set<string>();
   if (!fs.existsSync(dir)) {
     log(`Seed: dossier absent (${dir})`);
     return [dir];
@@ -160,6 +165,7 @@ export function importSeeds(db: DB, dir: string, log = console.log): string[] {
       failed.push(file);
       continue;
     }
+    seen.add(parsed.data.subject.id);
     const current = db.prepare('SELECT source, seed_hash FROM subjects WHERE id = ?').get(parsed.data.subject.id) as
       | { source: Source; seed_hash: string | null }
       | undefined;
@@ -170,6 +176,9 @@ export function importSeeds(db: DB, dir: string, log = console.log): string[] {
     if (current?.seed_hash === hash) continue;
     importPack(db, parsed.data, 'seed', hash);
     log(`Seed ${file} importé`);
+  }
+  for (const id of RETIRED_SEEDS.filter((r) => !seen.has(r))) {
+    if (db.prepare("DELETE FROM subjects WHERE id = ? AND source = 'seed'").run(id).changes) log(`Seed ${id} retiré`);
   }
   return failed;
 }

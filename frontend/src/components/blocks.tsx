@@ -8,7 +8,7 @@ import type { ComponentType } from 'react';
 // highlight: C4 E4
 // ```
 //
-// Toolkits register their blocks here (music: keyboard, play…).
+// Toolkits register their blocks here (code: js-run, ts-run…).
 
 // `source` is the raw text, for blocks that are not `key: value` lines (code).
 export type BlockProps = { params: Record<string, string>; source: string };

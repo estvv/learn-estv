@@ -83,7 +83,7 @@ export function Bar({ value, accent: a = 'neutral', className = '' }: { value: n
   );
 }
 
-// "Piano / Le clavier / Quiz" above activity pages.
+// "JavaScript / Les bases / Quiz" above activity pages.
 export function Breadcrumb({ items }: { items: { label: ReactNode; to?: string }[] }) {
   return (
     <nav className="mb-4 flex flex-wrap items-center gap-x-2 text-sm sm:mb-6 text-neutral-500">

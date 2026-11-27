@@ -1,23 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildPack, fillTemplate, frenchName, isDue, noteLabel, noteName, packSchema, parseNote, parseRange, retrievability, reviewCard, selectElements } from './index.ts';
-
-describe('music', () => {
-  it('parses and names notes', () => {
-    expect(parseNote('C4')).toBe(60);
-    expect(parseNote('A0')).toBe(21);
-    expect(parseNote('C#4')).toBe(61);
-    expect(parseNote('Db4')).toBe(61);
-    expect(parseNote('H4')).toBeUndefined();
-    expect(noteName(61)).toBe('C#4');
-    expect(noteName(61, true)).toBe('Db4');
-    expect(frenchName(67)).toBe('Sol');
-    expect(noteLabel(60, true)).toBe('Do (C4)');
-    expect(noteLabel(61)).toBe('Do♯ / Ré♭ (C♯ / D♭)');
-    expect(parseRange('C3-C5')).toEqual([48, 72]);
-    expect(parseRange('C5..C3')).toEqual([48, 72]);
-  });
-});
+import { buildPack, fillTemplate, isDue, packSchema, retrievability, reviewCard, selectElements } from './index.ts';
 
 describe('select', () => {
   const els = [
@@ -72,13 +54,6 @@ describe('unit files', () => {
 });
 
 describe('seed packs', () => {
-  it('piano pack is valid', () => {
-    const raw = JSON.parse(readFileSync(new URL('../../content/packs/piano.json', import.meta.url), 'utf8'));
-    const parsed = packSchema.safeParse(raw);
-    if (!parsed.success) console.error(parsed.error.issues);
-    expect(parsed.success).toBe(true);
-  });
-
   it('rejects unknown modules, lessons and skills', () => {
     const parsed = packSchema.safeParse({
       format: 1,
